@@ -1,9 +1,10 @@
 import Link from "next/link";
-import { Globe, LayoutDashboard, FolderKanban, FileText, Settings, LogOut, Users } from "lucide-react";
+import { Globe, LayoutDashboard, FolderKanban, FileText, Settings, LogOut, Users, Workflow } from "lucide-react";
 
 const NAV_ITEMS = [
   { href: "/app", label: "Dashboard", icon: LayoutDashboard },
   { href: "/app/projects", label: "Projects", icon: FolderKanban },
+  { href: "/app/ops", label: "Ops Console", icon: Workflow },
   { href: "/app/reports", label: "Reports", icon: FileText },
   { href: "/app/leads", label: "Leads", icon: Users },
   { href: "/app/settings", label: "Settings", icon: Settings },

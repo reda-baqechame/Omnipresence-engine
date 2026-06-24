@@ -42,11 +42,13 @@ export async function POST(request: NextRequest) {
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) return apiUnauthorized();
 
-  const { projectId, type, topic, additionalContext } = await request.json() as {
+  const { projectId, type, topic, additionalContext, parentAssetId, repurposeFrom } = await request.json() as {
     projectId: string;
     type: ContentAssetType;
     topic: string;
     additionalContext?: string;
+    parentAssetId?: string;
+    repurposeFrom?: string;
   };
 
   if (!projectId || !type || !topic?.trim()) {
@@ -69,7 +71,26 @@ export async function POST(request: NextRequest) {
     .eq("project_id", projectId)
     .single();
 
-  const content = await generateContent(
+  let generated;
+  if (repurposeFrom) {
+    const { data: parent } = await supabase
+      .from("content_assets")
+      .select("*")
+      .eq("id", repurposeFrom)
+      .single();
+    if (parent) {
+      const { repurposeHubAsset } = await import("@/lib/engines/content-generator");
+      generated = await repurposeHubAsset(
+        parent.type as ContentAssetType,
+        parent.title,
+        parent.content || "",
+        brandProfile || { brand_name: "Brand" },
+        type
+      );
+    }
+  }
+
+  const content = generated || await generateContent(
     type,
     brandProfile || { brand_name: "Brand" },
     String(topic).slice(0, 500),
@@ -85,6 +106,7 @@ export async function POST(request: NextRequest) {
       content: content.content,
       metadata: content.metadata || {},
       status: "drafted",
+      parent_asset_id: parentAssetId || repurposeFrom || null,
     })
     .select()
     .single();

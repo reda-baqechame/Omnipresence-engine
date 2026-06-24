@@ -24,9 +24,20 @@ Author Persona: ${brand.author_persona || "Industry expert"}
 Banned Words: ${(brand.banned_words || []).join(", ")}
 `;
 
+const CITATION_RULES = `
+CITATION OPTIMIZATION RULES (mandatory):
+- Lead every H2 section with a direct 40-80 word answer in the first 1-2 sentences
+- Phrase H2 headings as buyer questions (How/What/Why/Who)
+- Target 500-2000 words total
+- Include at least one proprietary statistic, date, or named data point
+- Add an author/E-E-A-T block at the end
+- Include FAQ section with schema-ready Q&A pairs
+- Never use banned words listed above
+`;
+
   const prompts: Record<ContentAssetType, { system: string; user: string }> = {
     service_page: {
-      system: "You are an SEO/AEO content writer. Create comprehensive, answer-ready service pages optimized for both search engines and AI citation.",
+      system: `You are an SEO/AEO content writer. Create comprehensive, answer-ready service pages optimized for AI citation.${CITATION_RULES}`,
       user: `${brandContext}\n\nCreate a service page about: ${topic}\n\nInclude: H1, overview, benefits, process, FAQ section, and CTA. 800-1200 words. Use clear headings. Make it citable by AI.`,
     },
     location_page: {
@@ -50,8 +61,8 @@ Banned Words: ${(brand.banned_words || []).join(", ")}
       user: `${brandContext}\n\nCreate a blog brief for: ${topic}\n\nInclude: title options, outline, target keywords, internal link suggestions, and CTA.`,
     },
     blog_post: {
-      system: "You are an SEO/AEO blog writer. Create research-backed, answer-ready blog content.",
-      user: `${brandContext}\n\nWrite a blog post about: ${topic}\n\n1000-1500 words. Include FAQ section. Optimize for AI citation.`,
+      system: `You are an SEO/AEO blog writer. Create research-backed, answer-ready blog content.${CITATION_RULES}`,
+      user: `${brandContext}\n\nWrite a blog post about: ${topic}\n\n1000-1500 words. Include FAQ section with JSON-LD-ready Q&A. Optimize for AI citation.`,
     },
     case_study: {
       system: "You are a case study writer. Create compelling case studies with measurable results.",
@@ -111,7 +122,19 @@ Banned Words: ${(brand.banned_words || []).join(", ")}
   );
 
   if (result.success && result.data) {
-    return result.data;
+    const qc = await import("@/lib/engines/schema-engine").then((m) =>
+      m.runSchemaContentQC(result.data!.content, ["Article", "FAQPage"])
+    );
+    return {
+      ...result.data,
+      metadata: {
+        ...result.data.metadata,
+        qc_score: qc.score,
+        qc_passed: qc.passed,
+        qc_issues: qc.issues,
+        suggested_schema: ["Article", "FAQPage", "Organization"],
+      },
+    };
   }
 
   const fallback = await generateWithAI(prompt.system, fullUser, "quality");
@@ -133,3 +156,26 @@ export const ANTI_SPAM_RULES = [
   "Maximum 4 blog posts per week per project",
   "No duplicate or near-duplicate content across platforms",
 ];
+
+/** Hub-and-spoke: repurpose one parent asset into multiple formats */
+export const HUB_SPOKE_TYPES: Record<string, ContentAssetType[]> = {
+  blog_post: ["faq_page", "linkedin_post", "x_thread", "youtube_script", "gbp_post", "reddit_draft", "newsletter"],
+  service_page: ["comparison_page", "faq_page", "linkedin_post", "directory_description"],
+  comparison_page: ["linkedin_post", "x_thread", "reddit_draft"],
+};
+
+export async function repurposeHubAsset(
+  parentType: ContentAssetType,
+  parentTitle: string,
+  parentContent: string,
+  brand: Partial<BrandProfile>,
+  spokeType: ContentAssetType
+): Promise<{ title: string; content: string; metadata?: Record<string, unknown> }> {
+  return generateContent(
+    spokeType,
+    brand,
+    parentTitle,
+    `Repurpose this hub content into a ${spokeType}:\n\n${parentContent.slice(0, 4000)}`
+  );
+}
+

@@ -1,5 +1,6 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { calculateAttribution, syncGoogleSearchConsole, syncBingWebmaster, syncGoogleAnalytics, syncPlausible } from "@/lib/engines/attribution";
+import { fetchBingAIPerformance } from "@/lib/providers/bing-webmaster";
 import { getValidOAuthToken } from "@/lib/oauth/tokens";
 
 export async function syncProjectAttribution(
@@ -15,8 +16,19 @@ export async function syncProjectAttribution(
   let organicTraffic = 0;
   let searchClicks = 0;
   let aiReferralTraffic = 0;
+  let socialClicks = 0;
+  let directoryReferrals = 0;
   let leads = 0;
   let revenue = 0;
+
+  // Edge-detected AI referrals from beacon
+  const { count: beaconAiHits } = await supabase
+    .from("ai_referrals")
+    .select("*", { count: "exact", head: true })
+    .eq("project_id", projectId)
+    .gte("created_at", periodStart);
+
+  aiReferralTraffic += beaconAiHits || 0;
 
   const gscToken = await getValidOAuthToken(supabase, projectId, "google_search_console");
   if (gscToken) {
@@ -31,6 +43,11 @@ export async function syncProjectAttribution(
     organicTraffic += bingData.clicks;
     searchClicks += bingData.clicks;
     aiReferralTraffic += bingData.aiCitations;
+
+    const aiPerf = await fetchBingAIPerformance(bingToken, `https://${project.domain}`);
+    if (aiPerf.success && aiPerf.data) {
+      aiReferralTraffic += aiPerf.data.citations;
+    }
   }
 
   const ga4Token = await getValidOAuthToken(supabase, projectId, "google_analytics");
@@ -66,13 +83,20 @@ export async function syncProjectAttribution(
     aiReferralTraffic += plausibleData.aiReferrals;
   }
 
+  const { data: coverageLive } = await supabase
+    .from("coverage_items")
+    .select("submission_status")
+    .eq("project_id", projectId)
+    .eq("submission_status", "live");
+  directoryReferrals = (coverageLive || []).length;
+
   const metric = calculateAttribution(
     projectId,
     {
       organicTraffic,
       aiReferralTraffic,
-      socialClicks: 0,
-      directoryReferrals: 0,
+      socialClicks,
+      directoryReferrals,
       searchClicks,
       leads,
       calls: 0,

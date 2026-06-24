@@ -1,8 +1,9 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { runTechnicalAudit } from "@/lib/engines/technical-audit";
+import { analyzePassageReadiness } from "@/lib/engines/passage-readiness";
 import { extractBrandProfile } from "@/lib/engines/brand-extraction";
 import { generatePromptUniverse } from "@/lib/engines/prompt-generator";
-import { runVisibilityScan } from "@/lib/engines/visibility-scanner";
+import { runVisibilityScan, extractCitationSources } from "@/lib/engines/visibility-scanner";
 import { checkPlatformCoverage } from "@/lib/engines/coverage-checker";
 import { findAuthorityOpportunities } from "@/lib/engines/authority-finder";
 import { generateRoadmap } from "@/lib/engines/roadmap-generator";
@@ -56,7 +57,10 @@ export async function runProjectScan(
 
   await supabase.from("projects").update({ status: "scanning" }).eq("id", projectId);
 
-  const technicalFindings = await runTechnicalAudit(p.domain);
+  const technicalFindings = [
+    ...(await runTechnicalAudit(p.domain)),
+    ...(await analyzePassageReadiness(p.domain)),
+  ];
   const findingRows = technicalFindings.map((f) => ({ ...f, project_id: projectId }));
   await supabase.from("technical_findings").delete().eq("project_id", projectId);
   if (findingRows.length > 0) await supabase.from("technical_findings").insert(findingRows);
@@ -122,6 +126,17 @@ export async function runProjectScan(
   if (visibilityResults.length > 0) {
     await supabase.from("visibility_results").insert(visibilityResults as never[]);
   }
+
+  if (!demo) {
+    const citationRows = extractCitationSources(
+      visibilityResults as import("@/lib/engines/visibility-scanner").VisibilityScanResult[],
+      p.competitors || []
+    ).map((row) => ({ ...row, project_id: projectId, run_id: run!.id }));
+    await supabase.from("citation_sources").delete().eq("project_id", projectId);
+    if (citationRows.length > 0) {
+      await supabase.from("citation_sources").insert(citationRows);
+    }
+  }
   await supabase
     .from("visibility_runs")
     .update({ status: "completed", completed_at: new Date().toISOString() })
@@ -143,7 +158,8 @@ export async function runProjectScan(
         p.name,
         p.domain,
         p.industry || "",
-        p.competitors || []
+        p.competitors || [],
+        prompts.map((pr) => pr.text)
       );
 
   await supabase.from("authority_opportunities").delete().eq("project_id", projectId);
@@ -152,7 +168,7 @@ export async function runProjectScan(
   }
 
   const score = calculateOmniPresenceScore({
-    visibilityResults: visibilityResults as VisibilityResult[],
+    visibilityResults: visibilityResults as unknown as VisibilityResult[],
     technicalFindings: technicalFindings.map((f) => toTechnicalFinding(f, projectId)),
     coverageItems: coverageItems as CoverageItem[],
     authorityOpportunities: authorityOpportunities as AuthorityOpportunity[],

@@ -1,11 +1,15 @@
 import { NextResponse } from "next/server";
 import { createServiceClient } from "@/lib/supabase/server";
+import { getCapabilitiesSummary } from "@/lib/config/capabilities";
 
 export async function GET() {
+  const caps = getCapabilitiesSummary();
   const checks: Record<string, "ok" | "error" | "skipped"> = {
     supabase: "skipped",
     stripe: "skipped",
     inngest: "skipped",
+    live_data: caps.liveData ? "ok" : "skipped",
+    llm_mentions: caps.llmMentions ? "ok" : "skipped",
   };
 
   if (process.env.NEXT_PUBLIC_SUPABASE_URL && process.env.SUPABASE_SERVICE_ROLE_KEY) {
@@ -31,7 +35,9 @@ export async function GET() {
   return NextResponse.json(
     {
       status: healthy ? "healthy" : "degraded",
-      version: "0.1.0",
+      version: caps.version,
+      engines: caps.engines,
+      providersConfigured: caps.configuredCount,
       checks,
       timestamp: new Date().toISOString(),
     },

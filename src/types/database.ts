@@ -214,6 +214,94 @@ export interface VisibilityResult {
   created_at: string;
 }
 
+export type DataSource = "measured" | "simulated";
+
+export type CitationGate = "index" | "crawl" | "retrieval" | "citation";
+
+export interface ResultsLedgerEntry {
+  id: string;
+  project_id: string;
+  action_type: string;
+  action_surface?: string;
+  description: string;
+  baseline_snapshot?: Record<string, unknown>;
+  outcome_snapshot?: Record<string, unknown>;
+  delta_summary?: Record<string, unknown>;
+  status: "pending" | "in_progress" | "completed" | "failed" | "verified";
+  executed_by?: string;
+  executed_at: string;
+  verified_at?: string;
+  created_at: string;
+}
+
+export interface AIReferral {
+  id: string;
+  project_id: string;
+  referrer_source: string;
+  landing_path?: string;
+  user_agent?: string;
+  session_id?: string;
+  created_at: string;
+}
+
+export interface EntityProfile {
+  id: string;
+  project_id: string;
+  wikidata_qid?: string;
+  same_as_map?: Record<string, string>;
+  nap_records?: Array<{ platform: string; name: string; address?: string; phone?: string }>;
+  knowledge_panel_ready: boolean;
+  entity_score: number;
+  reconciliation_notes?: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface SchemaDeployment {
+  id: string;
+  project_id: string;
+  page_url: string;
+  schema_types: string[];
+  json_ld: Record<string, unknown>;
+  validation_status: "pending" | "valid" | "invalid" | "deployed";
+  deployment_method?: string;
+  deployed_url?: string;
+  deployed_at?: string;
+  created_at: string;
+}
+
+export interface CitationSource {
+  id: string;
+  project_id: string;
+  run_id?: string;
+  prompt_text: string;
+  platform: string;
+  source_domain: string;
+  source_url?: string;
+  cites_brand: boolean;
+  cites_competitor: boolean;
+  competitor_name?: string;
+  ai_search_volume?: number;
+  data_source: DataSource;
+  created_at: string;
+}
+
+export interface OpsQueueItem {
+  id: string;
+  project_id: string;
+  organization_id: string;
+  action_type: string;
+  title: string;
+  payload?: Record<string, unknown>;
+  risk_level: "low" | "medium" | "high";
+  status: "pending" | "approved" | "rejected" | "executing" | "completed" | "failed";
+  assigned_to?: string;
+  sla_due_at?: string;
+  executed_at?: string;
+  created_at: string;
+  updated_at: string;
+}
+
 export interface TechnicalFinding {
   id: string;
   project_id: string;
@@ -240,6 +328,7 @@ export interface CoverageItem {
   notes?: string;
   submission_status?: "not_started" | "in_progress" | "submitted" | "live";
   submitted_at?: string;
+  measured?: boolean;
   created_at: string;
   updated_at: string;
 }
@@ -275,6 +364,8 @@ export interface AuthorityOpportunity {
   difficulty_score?: number;
   published_url?: string;
   competitor_present: boolean;
+  measured?: boolean;
+  citation_source_id?: string;
   created_at: string;
   updated_at: string;
 }

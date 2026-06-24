@@ -1,23 +1,72 @@
 import { inngest } from "@/lib/inngest/client";
 import { createServiceClient } from "@/lib/supabase/server";
 import { runProjectScan, getOwnerEmail } from "@/lib/engines/scan-runner";
+import {
+  stepTechnicalAudit,
+  stepBrandExtract,
+  stepVisibilityScan,
+  stepScoreAndRoadmap,
+} from "@/lib/engines/scan-steps";
+import { analyzePassageReadiness } from "@/lib/engines/passage-readiness";
+import { sendScoreDropAlert } from "@/lib/email/reports";
 import { gatherReportData, saveReportArtifacts } from "@/lib/engines/report-builder";
 import { syncProjectAttribution } from "@/lib/engines/attribution-sync";
 import { sendWeeklyReport } from "@/lib/email/reports";
 import { sendSlackWebhook, buildWeeklyReportSlackMessage } from "@/lib/notifications/slack";
+import type { Project } from "@/types/database";
 
 export const runFullScan = inngest.createFunction(
   { id: "run-full-scan", retries: 2, triggers: [{ event: "project/scan.requested" }] },
   async ({ event, step }) => {
     const { projectId, organizationId } = event.data as { projectId: string; organizationId: string };
+    const supabase = await createServiceClient();
 
-    const result = await step.run("full-scan", async () => {
+    const project = await step.run("load-project", async () => {
+      const { data } = await supabase.from("projects").select("*").eq("id", projectId).single();
+      if (!data) throw new Error("Project not found");
+      await supabase.from("projects").update({ status: "scanning" }).eq("id", projectId);
+      return data as Project;
+    });
+
+    const technicalFindings = await step.run("technical-audit", () =>
+      stepTechnicalAudit(supabase, projectId, project.domain)
+    );
+
+    await step.run("brand-extract", () => stepBrandExtract(supabase, project));
+
+    await step.run("visibility-scan", () => stepVisibilityScan(supabase, project));
+
+    const { score } = await step.run("score-roadmap", () =>
+      stepScoreAndRoadmap(supabase, project, technicalFindings)
+    );
+
+    await step.run("finalize", async () => {
+      await supabase.from("projects").update({
+        status: "active",
+        last_scan_at: new Date().toISOString(),
+      }).eq("id", projectId);
+
+      const email = await getOwnerEmail(supabase, organizationId);
+      if (email) {
+        const { sendScanCompleteEmail } = await import("@/lib/email/reports");
+        await sendScanCompleteEmail(email, project.name, score.omnipresence_score, projectId);
+      }
+    });
+
+    return { projectId, score: score.omnipresence_score, demo: false };
+  }
+);
+
+/** Legacy monolithic scan fallback */
+export const runFullScanLegacy = inngest.createFunction(
+  { id: "run-full-scan-legacy", retries: 1, triggers: [{ event: "project/scan.legacy" }] },
+  async ({ event, step }) => {
+    const { projectId, organizationId } = event.data as { projectId: string; organizationId: string };
+    return step.run("full-scan", async () => {
       const supabase = await createServiceClient();
       const email = await getOwnerEmail(supabase, organizationId);
       return runProjectScan(supabase, projectId, { notifyEmail: email });
     });
-
-    return result;
   }
 );
 
@@ -224,4 +273,103 @@ export const weeklyReportEmail = inngest.createFunction(
   }
 );
 
-export const functions = [runFullScan, monthlyRescan, weeklyRescan, generateReport, syncAttribution, monthlyAttributionSync, weeklyReportEmail];
+export const dailyFreshnessCheck = inngest.createFunction(
+  { id: "daily-freshness-check", retries: 1, triggers: [{ cron: "0 3 * * *" }] },
+  async ({ step }) => {
+    const supabase = await createServiceClient();
+    const projects = await step.run("fetch-projects", async () => {
+      const { data } = await supabase.from("projects").select("id, domain").eq("status", "active");
+      return data || [];
+    });
+
+    let checked = 0;
+    for (const project of projects.slice(0, 20)) {
+      await step.run(`freshness-${project.id}`, async () => {
+        const findings = await analyzePassageReadiness(project.domain);
+        const stale = findings.filter((f) => f.category === "freshness" && f.severity !== "low");
+        if (stale.length > 0) {
+          await supabase.from("ops_queue").insert({
+            project_id: project.id,
+            organization_id: (await supabase.from("projects").select("organization_id").eq("id", project.id).single()).data?.organization_id,
+            action_type: "content_refresh",
+            title: `Refresh stale content on ${project.domain}`,
+            payload: { findings: stale.map((f) => f.title) },
+            risk_level: "low",
+            status: "approved",
+          });
+        }
+      });
+      checked++;
+    }
+    return { checked };
+  }
+);
+
+export const citationDiffAlert = inngest.createFunction(
+  { id: "citation-diff-alert", retries: 1, triggers: [{ cron: "0 8 * * 1" }] },
+  async ({ step }) => {
+    const supabase = await createServiceClient();
+    const projects = await step.run("fetch-projects", async () => {
+      const { data } = await supabase.from("projects").select("id, name, organization_id").eq("status", "active");
+      return data || [];
+    });
+
+    let alerted = 0;
+    for (const project of projects) {
+      const delta = await step.run(`citation-delta-${project.id}`, async () => {
+        const { data: runs } = await supabase
+          .from("visibility_runs")
+          .select("id")
+          .eq("project_id", project.id)
+          .eq("status", "completed")
+          .order("completed_at", { ascending: false })
+          .limit(2);
+
+        if (!runs || runs.length < 2) return null;
+
+        const [current, previous] = runs;
+        const { count: currentCites } = await supabase
+          .from("visibility_results")
+          .select("*", { count: "exact", head: true })
+          .eq("run_id", current.id)
+          .eq("brand_cited", true);
+
+        const { count: prevCites } = await supabase
+          .from("visibility_results")
+          .select("*", { count: "exact", head: true })
+          .eq("run_id", previous.id)
+          .eq("brand_cited", true);
+
+        return { current: currentCites || 0, previous: prevCites || 0 };
+      });
+
+      if (delta && delta.current < delta.previous) {
+        const email = await getOwnerEmail(supabase, project.organization_id);
+        if (email) {
+          await sendScoreDropAlert(
+            email,
+            project.name,
+            delta.previous,
+            delta.current,
+            project.id
+          );
+          alerted++;
+        }
+      }
+    }
+    return { alerted };
+  }
+);
+
+export const functions = [
+  runFullScan,
+  runFullScanLegacy,
+  monthlyRescan,
+  weeklyRescan,
+  generateReport,
+  syncAttribution,
+  monthlyAttributionSync,
+  weeklyReportEmail,
+  dailyFreshnessCheck,
+  citationDiffAlert,
+];

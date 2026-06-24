@@ -48,6 +48,8 @@ export async function updateSession(request: NextRequest) {
     request.nextUrl.pathname.startsWith("/api/inngest") ||
     request.nextUrl.pathname.startsWith("/api/webhooks") ||
     request.nextUrl.pathname.startsWith("/api/health") ||
+    request.nextUrl.pathname.startsWith("/api/capabilities") ||
+    request.nextUrl.pathname.startsWith("/api/track") ||
     request.nextUrl.pathname.startsWith("/report/") ||
     request.nextUrl.pathname.startsWith("/tools") ||
     request.nextUrl.pathname.startsWith("/audit") ||

@@ -14,7 +14,9 @@ export function DistributionPanel({ projectId, domain, assets }: DistributionPan
   const [indexing, setIndexing] = useState(false);
   const [indexResult, setIndexResult] = useState<Record<string, boolean> | null>(null);
   const [publishPlatform, setPublishPlatform] = useState("wordpress");
-  const [credentials, setCredentials] = useState({ url: "", apiKey: "" });
+  const [credentials, setCredentials] = useState({ url: "", apiKey: "", collectionId: "" });
+  const [socialApiKey, setSocialApiKey] = useState("");
+  const [socialBufferToken, setSocialBufferToken] = useState("");
   const [publishing, setPublishing] = useState<string | null>(null);
   const [socialText, setSocialText] = useState("");
   const [socialPlatform, setSocialPlatform] = useState<"ayrshare" | "buffer">("ayrshare");
@@ -32,7 +34,7 @@ export function DistributionPanel({ projectId, domain, assets }: DistributionPan
     const res = await fetch("/api/distribution", {
       method: "PUT",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ urls: urlList, engines: ["indexnow"], projectId }),
+      body: JSON.stringify({ urls: urlList, engines: ["indexnow", "bing"], projectId }),
     });
     const data = await res.json();
     setIndexResult(data.results);
@@ -66,7 +68,9 @@ export function DistributionPanel({ projectId, domain, assets }: DistributionPan
         text: socialText,
         projectId,
         platforms: socialPlatforms.split(",").map((p) => p.trim()).filter(Boolean),
-        credentials: {},
+        credentials: socialPlatform === "ayrshare"
+          ? { apiKey: socialApiKey }
+          : { accessToken: socialBufferToken },
       }),
     });
     const data = await res.json();
@@ -116,8 +120,13 @@ export function DistributionPanel({ projectId, domain, assets }: DistributionPan
             type="password"
             className="flex-1 bg-background border border-input rounded-lg px-3 py-2 text-sm"
           />
+          <input
+            value={credentials.collectionId}
+            onChange={(e) => setCredentials({ ...credentials, collectionId: e.target.value })}
+            placeholder="Collection/Blog ID (Webflow/Shopify)"
+            className="flex-1 bg-background border border-input rounded-lg px-3 py-2 text-sm"
+          />
         </div>
-
         <div className="space-y-2">
           {draftAssets.map((asset) => (
             <div key={asset.id} className="flex items-center justify-between bg-secondary rounded-lg p-3">
@@ -155,10 +164,28 @@ export function DistributionPanel({ projectId, domain, assets }: DistributionPan
             <option value="buffer">Buffer</option>
           </select>
           {socialPlatform === "ayrshare" && (
+            <>
+              <input
+                value={socialApiKey}
+                onChange={(e) => setSocialApiKey(e.target.value)}
+                placeholder="Ayrshare API Key (or set AYRSHARE_API_KEY env)"
+                type="password"
+                className="flex-1 bg-background border border-input rounded-lg px-3 py-2 text-sm"
+              />
+              <input
+                value={socialPlatforms}
+                onChange={(e) => setSocialPlatforms(e.target.value)}
+                placeholder="Platforms: linkedin,x,facebook"
+                className="flex-1 bg-background border border-input rounded-lg px-3 py-2 text-sm"
+              />
+            </>
+          )}
+          {socialPlatform === "buffer" && (
             <input
-              value={socialPlatforms}
-              onChange={(e) => setSocialPlatforms(e.target.value)}
-              placeholder="Platforms: linkedin,x,facebook"
+              value={socialBufferToken}
+              onChange={(e) => setSocialBufferToken(e.target.value)}
+              placeholder="Buffer Access Token"
+              type="password"
               className="flex-1 bg-background border border-input rounded-lg px-3 py-2 text-sm"
             />
           )}

@@ -1,11 +1,9 @@
 import type { PromptCategory, VisibilityEngine } from "@/types/database";
+import { preferLiveData } from "@/lib/config/capabilities";
 
+/** Demo mode is last-resort fallback when no live providers are configured. */
 export function isDemoMode(): boolean {
-  return (
-    !process.env.OPENAI_API_KEY &&
-    !process.env.DATAFORSEO_LOGIN &&
-    !process.env.PERPLEXITY_API_KEY
-  );
+  return !preferLiveData();
 }
 
 export function generateDemoPrompts(

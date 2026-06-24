@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
-import { generateOutreachEmail } from "@/lib/engines/authority-finder";
+import { generateOutreachEmail, sendOutreachEmail } from "@/lib/engines/authority-finder";
 import { verifyProjectAccess } from "@/lib/security/project-access";
 import { trackApiUsage } from "@/lib/metering/api-usage";
 import { apiError, apiForbidden, apiNotFound, apiServerError, apiUnauthorized } from "@/lib/security/api-response";
@@ -83,4 +83,37 @@ export async function PATCH(request: NextRequest) {
 
   if (error) return apiServerError("authority update failed", error);
   return NextResponse.json({ opportunity: data });
+}
+
+export async function PUT(request: NextRequest) {
+  const supabase = await createClient();
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) return apiUnauthorized();
+
+  const { opportunityId, to, subject } = await request.json();
+  if (!opportunityId || !to) return apiError("opportunityId and to required");
+
+  const { data: opportunity } = await supabase
+    .from("authority_opportunities")
+    .select("*, projects(name)")
+    .eq("id", opportunityId)
+    .single();
+
+  if (!opportunity) return apiNotFound();
+
+  const access = await verifyProjectAccess(supabase, opportunity.project_id, user.id, "admin");
+  if (!access) return apiForbidden();
+
+  const body = opportunity.outreach_email || "";
+  const emailSubject = subject || `Partnership opportunity — ${(opportunity.projects as { name: string })?.name}`;
+  const sent = await sendOutreachEmail(to, emailSubject, body);
+
+  if (sent.success) {
+    await supabase
+      .from("authority_opportunities")
+      .update({ status: "pitched", contact_email: to })
+      .eq("id", opportunityId);
+  }
+
+  return NextResponse.json(sent);
 }
