@@ -9,6 +9,8 @@
     "lint": "next lint",
     "typecheck": "tsc --noEmit",
     "smoke": "node scripts/smoke-test.mjs",
+    "check:env": "node scripts/check-env.mjs",
+    "verify:prod": "node scripts/verify-production.mjs",
     "db:combine": "node scripts/combine-migrations.mjs"
   },
   "dependencies": {

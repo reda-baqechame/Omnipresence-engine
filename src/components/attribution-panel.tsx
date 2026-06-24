@@ -237,6 +237,23 @@ export function AttributionPanel({
           </div>
         </div>
       )}
+
+      <div className="bg-card border border-border rounded-xl p-6 mt-8">
+        <h3 className="font-semibold mb-2">AI Referral Tracking (v2)</h3>
+        <p className="text-sm text-muted-foreground mb-3">
+          Add this snippet to <strong>{domain}</strong> to detect traffic from ChatGPT, Perplexity, Copilot, and Gemini.
+        </p>
+        <pre className="text-xs bg-secondary p-4 rounded-lg overflow-x-auto">{`<script>
+(function(){
+  var r=document.referrer;if(!r)return;
+  fetch("${process.env.NEXT_PUBLIC_APP_URL || "https://omnipresence-engine.vercel.app"}/api/track",{
+    method:"POST",
+    headers:{"Content-Type":"application/json"},
+    body:JSON.stringify({projectId:"${projectId}",referrer:r,path:location.pathname})
+  }).catch(function(){});
+})();
+</script>`}</pre>
+      </div>
     </div>
   );
 }

@@ -17,6 +17,10 @@ export default function SettingsPage() {
           <h3 className="font-semibold">API Usage</h3>
           <p className="text-sm text-muted-foreground">Monitor API credits and usage by provider</p>
         </Link>
+        <Link href="/app/settings/setup" className="block bg-card border border-border rounded-xl p-4 hover:border-primary/50 transition">
+          <h3 className="font-semibold">Production Setup</h3>
+          <p className="text-sm text-muted-foreground">Checklist: Supabase, live data, Inngest, OAuth</p>
+        </Link>
         <Link href="/app/settings/capabilities" className="block bg-card border border-border rounded-xl p-4 hover:border-primary/50 transition">
           <h3 className="font-semibold">Live Providers</h3>
           <p className="text-sm text-muted-foreground">Check which AI/data/social providers are connected</p>
