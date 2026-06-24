@@ -18,6 +18,7 @@ In the Supabase SQL editor, run migrations **in order**:
 supabase/migrations/0001_init.sql
 ...
 supabase/migrations/0008_free_access.sql
+supabase/migrations/0009_v2_real_results.sql   # v2: results ledger, citation sources, ops queue
 ```
 
 Or run the combined file in one shot (regenerate with `npm run db:combine`):
@@ -66,6 +67,13 @@ Copy from `.env.example`. Minimum for a working deploy:
 | `OAUTH_STATE_SECRET` | Random 32+ character string |
 
 For full functionality, also set: `INNGEST_*`, `RESEND_*`, AI provider keys, `DATAFORSEO_*`, `PERPLEXITY_API_KEY`, `FIRECRAWL_API_KEY`.
+
+**v2 live data (real AI citations)** — set at minimum:
+- `DATAFORSEO_LOGIN` + `DATAFORSEO_PASSWORD` (enables LLM Mentions API)
+- `OPENAI_API_KEY` and/or `PERPLEXITY_API_KEY`
+- `INNGEST_EVENT_KEY` + `INNGEST_SIGNING_KEY` (step-based scans + daily/weekly agents)
+
+Verify after deploy: `GET /api/health` should show `version: "0.2.0"` and `GET /api/capabilities` lists configured providers.
 
 **Free access mode** (default): `FREE_ACCESS_MODE=true` unlocks all features with no billing. Stripe keys are optional.
 
