@@ -4,24 +4,23 @@ import path from "path";
 import { fileURLToPath } from "url";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const conn =
-  process.env.DATABASE_URL ||
+const raw = process.env.DATABASE_URL ||
   process.env.POSTGRES_URL_NON_POOLING ||
   process.env.POSTGRES_URL;
-
-if (!conn) {
+if (!raw) {
   console.error("Set DATABASE_URL or POSTGRES_URL");
   process.exit(1);
 }
+const conn = raw.replace(/sslmode=[^&]+/, "sslmode=no-verify").includes("sslmode=")
+  ? raw.replace(/sslmode=[^&]+/, "sslmode=no-verify")
+  : `${raw}${raw.includes("?") ? "&" : "?"}sslmode=no-verify`;
 
 const sql = fs.readFileSync(
   path.join(__dirname, "../supabase/migrations/combined.sql"),
   "utf8"
 );
 
-const client = new pg.Client({
-  connectionString: conn.includes("sslmode=") ? conn : `${conn}${conn.includes("?") ? "&" : "?"}sslmode=no-verify`,
-});
+const client = new pg.Client({ connectionString: conn });
 
 try {
   await client.connect();

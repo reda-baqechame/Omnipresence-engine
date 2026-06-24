@@ -1,9 +1,10 @@
 import pg from "pg";
 
-const conn = process.env.POSTGRES_URL_NON_POOLING;
-const client = new pg.Client({
-  connectionString: conn.includes("sslmode=") ? conn : `${conn}?sslmode=no-verify`,
-});
+const raw = process.env.POSTGRES_URL_NON_POOLING;
+const conn = raw.replace(/sslmode=[^&]+/, "sslmode=no-verify").includes("sslmode=")
+  ? raw.replace(/sslmode=[^&]+/, "sslmode=no-verify")
+  : `${raw}?sslmode=no-verify`;
+const client = new pg.Client({ connectionString: conn });
 await client.connect();
 
 const users = await client.query(
