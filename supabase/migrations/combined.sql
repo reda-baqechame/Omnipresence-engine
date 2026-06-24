@@ -1,5 +1,5 @@
--- PresenceOS combined migration (9 files)
--- Generated 2026-06-24T22:16:47.033Z
+-- PresenceOS combined migration (10 files)
+-- Generated 2026-06-24T22:42:56.185Z
 
 -- ========== 0001_init.sql ==========
 
@@ -751,5 +751,31 @@ CREATE POLICY citation_sources_access ON citation_sources FOR ALL
 
 CREATE POLICY ops_queue_access ON ops_queue FOR ALL
   USING (organization_id IN (SELECT get_user_org_ids()));
+
+
+-- ========== 0010_auth_signup_fix.sql ==========
+
+-- Fix signup when profiles RLS blocks handle_new_user trigger inserts
+
+DO $$ BEGIN
+  CREATE POLICY profiles_insert ON profiles FOR INSERT WITH CHECK (id = auth.uid());
+EXCEPTION WHEN duplicate_object THEN NULL;
+END $$;
+
+CREATE OR REPLACE FUNCTION public.handle_new_user()
+RETURNS trigger
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+AS $function$
+BEGIN
+  INSERT INTO public.profiles (id, email, full_name)
+  VALUES (NEW.id, NEW.email, NEW.raw_user_meta_data->>'full_name')
+  ON CONFLICT (id) DO UPDATE SET
+    email = EXCLUDED.email,
+    full_name = COALESCE(EXCLUDED.full_name, profiles.full_name);
+  RETURN NEW;
+END;
+$function$;
 
 

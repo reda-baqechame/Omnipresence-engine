@@ -11,6 +11,8 @@
     "smoke": "node scripts/smoke-test.mjs",
     "check:env": "node scripts/check-env.mjs",
     "verify:prod": "node scripts/verify-production.mjs",
+    "db:migrate": "node scripts/run-migration.mjs",
+    "db:configure-auth": "node scripts/configure-supabase-auth.mjs",
     "db:combine": "node scripts/combine-migrations.mjs"
   },
   "dependencies": {
