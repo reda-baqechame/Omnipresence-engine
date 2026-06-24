@@ -22,6 +22,7 @@ supabase/migrations/0004_rls_hardening.sql
 supabase/migrations/0005_webhook_events.sql
 supabase/migrations/0006_storage_reports.sql
 supabase/migrations/0007_directory_submissions.sql
+supabase/migrations/0008_free_access.sql
 ```
 
 ### Auth configuration
