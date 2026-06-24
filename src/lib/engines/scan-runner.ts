@@ -1,0 +1,228 @@
+import type { SupabaseClient } from "@supabase/supabase-js";
+import { runTechnicalAudit } from "@/lib/engines/technical-audit";
+import { extractBrandProfile } from "@/lib/engines/brand-extraction";
+import { generatePromptUniverse } from "@/lib/engines/prompt-generator";
+import { runVisibilityScan } from "@/lib/engines/visibility-scanner";
+import { checkPlatformCoverage } from "@/lib/engines/coverage-checker";
+import { findAuthorityOpportunities } from "@/lib/engines/authority-finder";
+import { generateRoadmap } from "@/lib/engines/roadmap-generator";
+import { calculateOmniPresenceScore } from "@/lib/scoring/omnipresence";
+import { sendScanCompleteEmail, sendScoreDropAlert } from "@/lib/email/reports";
+import { trackApiUsage } from "@/lib/metering/api-usage";
+import {
+  getPromptGenerationLimit,
+  getVisibilityScanPromptLimit,
+} from "@/lib/plans/limits";
+import {
+  isDemoMode,
+  generateDemoPrompts,
+  generateDemoVisibilityResults,
+  generateDemoBrandProfile,
+  generateDemoAuthorityOpportunities,
+} from "@/lib/demo/scan-data";
+import type {
+  Project,
+  TechnicalFinding,
+  CoverageItem,
+  AuthorityOpportunity,
+  VisibilityResult,
+} from "@/types/database";
+
+function toTechnicalFinding(
+  f: Awaited<ReturnType<typeof runTechnicalAudit>>[number],
+  projectId: string
+): TechnicalFinding {
+  return { ...f, project_id: projectId, is_resolved: false, id: "", created_at: "" };
+}
+
+export interface ScanResult {
+  projectId: string;
+  score: number;
+  demo: boolean;
+}
+
+export async function runProjectScan(
+  supabase: SupabaseClient,
+  projectId: string,
+  options?: { notifyEmail?: string }
+): Promise<ScanResult> {
+  const { data: project } = await supabase.from("projects").select("*").eq("id", projectId).single();
+  if (!project) throw new Error("Project not found");
+
+  const p = project as Project;
+  const demo = isDemoMode();
+  const promptCount = getPromptGenerationLimit();
+  const maxScanPrompts = getVisibilityScanPromptLimit();
+
+  await supabase.from("projects").update({ status: "scanning" }).eq("id", projectId);
+
+  const technicalFindings = await runTechnicalAudit(p.domain);
+  const findingRows = technicalFindings.map((f) => ({ ...f, project_id: projectId }));
+  await supabase.from("technical_findings").delete().eq("project_id", projectId);
+  if (findingRows.length > 0) await supabase.from("technical_findings").insert(findingRows);
+
+  const brandProfile = demo
+    ? generateDemoBrandProfile(p.name, p.industry || "business")
+    : await extractBrandProfile(p.domain, p.name, p.industry);
+
+  await supabase.from("brand_profiles").upsert(
+    { project_id: projectId, ...brandProfile },
+    { onConflict: "project_id" }
+  );
+
+  const services = (brandProfile.products_services || []).map((s) => s.name);
+  const prompts = demo
+    ? generateDemoPrompts(projectId, p.name, p.industry || "", p.location || "", p.competitors || [])
+    : await generatePromptUniverse(
+        projectId,
+        p.name,
+        p.industry || "",
+        p.location || "",
+        p.competitors || [],
+        p.target_buyer || "",
+        services,
+        promptCount
+      );
+
+  await supabase.from("prompts").delete().eq("project_id", projectId);
+  if (prompts.length > 0) await supabase.from("prompts").insert(prompts);
+
+  const { data: run } = await supabase
+    .from("visibility_runs")
+    .insert({
+      project_id: projectId,
+      status: "running",
+      engines: ["chatgpt", "perplexity", "gemini", "google_organic"],
+      prompt_count: prompts.length,
+      started_at: new Date().toISOString(),
+    })
+    .select()
+    .single();
+
+  const visibilityResults = demo
+    ? generateDemoVisibilityResults(
+        projectId,
+        run!.id,
+        p.name,
+        p.domain,
+        p.competitors || [],
+        prompts.map((pr) => ({ text: pr.text }))
+      )
+    : await runVisibilityScan({
+        projectId,
+        runId: run!.id,
+        brandName: p.name,
+        brandDomain: p.domain,
+        competitors: p.competitors || [],
+        location: p.location || "United States",
+        prompts: prompts.map((pr) => ({ text: pr.text, priority: pr.priority })),
+        maxPrompts: maxScanPrompts,
+      });
+
+  if (visibilityResults.length > 0) {
+    await supabase.from("visibility_results").insert(visibilityResults as never[]);
+  }
+  await supabase
+    .from("visibility_runs")
+    .update({ status: "completed", completed_at: new Date().toISOString() })
+    .eq("id", run!.id);
+
+  const coverageItems = await checkPlatformCoverage(
+    projectId,
+    p.name,
+    p.domain,
+    p.competitors || []
+  );
+  await supabase.from("coverage_items").delete().eq("project_id", projectId);
+  if (coverageItems.length > 0) await supabase.from("coverage_items").insert(coverageItems);
+
+  const authorityOpportunities = demo
+    ? generateDemoAuthorityOpportunities(projectId, p.industry || "", p.competitors || [])
+    : await findAuthorityOpportunities(
+        projectId,
+        p.name,
+        p.domain,
+        p.industry || "",
+        p.competitors || []
+      );
+
+  await supabase.from("authority_opportunities").delete().eq("project_id", projectId);
+  if (authorityOpportunities.length > 0) {
+    await supabase.from("authority_opportunities").insert(authorityOpportunities as never[]);
+  }
+
+  const score = calculateOmniPresenceScore({
+    visibilityResults: visibilityResults as VisibilityResult[],
+    technicalFindings: technicalFindings.map((f) => toTechnicalFinding(f, projectId)),
+    coverageItems: coverageItems as CoverageItem[],
+    authorityOpportunities: authorityOpportunities as AuthorityOpportunity[],
+    hasConversionTracking: false,
+    hasGbp: coverageItems.some((c) => c.surface === "google_business" && c.is_present),
+    monthlyTraffic: p.current_monthly_traffic ?? undefined,
+  });
+
+  const { data: previousScores } = await supabase
+    .from("scores")
+    .select("omnipresence_score")
+    .eq("project_id", projectId)
+    .order("created_at", { ascending: false })
+    .limit(1);
+
+  const previousScore = previousScores?.[0]?.omnipresence_score;
+
+  await supabase.from("scores").insert({ project_id: projectId, ...score });
+
+  const roadmap = await generateRoadmap(
+    projectId,
+    p.name,
+    p.domain,
+    p.industry || "",
+    p.location || "",
+    technicalFindings.map((f) => toTechnicalFinding(f, projectId)),
+    coverageItems.filter((c) => !c.is_present) as CoverageItem[],
+    authorityOpportunities as AuthorityOpportunity[]
+  );
+
+  await supabase.from("roadmaps").delete().eq("project_id", projectId);
+  await supabase.from("roadmaps").insert(roadmap);
+
+  await supabase.from("projects").update({
+    status: "active",
+    last_scan_at: new Date().toISOString(),
+  }).eq("id", projectId);
+
+  if (options?.notifyEmail) {
+    await sendScanCompleteEmail(options.notifyEmail, p.name, score.omnipresence_score, projectId);
+
+    if (previousScore !== undefined && previousScore > score.omnipresence_score) {
+      await sendScoreDropAlert(
+        options.notifyEmail,
+        p.name,
+        previousScore,
+        score.omnipresence_score,
+        projectId
+      );
+    }
+  }
+
+  if (!demo && p.organization_id) {
+    const credits = Math.max(visibilityResults.length, prompts.length, 10);
+    await trackApiUsage(supabase, p.organization_id, "presenceos", "full_scan", credits);
+  }
+
+  return { projectId, score: score.omnipresence_score, demo };
+}
+
+export async function getOwnerEmail(
+  supabase: SupabaseClient,
+  organizationId: string
+): Promise<string | undefined> {
+  const { data: org } = await supabase
+    .from("organizations")
+    .select("memberships(profiles(email))")
+    .eq("id", organizationId)
+    .single();
+
+  const memberships = (org as unknown as { memberships?: Array<{ profiles?: { email: string } }> })?.memberships;
+  return memberships?.[0]?.profiles?.email;
+}

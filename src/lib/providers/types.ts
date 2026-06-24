@@ -1,0 +1,51 @@
+export interface ProviderResult<T> {
+  success: boolean;
+  data?: T;
+  error?: string;
+  creditsUsed?: number;
+}
+
+export interface AIVisibilityResult {
+  brandMentioned: boolean;
+  brandCited: boolean;
+  competitorMentions: Record<string, boolean>;
+  competitorCitations: Record<string, boolean>;
+  sourceDomains: string[];
+  citedUrls: string[];
+  rawResponse: string;
+}
+
+export interface SERPResult {
+  organicResults: Array<{ title: string; url: string; position: number }>;
+  aiOverview?: {
+    present: boolean;
+    text?: string;
+    citedUrls: string[];
+    citedDomains: string[];
+  };
+  brandInResults: boolean;
+  competitorInResults: Record<string, boolean>;
+}
+
+export interface CrawlResult {
+  url: string;
+  title?: string;
+  metaDescription?: string;
+  canonical?: string;
+  schemaTypes: string[];
+  schemaJson: unknown[];
+  headings: Array<{ level: number; text: string }>;
+  images: Array<{ src: string; alt?: string }>;
+  internalLinks: string[];
+  externalLinks: string[];
+  wordCount: number;
+  hasNoindex: boolean;
+  statusCode: number;
+}
+
+export interface SearchResult {
+  title: string;
+  url: string;
+  snippet: string;
+  domain: string;
+}

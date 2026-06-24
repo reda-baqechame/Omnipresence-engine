@@ -1,0 +1,62 @@
+import { NextRequest, NextResponse } from "next/server";
+import { createClient } from "@/lib/supabase/server";
+import { triggerProjectScan } from "@/lib/engines/trigger-scan";
+import { assertPublicDomain, DomainValidationError } from "@/lib/security/domain";
+import { apiError, apiForbidden, apiNotFound, apiServerError, apiUnauthorized } from "@/lib/security/api-response";
+
+export async function POST(request: NextRequest) {
+  const supabase = await createClient();
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) return apiUnauthorized();
+
+  const { leadId } = await request.json();
+  if (!leadId) return apiError("leadId required");
+
+  const { data: membership } = await supabase
+    .from("memberships")
+    .select("organization_id, role")
+    .eq("user_id", user.id)
+    .limit(1)
+    .single();
+
+  if (!membership) return apiError("No organization found");
+  if (!["owner", "admin", "member"].includes(membership.role)) {
+    return apiForbidden();
+  }
+
+  const { data: lead } = await supabase
+    .from("audit_leads")
+    .select("*")
+    .eq("id", leadId)
+    .single();
+
+  if (!lead) return apiNotFound();
+
+  let domain: string;
+  try {
+    domain = assertPublicDomain(lead.domain);
+  } catch (error) {
+    if (error instanceof DomainValidationError) return apiError(error.message);
+    return apiError("Invalid domain on lead");
+  }
+
+  const name = lead.brand_name || domain.split(".")[0];
+
+  const { data: project, error } = await supabase
+    .from("projects")
+    .insert({
+      organization_id: membership.organization_id,
+      name: String(name).slice(0, 120),
+      domain,
+      industry: lead.industry ? String(lead.industry).slice(0, 80) : null,
+      status: "scanning",
+    })
+    .select()
+    .single();
+
+  if (error) return apiServerError("project create failed", error);
+
+  await triggerProjectScan(project.id, membership.organization_id);
+
+  return NextResponse.json({ project, leadEmail: lead.email });
+}
