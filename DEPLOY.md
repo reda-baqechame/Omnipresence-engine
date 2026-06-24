@@ -16,13 +16,14 @@ In the Supabase SQL editor, run migrations **in order**:
 
 ```
 supabase/migrations/0001_init.sql
-supabase/migrations/0002_audit_leads.sql
-supabase/migrations/0003_org_notifications.sql
-supabase/migrations/0004_rls_hardening.sql
-supabase/migrations/0005_webhook_events.sql
-supabase/migrations/0006_storage_reports.sql
-supabase/migrations/0007_directory_submissions.sql
+...
 supabase/migrations/0008_free_access.sql
+```
+
+Or run the combined file in one shot (regenerate with `npm run db:combine`):
+
+```
+supabase/migrations/combined.sql
 ```
 
 ### Auth configuration
@@ -49,6 +50,8 @@ vercel --prod
 ```
 
 Or import the GitHub repo in the Vercel dashboard.
+
+**Live production:** [https://omnipresence-engine.vercel.app](https://omnipresence-engine.vercel.app) (GitHub-connected; set env vars below for full functionality).
 
 ### Required environment variables
 
@@ -86,7 +89,7 @@ For full functionality, also set: `INNGEST_*`, `RESEND_*`, AI provider keys, `DA
 
 Cron jobs registered:
 - **Monthly rescan** — 1st of month
-- **Weekly rescan** — Mondays (paid plans)
+- **Weekly rescan** — Mondays (all active projects in free access mode)
 - **Weekly email report** — Fridays 9:00 UTC
 - **Monthly attribution sync** — 2nd of month
 
@@ -115,13 +118,15 @@ Health check: `GET /api/health` — returns `status: "healthy"` when Supabase is
 - [ ] Create project → scan completes (demo or live)
 - [ ] Generate report → PDF downloads
 - [ ] Public audit at `/audit` captures leads
-- [ ] Stripe checkout upgrades plan
 - [ ] Inngest functions visible in dashboard
+
+(Billing/Stripe checkout is disabled while `FREE_ACCESS_MODE=true`.)
 
 ## Troubleshooting
 
 | Issue | Fix |
 |-------|-----|
+| All routes return 500 | Set `NEXT_PUBLIC_SUPABASE_URL` and `NEXT_PUBLIC_SUPABASE_ANON_KEY` on Vercel |
 | Health shows `supabase: error` | Check `SUPABASE_SERVICE_ROLE_KEY` and migrations |
 | Scans stuck on "scanning" | Set `INNGEST_EVENT_KEY` or rely on sync fallback (`after()`) |
 | OAuth fails | Set `OAUTH_STATE_SECRET` and verify redirect URI |
