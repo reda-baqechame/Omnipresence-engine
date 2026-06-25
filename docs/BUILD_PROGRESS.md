@@ -1,5 +1,7 @@
 # OmniPresence Super Engine — Build Progress
 
+## Phase 1 (complete)
+
 | Date | Task | Status | Notes |
 |------|------|--------|-------|
 | 2026-06-24 | build-loop | done | SKILL + manifest + verify:all |
@@ -16,4 +18,21 @@
 | 2026-06-24 | security | done | HMAC engine auth + SSRF guards |
 | 2026-06-24 | tests-prod | done | omnidata tests + OMNIDATA_DEPLOY.md |
 
-**All manifest tasks complete.**
+## Phase 2 (in progress)
+
+| Date | Task | Status | Notes |
+|------|------|--------|-------|
+| 2026-06-25 | phase2-spec | done | OMNIPRESENCE_PHASE2_SPEC + WIRING_GUIDE |
+| 2026-06-25 | pseo-engine | done | Matrix expansion + API + pSEO tab |
+| 2026-06-25 | rank-tracker-ui | done | OmniData rank check + Rankings tab |
+| 2026-06-25 | internal-linking | done | PageRank opportunities + tab |
+| 2026-06-25 | omnidata-redis-store | done | Dual-write store + ioredis |
+| 2026-06-25 | guarantee-cron | done | Daily verify + window_days enforcement |
+| 2026-06-25 | llms-txt-pro | done | Sitemap-driven llms.txt |
+| 2026-06-25 | phase2-ui | done | pSEO, Rankings, Internal Links tabs |
+| — | public-audit-live | pending | Live visibility when keys set |
+| — | on-page-queue | pending | Ops queue from technical findings |
+| — | omnidata-keywords-volume | pending | SERP-based volume estimates |
+| — | trend-discovery | pending | Google Trends RSS |
+| — | backlink-monitor | pending | New/lost link diff |
+| — | publish-scheduler | pending | Scheduled CMS publish |

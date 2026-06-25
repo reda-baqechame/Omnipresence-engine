@@ -100,6 +100,13 @@ export async function verifyGuaranteeContract(
 
   if (!contract || !contract.baseline_locked_at) return null;
 
+  const windowDays = Number(contract.window_days ?? 90);
+  const baselineAt = new Date(contract.baseline_locked_at).getTime();
+  const windowEnd = baselineAt + windowDays * 24 * 60 * 60 * 1000;
+  if (Date.now() < windowEnd) {
+    return { contract: contract as GuaranteeContract, failed: false };
+  }
+
   const evaluation = evaluateGuaranteeFailure(contract as GuaranteeContract, currentMetrics);
   const status = evaluation.failed ? "failed" : "verified";
 

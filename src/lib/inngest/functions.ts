@@ -13,6 +13,8 @@ import { gatherReportData, saveReportArtifacts } from "@/lib/engines/report-buil
 import { syncProjectAttribution } from "@/lib/engines/attribution-sync";
 import { sendWeeklyReport } from "@/lib/email/reports";
 import { sendSlackWebhook, buildWeeklyReportSlackMessage } from "@/lib/notifications/slack";
+import { verifyGuaranteeContract } from "@/lib/engines/guarantee";
+import { runAllRankChecks } from "@/lib/engines/rank-tracker-service";
 import type { Project } from "@/types/database";
 
 export const runFullScan = inngest.createFunction(
@@ -361,6 +363,85 @@ export const citationDiffAlert = inngest.createFunction(
   }
 );
 
+export const guaranteeVerificationCron = inngest.createFunction(
+  { id: "guarantee-verification-cron", retries: 1, triggers: [{ cron: "0 4 * * *" }] },
+  async ({ step }) => {
+    const supabase = await createServiceClient();
+
+    const contracts = await step.run("fetch-active-contracts", async () => {
+      const { data } = await supabase
+        .from("guarantee_contracts")
+        .select("project_id, window_days, baseline_locked_at")
+        .eq("status", "active")
+        .not("baseline_locked_at", "is", null);
+      return data || [];
+    });
+
+    let verified = 0;
+    for (const contract of contracts) {
+      const windowDays = Number(contract.window_days ?? 90);
+      const end = new Date(contract.baseline_locked_at!).getTime() + windowDays * 86400000;
+      if (Date.now() < end) continue;
+
+      await step.run(`verify-${contract.project_id}`, async () => {
+        const { data: score } = await supabase
+          .from("scores")
+          .select("omnipresence_score, ai_visibility, breakdown")
+          .eq("project_id", contract.project_id)
+          .order("created_at", { ascending: false })
+          .limit(1)
+          .single();
+
+        const { count: aiReferrals } = await supabase
+          .from("ai_referrals")
+          .select("*", { count: "exact", head: true })
+          .eq("project_id", contract.project_id);
+
+        const breakdown = (score?.breakdown || {}) as Record<string, number>;
+        const metrics: Record<string, number> = {
+          omnipresence_score: Number(score?.omnipresence_score ?? 0),
+          citation_rate: Number(breakdown.citation_rate ?? 0),
+          visibility_mention_rate: Number(breakdown.mention_rate ?? score?.ai_visibility ?? 0) / 100,
+          ai_referral_traffic: aiReferrals ?? 0,
+        };
+
+        await verifyGuaranteeContract(supabase, contract.project_id, metrics);
+      });
+      verified++;
+    }
+
+    return { verified };
+  }
+);
+
+export const weeklyRankCheck = inngest.createFunction(
+  { id: "weekly-rank-check", retries: 1, triggers: [{ cron: "0 5 * * 2" }] },
+  async ({ step }) => {
+    const supabase = await createServiceClient();
+
+    const projects = await step.run("fetch-projects-with-keywords", async () => {
+      const { data: keywords } = await supabase.from("rank_keywords").select("project_id");
+      const ids = [...new Set((keywords || []).map((k) => k.project_id))];
+      const { data: projects } = await supabase
+        .from("projects")
+        .select("id, domain")
+        .in("id", ids.length ? ids : ["00000000-0000-0000-0000-000000000000"]);
+      return projects || [];
+    });
+
+    let checked = 0;
+    for (const project of projects) {
+      await step.run(`ranks-${project.id}`, async () => {
+        const results = await runAllRankChecks(supabase, project.id, project.domain);
+        return results.length;
+      });
+      checked++;
+    }
+
+    return { checked };
+  }
+);
+
 export const functions = [
   runFullScan,
   runFullScanLegacy,
@@ -372,4 +453,6 @@ export const functions = [
   weeklyReportEmail,
   dailyFreshnessCheck,
   citationDiffAlert,
+  guaranteeVerificationCron,
+  weeklyRankCheck,
 ];

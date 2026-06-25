@@ -52,3 +52,7 @@ Or use Cursor `/loop 30m` with prompt:
 ## Completion
 
 When all tasks are `done`, run full `npm run verify:all` + `npm run wire:diy` and report summary.
+
+## Phase 2 manifest (v2.0.0)
+
+Phase 1 tasks remain `done`. Phase 2 tasks start at `phase2-spec`. Continue picking first `pending` task until the full v2 manifest is complete. See `docs/OMNIPRESENCE_PHASE2_SPEC.md` for wave priorities.

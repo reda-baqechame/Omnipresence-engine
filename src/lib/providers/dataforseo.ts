@@ -479,3 +479,52 @@ export async function resolveCompetitorDomain(
     return null;
   }
 }
+
+export async function checkRankPosition(
+  keyword: string,
+  domain: string,
+  location = "United States"
+): Promise<
+  ProviderResult<{
+    position: number | null;
+    url?: string;
+    serp_features: string[];
+    striking_distance: boolean;
+  }>
+> {
+  try {
+    const cleanDomain = domain.replace(/^https?:\/\//, "").replace(/^www\./, "").split("/")[0];
+    const data = await dataForSEORequest<{
+      tasks: Array<{
+        result: Array<{
+          snapshot?: {
+            position: number | null;
+            url?: string;
+            serp_features?: string[];
+          };
+          striking_distance?: boolean;
+        }>;
+      }>;
+    }>("/rank_tracker/check/live", [
+      { keyword, domain: cleanDomain, location_name: location },
+    ]);
+
+    const result = data.tasks?.[0]?.result?.[0];
+    const snapshot = result?.snapshot;
+    return {
+      success: true,
+      data: {
+        position: snapshot?.position ?? null,
+        url: snapshot?.url,
+        serp_features: snapshot?.serp_features || [],
+        striking_distance: result?.striking_distance ?? false,
+      },
+      creditsUsed: 1,
+    };
+  } catch (error) {
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : "Rank check failed",
+    };
+  }
+}

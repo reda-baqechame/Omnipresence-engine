@@ -134,7 +134,7 @@ export async function runSiteCrawl(
         url: p.url,
         status: p.status,
         title: p.title,
-        links: [],
+        links: p.links || [],
         simhash: p.simhash,
         pagerank: p.pagerank,
       })),

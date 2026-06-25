@@ -1,0 +1,80 @@
+# OmniPresence — Wiring Guide
+
+What the platform **automates** vs what **you must create and connect manually**.
+
+## Fully automated (once env vars are set)
+
+| Integration | Env vars | What it does |
+|-------------|----------|--------------|
+| OmniData engine | `OMNIDATA_BASE_URL`, `OMNIDATA_API_KEY`, `OMNIDATA_SIGNING_SECRET` | SERP, rank, backlinks, crawl — replaces DataForSEO |
+| DIY SERP stack | `SERPER_API_KEY`, `BRAVE_SEARCH_API_KEY`, `BING_SEARCH_API_KEY` | Fallback SERP when OmniData unavailable |
+| AI visibility | `OPENAI_API_KEY`, `ANTHROPIC_API_KEY`, `GOOGLE_GENERATIVE_AI_API_KEY`, `PERPLEXITY_API_KEY` | Multi-engine visibility scans |
+| Site scrape | `FIRECRAWL_API_KEY` | Schema tool, brand extraction |
+| Email | `RESEND_API_KEY`, `RESEND_FROM_EMAIL` | Audit leads, weekly reports |
+| Jobs | `INNGEST_EVENT_KEY`, `INNGEST_SIGNING_KEY` | Scans, rescans, guarantee verify |
+| Payments | `STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET`, price IDs | Subscriptions + guarantee credits |
+| App URL | `NEXT_PUBLIC_APP_URL` | Links in emails/reports |
+
+## OAuth — you create the app, we handle the flow
+
+| Provider | You create | Env vars | Console URL |
+|----------|-----------|----------|-------------|
+| Google (GSC + GA4) | OAuth client | `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET` | https://console.cloud.google.com/apis/credentials |
+| Bing Webmaster | App registration | `BING_CLIENT_ID`, `BING_CLIENT_SECRET` | https://www.bing.com/webmasters/ |
+| Supabase Auth | Project | `NEXT_PUBLIC_SUPABASE_URL`, keys | https://supabase.com/dashboard |
+
+Redirect URIs must include: `{NEXT_PUBLIC_APP_URL}/api/oauth/callback`
+
+## Manual paste in UI (no OAuth yet)
+
+| Feature | What to paste | Where to get it |
+|---------|--------------|-----------------|
+| Google Business Profile | Account ID, Location ID, OAuth token | Google Business Profile API |
+| WordPress | Site URL, app password | WP Admin → Users → Application Passwords |
+| Webflow | API token, collection ID | Webflow project settings |
+| Shopify | Store URL, access token | Shopify Admin → Apps |
+| Buffer | Access token, channel IDs | https://buffer.com/developers/api |
+| Ayrshare | API key, profile key | https://www.ayrshare.com/docs |
+| Slack alerts | Incoming webhook URL | Slack app → Incoming Webhooks |
+
+## Infrastructure you deploy
+
+```bash
+# OmniData on VPS (recommended for production SERP volume)
+cd services/omnidata
+docker compose up -d
+# Set OMNIDATA_BASE_URL=https://your-vps:8787 in Vercel
+
+# Database migrations
+npm run db:migrate
+```
+
+## Recommended API budget (monthly)
+
+| Service | Est. cost | Purpose |
+|---------|-----------|---------|
+| Serper | $50–200 | SERP + AI Overview parsing |
+| OpenAI | $100–500 | Visibility + content |
+| Firecrawl | $20–100 | Crawl/schema |
+| VPS for OmniData | $20–40 | Unlimited internal SERP routing |
+| **Total DIY stack** | **~$200–800** | vs DataForSEO $500–2000+ |
+
+## Quick start checklist
+
+- [ ] Supabase project + run `npm run db:migrate`
+- [ ] Copy `.env.example` → `.env.local`, fill required keys
+- [ ] `npm run dev` — create org + project, run first scan
+- [ ] Deploy OmniData: `docs/OMNIDATA_DEPLOY.md`
+- [ ] Set `OMNIDATA_BASE_URL` in production
+- [ ] Connect Stripe webhook to `/api/webhooks/stripe`
+- [ ] Register Inngest app pointing to `/api/inngest`
+- [ ] Add Serper + OpenAI keys minimum for live results
+- [ ] Connect GSC OAuth for attribution (optional but recommended)
+
+## What still needs your action after Phase 2
+
+1. **GBP OAuth** — currently manual token paste; OAuth flow is Wave B
+2. **Directory auto-submit** — G2/Yelp APIs require partner access; we track submissions manually
+3. **LinkedIn native API** — use Buffer/Ayrshare instead
+4. **HARO/journalist DB** — no free API; authority finder uses SERP heuristics
+5. **Google Ads keyword volume** — needs Google Ads API developer token (Wave C)

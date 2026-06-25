@@ -42,4 +42,7 @@ export type Events = {
   "project/attribution.sync": {
     data: { projectId: string };
   };
+  "project/ranks.check": {
+    data: { projectId: string };
+  };
 };

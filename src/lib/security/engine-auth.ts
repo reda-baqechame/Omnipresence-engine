@@ -30,7 +30,7 @@ export async function crawlViaOmniData(
   url: string,
   maxPages = 25
 ): Promise<{
-  pages: Array<{ url: string; status: number; title?: string; pagerank: number; simhash: string }>;
+  pages: Array<{ url: string; status: number; title?: string; pagerank: number; simhash: string; links?: string[] }>;
   duplicate_clusters: Array<{ simhash: string; urls: string[] }>;
 } | null> {
   const base = process.env.OMNIDATA_BASE_URL?.replace(/\/$/, "");
@@ -51,7 +51,7 @@ export async function crawlViaOmniData(
   const result = data.tasks?.[0]?.result?.[0];
   if (!result) return null;
   return result as {
-    pages: Array<{ url: string; status: number; title?: string; pagerank: number; simhash: string }>;
+    pages: Array<{ url: string; status: number; title?: string; pagerank: number; simhash: string; links?: string[] }>;
     duplicate_clusters: Array<{ simhash: string; urls: string[] }>;
   };
 }

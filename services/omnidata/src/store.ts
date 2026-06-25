@@ -1,4 +1,12 @@
 import type { TaskRecord } from "./types.js";
+import {
+  redisCreateTask,
+  redisGetTask,
+  redisListReadyTasks,
+  redisSaveTask,
+  redisAppendRankHistory,
+  redisGetRankHistory,
+} from "./store-redis.js";
 
 const tasks = new Map<string, TaskRecord>();
 const rankHistory = new Map<string, Array<{ checked_at: string; position: number | null; features: string[] }>>();
@@ -14,22 +22,58 @@ export function createTask(tag: string, endpoint: string, payload: unknown): Tas
     created_at: new Date().toISOString(),
   };
   tasks.set(id, record);
+  void redisSaveTask(record).catch(() => {});
   return record;
+}
+
+export async function createTaskPersistent(
+  tag: string,
+  endpoint: string,
+  payload: unknown
+): Promise<TaskRecord> {
+  const remote = await redisCreateTask(tag, endpoint, payload);
+  if (remote) {
+    tasks.set(remote.id, remote);
+    return remote;
+  }
+  return createTask(tag, endpoint, payload);
 }
 
 export function getTask(id: string): TaskRecord | undefined {
   return tasks.get(id);
 }
 
+export async function getTaskHydrated(id: string): Promise<TaskRecord | undefined> {
+  const local = tasks.get(id);
+  if (local) return local;
+  const remote = await redisGetTask(id);
+  if (remote) {
+    tasks.set(id, remote);
+    return remote;
+  }
+  return undefined;
+}
+
 export function listReadyTasks(): TaskRecord[] {
   return [...tasks.values()].filter((t) => t.status === "pending");
+}
+
+export async function listReadyTasksHydrated(): Promise<TaskRecord[]> {
+  const remote = await redisListReadyTasks();
+  for (const t of remote) tasks.set(t.id, t);
+  return listReadyTasks();
+}
+
+function persistTask(t: TaskRecord): void {
+  tasks.set(t.id, t);
+  void redisSaveTask(t).catch(() => {});
 }
 
 export function markProcessing(id: string): void {
   const t = tasks.get(id);
   if (t) {
     t.status = "processing";
-    tasks.set(id, t);
+    persistTask(t);
   }
 }
 
@@ -39,7 +83,7 @@ export function completeTask(id: string, result: unknown): void {
     t.status = "completed";
     t.result = result;
     t.completed_at = new Date().toISOString();
-    tasks.set(id, t);
+    persistTask(t);
   }
 }
 
@@ -49,17 +93,37 @@ export function failTask(id: string, error: string): void {
     t.status = "failed";
     t.error = error;
     t.completed_at = new Date().toISOString();
-    tasks.set(id, t);
+    persistTask(t);
   }
 }
 
-export function appendRankHistory(key: string, row: { checked_at: string; position: number | null; features: string[] }): void {
+export function appendRankHistory(
+  key: string,
+  row: { checked_at: string; position: number | null; features: string[] }
+): void {
   const existing = rankHistory.get(key) || [];
   existing.push(row);
   rankHistory.set(key, existing.slice(-365));
+  void redisAppendRankHistory(key, row).catch(() => {});
 }
 
 export function getRankHistory(key: string) {
+  const local = rankHistory.get(key);
+  if (local?.length) return local;
+  void redisGetRankHistory(key)
+    .then((remote) => {
+      if (remote.length) rankHistory.set(key, remote);
+    })
+    .catch(() => {});
+  return local || [];
+}
+
+export async function getRankHistoryHydrated(key: string) {
+  const remote = await redisGetRankHistory(key);
+  if (remote.length) {
+    rankHistory.set(key, remote);
+    return remote;
+  }
   return rankHistory.get(key) || [];
 }
 
