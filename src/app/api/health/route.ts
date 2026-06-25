@@ -8,6 +8,7 @@ export async function GET() {
     supabase: "skipped",
     stripe: "skipped",
     inngest: "skipped",
+    omnidata: "skipped",
     live_data: caps.liveData ? "ok" : "skipped",
     citation_tracking: caps.citationTracking ? "ok" : "skipped",
     serp: caps.serpCapability ? "ok" : "skipped",
@@ -30,6 +31,16 @@ export async function GET() {
 
   if (process.env.INNGEST_EVENT_KEY) {
     checks.inngest = "ok";
+  }
+
+  if (process.env.OMNIDATA_BASE_URL) {
+    try {
+      const base = process.env.OMNIDATA_BASE_URL.replace(/\/$/, "");
+      const res = await fetch(`${base}/health`, { signal: AbortSignal.timeout(5000) });
+      checks.omnidata = res.ok ? "ok" : "error";
+    } catch {
+      checks.omnidata = "error";
+    }
   }
 
   const healthy = checks.supabase !== "error";

@@ -1,12 +1,15 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { submitBingUrls } from "@/lib/providers/bing-webmaster";
+import { submitIndexNow } from "@/lib/engines/indexnow";
+import { loadProjectIntegration, publishViaWordPress } from "@/lib/integrations/store";
+import { recordLedgerAction } from "@/lib/engines/results-ledger";
 
 /**
- * Process content assets scheduled for publish. Auto-indexes URLs; queues CMS publish when no creds stored.
+ * Process content assets scheduled for publish. Uses stored CMS integrations when available.
  */
 export async function processScheduledContent(
   supabase: SupabaseClient
-): Promise<{ queued: number; indexed: number }> {
+): Promise<{ queued: number; indexed: number; published: number }> {
   const now = new Date().toISOString();
 
   const { data: assets } = await supabase
@@ -21,15 +24,15 @@ export async function processScheduledContent(
     return scheduledAt && scheduledAt <= now;
   }).slice(0, 20);
 
-  if (!due.length) return { queued: 0, indexed: 0 };
+  if (!due.length) return { queued: 0, indexed: 0, published: 0 };
 
   let queued = 0;
   let indexed = 0;
+  let published = 0;
 
   for (const asset of due) {
     const meta = (asset.metadata || {}) as Record<string, unknown>;
-    const scheduledAt = meta.scheduled_at as string | undefined;
-    if (!scheduledAt || scheduledAt > now) continue;
+    const platform = (meta.publisher_platform as string) || "wordpress";
 
     const { data: project } = await supabase
       .from("projects")
@@ -38,47 +41,53 @@ export async function processScheduledContent(
       .single();
     if (!project) continue;
 
-    await supabase.from("ops_queue").insert({
-      project_id: asset.project_id,
-      organization_id: project.organization_id,
-      action_type: "content_publish",
-      title: `Publish scheduled: ${asset.title}`,
-      payload: {
-        asset_id: asset.id,
-        scheduled_at: scheduledAt,
-        target_url: meta.target_url,
-      },
-      risk_level: "low",
-      status: "approved",
-    });
-    queued++;
+    let publishedUrl = (meta.target_url as string) || asset.published_url || undefined;
 
-    const targetUrl = (meta.target_url as string) || asset.published_url;
-    if (targetUrl && process.env.INDEXNOW_KEY) {
-      try {
-        const { assertUrlBelongsToDomain } = await import("@/lib/security/domain");
-        assertUrlBelongsToDomain(targetUrl, project.domain);
-        await fetch("https://api.indexnow.org/indexnow", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            host: new URL(targetUrl).hostname,
-            key: process.env.INDEXNOW_KEY,
-            urlList: [targetUrl],
-          }),
+    const wpCreds = await loadProjectIntegration<{ url: string; apiKey: string }>(
+      supabase,
+      asset.project_id,
+      platform
+    );
+
+    if (wpCreds && asset.content) {
+      const result = await publishViaWordPress(wpCreds, {
+        title: asset.title,
+        content: asset.content,
+      });
+      if (result.ok) {
+        publishedUrl = result.publishedUrl || publishedUrl;
+        published++;
+        await recordLedgerAction(supabase, {
+          project_id: asset.project_id,
+          action_type: "content_published",
+          action_surface: platform,
+          description: `Auto-published "${asset.title}"`,
+          status: "completed",
+          outcome_snapshot: { publishedUrl },
         });
-        indexed++;
-      } catch {
-        // skip invalid URL
       }
+    } else {
+      await supabase.from("ops_queue").insert({
+        project_id: asset.project_id,
+        organization_id: project.organization_id,
+        action_type: "content_publish",
+        title: `Publish scheduled: ${asset.title}`,
+        payload: { asset_id: asset.id, scheduled_at: meta.scheduled_at, target_url: meta.target_url },
+        risk_level: "low",
+        status: "approved",
+      });
+      queued++;
     }
 
-    if (process.env.BING_WEBMASTER_API_KEY && process.env.BING_SITE_URL) {
-      const url = (meta.target_url as string) || `https://${project.domain}`;
+    if (publishedUrl) {
+      indexed += await submitIndexNow([publishedUrl], project.domain);
+    }
+
+    if (process.env.BING_WEBMASTER_API_KEY && process.env.BING_SITE_URL && publishedUrl) {
       await submitBingUrls(
         process.env.BING_WEBMASTER_API_KEY,
         process.env.BING_SITE_URL,
-        [url]
+        [publishedUrl]
       ).catch(() => {});
     }
 
@@ -86,10 +95,11 @@ export async function processScheduledContent(
       .from("content_assets")
       .update({
         status: "published",
+        published_url: publishedUrl,
         metadata: { ...meta, published_at: now, scheduler: "inngest" },
       })
       .eq("id", asset.id);
   }
 
-  return { queued, indexed };
+  return { queued, indexed, published };
 }

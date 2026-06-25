@@ -1,4 +1,5 @@
 import { scrapePage } from "@/lib/providers/firecrawl";
+import { scrapePageDirect } from "@/lib/crawl/page-scrape";
 import { generateStructured } from "@/lib/providers/ai-gateway";
 import { z } from "zod";
 import type { BrandProfile } from "@/types/database";
@@ -41,6 +42,19 @@ export async function extractBrandProfile(
       `Schema Types: ${page.schemaTypes.join(", ")}`,
       `Word Count: ${page.wordCount}`,
     ].join("\n");
+  } else {
+    const direct = await scrapePageDirect(url);
+    if (direct) {
+      pageContent = [
+        `Title: ${direct.title || ""}`,
+        `Description: ${direct.metaDescription || ""}`,
+        `Headings: ${direct.headings.map((h) => `H${h.level}: ${h.text}`).join(", ")}`,
+        `Schema Types: ${direct.schemaTypes.join(", ")}`,
+        `Word Count: ${direct.wordCount}`,
+        `Internal Links: ${direct.internalLinks}`,
+        `External Links: ${direct.externalLinks}`,
+      ].join("\n");
+    }
   }
 
   const result = await generateStructured(

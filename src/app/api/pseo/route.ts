@@ -4,6 +4,7 @@ import {
   expandPseoMatrix,
   estimatePseoMatrixSize,
   parseCsvLines,
+  parsePseoMatrixCsv,
   type PseoTemplateType,
 } from "@/lib/engines/programmatic-seo";
 import { generateContent } from "@/lib/engines/content-generator";
@@ -51,6 +52,7 @@ export async function POST(request: NextRequest) {
     servicesCsv,
     locationsCsv,
     keywordsCsv,
+    matrixCsv,
     maxPages,
     previewOnly,
     generateContent: shouldGenerate,
@@ -62,6 +64,7 @@ export async function POST(request: NextRequest) {
     servicesCsv?: string;
     locationsCsv?: string;
     keywordsCsv?: string;
+    matrixCsv?: string;
     maxPages?: number;
     previewOnly?: boolean;
     generateContent?: boolean;
@@ -82,9 +85,14 @@ export async function POST(request: NextRequest) {
     .single();
   if (!project) return apiError("Project not found", 404);
 
-  const services = parseCsvLines(servicesCsv || "");
-  const locations = parseCsvLines(locationsCsv || "");
-  const keywords = keywordsCsv ? parseCsvLines(keywordsCsv) : [];
+  const matrix = matrixCsv ? parsePseoMatrixCsv(matrixCsv) : null;
+  const services = matrix?.services.length ? matrix.services : parseCsvLines(servicesCsv || "");
+  const locations = matrix?.locations.length ? matrix.locations : parseCsvLines(locationsCsv || "");
+  const keywords = matrix?.keywords.length
+    ? matrix.keywords
+    : keywordsCsv
+      ? parseCsvLines(keywordsCsv)
+      : [];
 
   const input = {
     name,

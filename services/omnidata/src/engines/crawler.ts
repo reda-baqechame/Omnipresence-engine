@@ -1,5 +1,6 @@
 import * as cheerio from "cheerio";
 import type { CrawlPage } from "../types.js";
+import { isCrawlAllowed } from "../robots-guard.js";
 
 const BLOCKED = new Set(["localhost", "127.0.0.1", "0.0.0.0", "169.254.169.254"]);
 
@@ -62,6 +63,7 @@ export async function crawlSite(
   while (queue.length > 0 && pages.length < maxPages) {
     const url = queue.shift()!;
     if (visited.has(url)) continue;
+    if (!(await isCrawlAllowed(url, domain))) continue;
     visited.add(url);
 
     try {

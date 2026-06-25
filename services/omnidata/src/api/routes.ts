@@ -7,6 +7,7 @@ import { runBacklinks } from "../engines/backlinks.js";
 import { runKeywords } from "../engines/keywords.js";
 import { runRankCheck } from "../engines/rank-tracker.js";
 import { crawlSite } from "../engines/crawler.js";
+import { runDomainAnalytics, runInstantPage } from "../engines/domain-analytics.js";
 
 const router = Router();
 
@@ -140,7 +141,35 @@ router.post("/v3/on_page/crawl", async (req, res) => {
 });
 
 router.get("/health", (_req, res) => {
-  res.json({ ok: true, service: "omnidata", version: "0.1.0" });
+  res.json({ ok: true, service: "omnidata", version: "0.2.0" });
+});
+
+router.post("/v3/domain_analytics/overview/live", async (req, res) => {
+  const domain = (req.body as Array<{ target?: string; domain?: string }>)?.[0]?.target
+    || (req.body as Array<{ target?: string; domain?: string }>)?.[0]?.domain;
+  if (!domain) {
+    res.status(400).json(dfsResponse([], 40000));
+    return;
+  }
+  const result = await runDomainAnalytics(domain);
+  res.json(dfsResponse([{ result: [result] }]));
+});
+
+router.post("/v3/on_page/instant_pages", async (req, res) => {
+  const url = (req.body as Array<{ url?: string }>)?.[0]?.url;
+  if (!url) {
+    res.status(400).json(dfsResponse([], 40000));
+    return;
+  }
+  try {
+    const result = await runInstantPage(url);
+    res.json(dfsResponse([{ result: [result] }]));
+  } catch (err) {
+    res.status(400).json({
+      ...dfsResponse([], 40001),
+      status_message: err instanceof Error ? err.message : "Instant page failed",
+    });
+  }
 });
 
 export default router;

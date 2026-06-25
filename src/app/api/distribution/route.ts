@@ -5,6 +5,7 @@ import { scheduleViaBuffer } from "@/lib/providers/social/buffer";
 import { createGBPLocalPost } from "@/lib/providers/gbp";
 import { submitBingUrls } from "@/lib/providers/bing-webmaster";
 import { recordLedgerAction } from "@/lib/engines/results-ledger";
+import { submitIndexNow } from "@/lib/engines/indexnow";
 import { verifyProjectAccess } from "@/lib/security/project-access";
 import { apiError, apiForbidden, apiNotFound, apiUnauthorized } from "@/lib/security/api-response";
 
@@ -136,6 +137,16 @@ export async function POST(request: NextRequest) {
         status: "completed",
         outcome_snapshot: { publishedUrl: result.publishedUrl },
       });
+
+      const { data: project } = await supabase
+        .from("projects")
+        .select("domain")
+        .eq("id", asset.project_id)
+        .single();
+
+      if (result.publishedUrl && project?.domain) {
+        await submitIndexNow([result.publishedUrl], project.domain);
+      }
     }
 
     return NextResponse.json({ success: result.ok, publishedUrl: result.publishedUrl });

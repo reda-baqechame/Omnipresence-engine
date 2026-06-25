@@ -1,21 +1,18 @@
 {
-  "version": "2.1.0",
-  "project": "OmniPresence Super Engine — Phase 2",
+  "version": "3.0.0",
+  "project": "OmniPresence Super Engine — Phase 3 Hardening",
   "tasks": [
-    { "id": "build-loop", "title": "Guarded autonomous build-loop", "status": "done", "dependsOn": [], "files": [".cursor/skills/omnipresence-loop/SKILL.md"], "acceptance": "verify:all exists" },
-    { "id": "phase2-spec", "title": "Phase 2 spec + wiring guide", "status": "done", "dependsOn": ["build-loop"], "files": ["docs/OMNIPRESENCE_PHASE2_SPEC.md", "docs/WIRING_GUIDE.md"], "acceptance": "Spec documents wave plan and manual wiring" },
-    { "id": "pseo-engine", "title": "Programmatic SEO campaigns", "status": "done", "dependsOn": ["phase2-spec"], "files": ["src/lib/engines/programmatic-seo.ts"], "acceptance": "Matrix expansion generates content asset topics" },
-    { "id": "rank-tracker-ui", "title": "Rank tracker wired to OmniData", "status": "done", "dependsOn": ["phase2-spec"], "files": ["src/lib/engines/rank-tracker-service.ts"], "acceptance": "Check keyword position; history in DB" },
-    { "id": "internal-linking", "title": "Internal linking opportunities", "status": "done", "dependsOn": ["phase2-spec"], "files": ["src/lib/engines/internal-linking.ts"], "acceptance": "Crawl produces scored link opportunities" },
-    { "id": "omnidata-redis-store", "title": "OmniData Redis persistence", "status": "done", "dependsOn": ["phase2-spec"], "files": ["services/omnidata/src/store-redis.ts"], "acceptance": "Tasks survive restart when REDIS_URL set" },
-    { "id": "guarantee-cron", "title": "Automated guarantee verification", "status": "done", "dependsOn": ["phase2-spec"], "files": ["src/lib/inngest/functions.ts"], "acceptance": "Cron verifies contracts at window end" },
-    { "id": "llms-txt-pro", "title": "Sitemap-driven llms.txt", "status": "done", "dependsOn": ["phase2-spec"], "files": ["src/app/api/tools/llms/route.ts"], "acceptance": "llms.txt lists real sitemap URLs" },
-    { "id": "phase2-ui", "title": "Rank + pSEO + internal link UI tabs", "status": "done", "dependsOn": ["pseo-engine", "rank-tracker-ui", "internal-linking"], "files": ["src/components/project-tabs.tsx"], "acceptance": "New tabs render in project layout" },
-    { "id": "public-audit-live", "title": "Live visibility in public audit when keys set", "status": "done", "dependsOn": ["rank-tracker-ui"], "files": ["src/lib/engines/public-audit-scan.ts", "src/app/api/public/audit/route.ts"], "acceptance": "Uses real scan when providers configured" },
-    { "id": "on-page-queue", "title": "On-page fix queue", "status": "done", "dependsOn": ["internal-linking"], "files": ["src/lib/engines/on-page-queue.ts"], "acceptance": "Technical findings → actionable ops queue items" },
-    { "id": "omnidata-keywords-volume", "title": "Keyword volume estimates v2", "status": "done", "dependsOn": ["omnidata-redis-store"], "files": ["services/omnidata/src/engines/keywords.ts"], "acceptance": "Volume from SERP signals not random" },
-    { "id": "trend-discovery", "title": "Trend discovery engine", "status": "done", "dependsOn": ["pseo-engine"], "files": ["src/lib/engines/trend-discovery.ts", "src/app/api/trends/route.ts"], "acceptance": "Google Trends RSS + content queue" },
-    { "id": "backlink-monitor", "title": "Backlink new/lost monitoring", "status": "done", "dependsOn": ["omnidata-redis-store"], "files": ["src/lib/engines/backlink-monitor.ts", "src/app/api/backlinks/route.ts"], "acceptance": "Weekly diff stored per project" },
-    { "id": "publish-scheduler", "title": "Content publish scheduler", "status": "done", "dependsOn": ["pseo-engine"], "files": ["src/lib/engines/content-publish-scheduler.ts"], "acceptance": "Scheduled publish via distribution API" }
+    { "id": "credential-vault", "title": "Encrypted project integrations vault", "status": "done", "dependsOn": [], "files": ["src/lib/security/credential-vault.ts", "supabase/migrations/0014_project_integrations.sql"], "acceptance": "CMS/social creds stored AES-256-GCM" },
+    { "id": "integrations-api", "title": "Integrations API + WordPress auto-publish", "status": "done", "dependsOn": ["credential-vault"], "files": ["src/app/api/integrations/route.ts", "src/lib/integrations/store.ts"], "acceptance": "Save/list integrations; scheduler publishes when creds exist" },
+    { "id": "robots-guard", "title": "robots.txt crawl compliance", "status": "done", "dependsOn": [], "files": ["src/lib/crawl/robots-guard.ts", "services/omnidata/src/robots-guard.ts"], "acceptance": "Site crawler and OmniData respect disallow rules" },
+    { "id": "direct-scrape", "title": "Direct page scrape fallback", "status": "done", "dependsOn": [], "files": ["src/lib/crawl/page-scrape.ts"], "acceptance": "Brand extraction works without Firecrawl" },
+    { "id": "indexnow-wire", "title": "IndexNow on publish paths", "status": "done", "dependsOn": [], "files": ["src/lib/engines/indexnow.ts", "src/app/api/distribution/route.ts"], "acceptance": "Successful publish submits IndexNow" },
+    { "id": "omnidata-domain-analytics", "title": "OmniData domain analytics endpoints", "status": "done", "dependsOn": [], "files": ["services/omnidata/src/engines/domain-analytics.ts"], "acceptance": "/v3/domain_analytics/overview/live returns real signals" },
+    { "id": "prompt-fallback", "title": "Template prompt fallback on LLM failure", "status": "done", "dependsOn": [], "files": ["src/lib/engines/scan-steps.ts"], "acceptance": "Scans never stall on empty prompt universe" },
+    { "id": "prompts-csv-api", "title": "Prompt CSV import API", "status": "done", "dependsOn": [], "files": ["src/app/api/prompts/route.ts"], "acceptance": "Bulk import prompts from CSV" },
+    { "id": "pseo-matrix-csv", "title": "pSEO matrix CSV bulk import", "status": "done", "dependsOn": [], "files": ["src/lib/engines/programmatic-seo.ts"], "acceptance": "matrixCsv expands service×location rows" },
+    { "id": "backlinks-trends-ui", "title": "Backlinks + Trends project tabs", "status": "done", "dependsOn": [], "files": ["src/components/backlinks-panel.tsx", "src/components/trends-panel.tsx"], "acceptance": "New tabs render with live API data" },
+    { "id": "health-omnidata", "title": "Health probe for OmniData", "status": "done", "dependsOn": ["omnidata-domain-analytics"], "files": ["src/app/api/health/route.ts"], "acceptance": "checks.omnidata when OMNIDATA_BASE_URL set" },
+    { "id": "publish-scheduler-v2", "title": "Scheduler uses integration vault", "status": "done", "dependsOn": ["integrations-api", "indexnow-wire"], "files": ["src/lib/engines/content-publish-scheduler.ts"], "acceptance": "Auto WordPress publish + IndexNow on schedule" }
   ]
 }

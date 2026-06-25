@@ -1,5 +1,6 @@
 import { assertPublicDomain } from "@/lib/security/domain";
 import { crawlViaOmniData } from "@/lib/security/engine-auth";
+import { isCrawlAllowed } from "@/lib/crawl/robots-guard";
 import type { FindingSeverity } from "@/types/database";
 import type { TechnicalAuditFinding } from "@/lib/engines/technical-audit";
 
@@ -51,6 +52,10 @@ async function crawlLocal(
   const start = new URL(startUrl.startsWith("http") ? startUrl : `https://${startUrl}`);
   assertPublicDomain(start.hostname);
   const domain = start.hostname.replace(/^www\./, "");
+  const robotsAllowed = await isCrawlAllowed(start.toString(), domain);
+  if (!robotsAllowed) {
+    return { pages: [], duplicate_clusters: [] };
+  }
   const visited = new Set<string>();
   const queue = [start.toString()];
   const pages: CrawlPageResult[] = [];
@@ -61,6 +66,9 @@ async function crawlLocal(
     visited.add(url);
 
     try {
+      const allowed = await isCrawlAllowed(url, domain);
+      if (!allowed) continue;
+
       const res = await fetch(url, {
         headers: { "User-Agent": "PresenceOS-Crawler/1.0" },
         signal: AbortSignal.timeout(10000),

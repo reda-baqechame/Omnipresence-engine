@@ -137,3 +137,37 @@ export function parseCsvLines(csv: string): string[] {
     .map((s) => s.trim())
     .filter(Boolean);
 }
+
+/** Parse matrix rows: service,location[,keyword] per line (header optional). */
+export function parsePseoMatrixCsv(csv: string): {
+  services: string[];
+  locations: string[];
+  keywords: string[];
+} {
+  const lines = csv.trim().split(/\r?\n/).filter(Boolean);
+  if (!lines.length) return { services: [], locations: [], keywords: [] };
+
+  const header = lines[0].toLowerCase();
+  const hasHeader = header.includes("service") || header.includes("location");
+  const dataLines = hasHeader ? lines.slice(1) : lines;
+
+  const services = new Set<string>();
+  const locations = new Set<string>();
+  const keywords = new Set<string>();
+
+  for (const line of dataLines) {
+    const parts = line.split(",").map((s) => s.trim().replace(/^"|"$/g, ""));
+    const service = parts[0];
+    const location = parts[1];
+    const keyword = parts[2];
+    if (service) services.add(service);
+    if (location) locations.add(location);
+    if (keyword) keywords.add(keyword);
+  }
+
+  return {
+    services: [...services],
+    locations: [...locations],
+    keywords: [...keywords],
+  };
+}
