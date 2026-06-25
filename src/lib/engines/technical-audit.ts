@@ -2,6 +2,7 @@ import robotsParser from "robots-parser";
 import { scrapePage } from "@/lib/providers/firecrawl";
 import { AI_BOTS } from "@/lib/providers/ai-gateway";
 import { runSiteCrawl, crawlFindingsToTechnical } from "@/lib/engines/site-crawler";
+import { getPageSpeed } from "@/lib/providers/pagespeed";
 import type { FindingSeverity } from "@/types/database";
 
 export interface TechnicalAuditFinding {
@@ -53,6 +54,9 @@ export async function runTechnicalAudit(
 
   // AI bot access check
   findings.push(...await checkAIBotAccess(baseUrl));
+
+  // Core Web Vitals / page speed (retrieval timeout risk for AI engines)
+  findings.push(...await checkPageSpeed(baseUrl));
 
   // Multi-page crawl (PageRank + SimHash dedupe)
   try {
@@ -316,6 +320,74 @@ function checkMeta(
       impact: "Search snippets and AI summaries may be less compelling.",
       fix_recommendation: "Add a compelling meta description (150-160 characters).",
       affected_url: url,
+    });
+  }
+
+  return findings;
+}
+
+async function checkPageSpeed(baseUrl: string): Promise<TechnicalAuditFinding[]> {
+  const findings: TechnicalAuditFinding[] = [];
+  const ps = await getPageSpeed(baseUrl, "mobile");
+  if (!ps.success || !ps.data) return findings;
+
+  const { performanceScore, lcpMs, cls, tbtMs } = ps.data;
+
+  if (performanceScore < 50) {
+    findings.push({
+      category: "performance",
+      severity: "high",
+      title: `Slow page speed (Lighthouse ${performanceScore}/100)`,
+      description: "Slow pages frequently time out during AI engine retrieval (Perplexity, AI Overviews).",
+      impact: "Pages that fail to load fast are dropped from the AI retrieval candidate set.",
+      fix_recommendation: "Optimize images, reduce JavaScript, and enable caching/CDN to raise the score above 70.",
+      affected_url: baseUrl,
+    });
+  } else if (performanceScore < 70) {
+    findings.push({
+      category: "performance",
+      severity: "medium",
+      title: `Moderate page speed (Lighthouse ${performanceScore}/100)`,
+      description: "Page speed is below the threshold that AI retrievers reliably tolerate.",
+      impact: "Slower retrieval reduces citation eligibility for grounded AI engines.",
+      fix_recommendation: "Target a Lighthouse performance score of 70+ for consistent AI retrieval.",
+      affected_url: baseUrl,
+    });
+  }
+
+  if (lcpMs > 4000) {
+    findings.push({
+      category: "performance",
+      severity: "medium",
+      title: `Poor Largest Contentful Paint (${(lcpMs / 1000).toFixed(1)}s)`,
+      description: `LCP of ${(lcpMs / 1000).toFixed(1)}s exceeds the 2.5s "good" threshold.`,
+      impact: "High LCP signals slow loading that can break AI crawler retrieval.",
+      fix_recommendation: "Preload the hero image/font and reduce render-blocking resources.",
+      affected_url: baseUrl,
+    });
+  }
+
+  if (cls > 0.25) {
+    findings.push({
+      category: "performance",
+      severity: "low",
+      title: `Layout instability (CLS ${cls})`,
+      description: `Cumulative Layout Shift of ${cls} exceeds the 0.1 "good" threshold.`,
+      impact: "Unstable layouts degrade UX and Core Web Vitals.",
+      fix_recommendation: "Reserve space for images/ads and avoid late-injected content.",
+      affected_url: baseUrl,
+    });
+  }
+
+  if (tbtMs > 600) {
+    findings.push({
+      category: "performance",
+      severity: "low",
+      title: `High Total Blocking Time (${tbtMs}ms)`,
+      description: "Heavy main-thread work delays interactivity and crawler parsing.",
+      impact: "Excessive JS blocks fast retrieval and rendering.",
+      fix_recommendation: "Split bundles, defer non-critical JS, and remove unused scripts.",
+      affected_url: baseUrl,
     });
   }
 

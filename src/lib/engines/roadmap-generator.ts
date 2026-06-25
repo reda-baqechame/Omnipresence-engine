@@ -24,7 +24,9 @@ export async function generateRoadmap(
   technicalFindings: TechnicalFinding[],
   coverageGaps: CoverageItem[],
   authorityOpportunities: AuthorityOpportunity[],
-  durationDays = 90
+  durationDays = 90,
+  /** Deterministic-first AEO next actions to front-load in the roadmap. */
+  deterministicActions: string[] = []
 ): Promise<{ project_id: string; duration_days: number; items: RoadmapItem[] }> {
   const criticalFindings = technicalFindings.filter((f) => f.severity === "critical" || f.severity === "high");
   const missingCoverage = coverageGaps.filter((c) => !c.is_present);
@@ -32,11 +34,28 @@ export async function generateRoadmap(
     .sort((a, b) => (b.estimated_impact || 0) - (a.estimated_impact || 0))
     .slice(0, 10);
 
+  // Deterministic AEO levers are controllable and guaranteed, so they always
+  // lead the roadmap in Week 1 ahead of probabilistic authority work.
+  const deterministicItems: RoadmapItem[] = deterministicActions.slice(0, 4).map((action, i) => {
+    const [name, ...rest] = action.split(":");
+    return {
+      week: 1,
+      title: `AEO lever: ${name.trim()}`,
+      description: rest.join(":").trim() || action,
+      impact: i === 0 ? "critical" : "high",
+      category: "aeo_readiness",
+      estimated_hours: 2,
+    };
+  });
+
   const context = `
 Brand: ${brandName} (${domain})
 Industry: ${industry}
 Location: ${location}
 Duration: ${durationDays} days
+
+Guaranteed deterministic AEO levers — DO THESE FIRST in Week 1 (${deterministicActions.length}):
+${deterministicActions.slice(0, 4).map((a) => `- ${a}`).join("\n")}
 
 Critical Technical Issues (${criticalFindings.length}):
 ${criticalFindings.slice(0, 5).map((f) => `- [${f.severity}] ${f.title}: ${f.fix_recommendation}`).join("\n")}
@@ -71,14 +90,17 @@ Aim for 30-40 actionable items total.`,
     return {
       project_id: projectId,
       duration_days: durationDays,
-      items: result.data.items,
+      items: [...deterministicItems, ...result.data.items],
     };
   }
 
   return {
     project_id: projectId,
     duration_days: durationDays,
-    items: generateFallbackRoadmap(brandName, industry, location, criticalFindings, missingCoverage),
+    items: [
+      ...deterministicItems,
+      ...generateFallbackRoadmap(brandName, industry, location, criticalFindings, missingCoverage),
+    ],
   };
 }
 

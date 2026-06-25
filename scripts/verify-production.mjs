@@ -29,6 +29,7 @@ try {
   console.log(`Intelligence schema: ${health.checks?.intelligence_schema || "unknown"}`);
   console.log(`Phase 8 schema:    ${health.checks?.phase8_schema || "unknown"}`);
   console.log(`Phase 9 schema:    ${health.checks?.phase9_schema || "unknown"}`);
+  console.log(`Phase 10 schema:   ${health.checks?.phase10_schema || "unknown"}`);
   console.log(`Intelligence API:    ${health.checks?.intelligence_api || "unknown"}`);
   console.log(`Providers:   ${caps.configuredCount}/${caps.totalProviders} configured\n`);
 
@@ -83,6 +84,11 @@ try {
 
   if (health.checks?.phase9_schema === "error") {
     console.log("Fix: run npm run db:migrate:prod for 0017_phase9.sql (visitor_sessions).\n");
+    process.exit(1);
+  }
+
+  if (health.checks?.phase10_schema === "error") {
+    console.log("Fix: run npm run db:migrate:prod for 0018_aeo_readiness.sql (aeo_readiness).\n");
     process.exit(1);
   }
 

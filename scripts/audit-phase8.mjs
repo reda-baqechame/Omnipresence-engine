@@ -132,6 +132,7 @@ try {
       ["intelligence_schema", health.checks?.intelligence_schema],
       ["phase8_schema", health.checks?.phase8_schema],
       ["phase9_schema", health.checks?.phase9_schema],
+      ["phase10_schema", health.checks?.phase10_schema],
       ["integration_encryption", health.checks?.integration_encryption],
     ];
     console.log("\n6. Production health checks");

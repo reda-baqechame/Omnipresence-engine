@@ -1,6 +1,47 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import Stripe from "stripe";
 import type { ResultsLedgerEntry } from "@/types/database";
+import type { AeoLever } from "@/lib/engines/aeo-readiness";
+
+export interface DeterministicDeliverable {
+  id: string;
+  name: string;
+  score: number;
+  met: boolean;
+}
+
+export interface TwoTierGuarantee {
+  /** Tier 1 — controllable deliverables promised outright. */
+  deterministicDeliverables: DeterministicDeliverable[];
+  tier1Met: boolean;
+  /** Tier 2 — measured aggregate citation/visibility lift (or service credit). */
+  tier2Kpi: GuaranteeKpi;
+  tier2Threshold: number;
+}
+
+/**
+ * Build the two-tier guarantee view: deterministic levers (crawlable, schema,
+ * passages, freshness) are promised outright; the measured-delta KPI is the
+ * refundable Tier-2 commitment.
+ */
+export function buildTwoTierGuarantee(
+  levers: AeoLever[],
+  kpi: GuaranteeKpi = "citation_rate"
+): TwoTierGuarantee {
+  const deterministic = levers.filter((l) => l.type === "deterministic");
+  const deliverables: DeterministicDeliverable[] = deterministic.map((l) => ({
+    id: l.id,
+    name: l.name,
+    score: l.score,
+    met: l.score >= 70,
+  }));
+  return {
+    deterministicDeliverables: deliverables,
+    tier1Met: deliverables.length > 0 && deliverables.every((d) => d.met),
+    tier2Kpi: kpi,
+    tier2Threshold: DEFAULT_THRESHOLDS[kpi],
+  };
+}
 
 export type GuaranteeKpi =
   | "omnipresence_score"

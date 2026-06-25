@@ -14,6 +14,10 @@ export interface ScoreInputs {
   hasConversionTracking: boolean;
   hasGbp: boolean;
   monthlyTraffic?: number;
+  /** 0-100 Tranco domain authority (optional) */
+  domainAuthority?: number;
+  /** 0-100 PageSpeed retrieval-health score (optional) */
+  pageSpeedScore?: number;
 }
 
 const WEIGHTS = {
@@ -33,8 +37,8 @@ export function calculateOmniPresenceScore(inputs: ScoreInputs): Omit<OmniPresen
   const localVisibility = calculateLocalVisibility(inputs.coverageItems, inputs.hasGbp);
   const socialPresence = calculateSocialPresence(inputs.coverageItems);
   const directoryCoverage = calculateDirectoryCoverage(inputs.coverageItems);
-  const authorityMentions = calculateAuthorityMentions(inputs.authorityOpportunities, inputs.visibilityResults);
-  const technicalReadiness = calculateTechnicalReadiness(inputs.technicalFindings);
+  const authorityMentions = calculateAuthorityMentions(inputs.authorityOpportunities, inputs.visibilityResults, inputs.domainAuthority);
+  const technicalReadiness = calculateTechnicalReadiness(inputs.technicalFindings, inputs.pageSpeedScore);
   const conversionReadiness = calculateConversionReadiness(inputs.hasConversionTracking, inputs.monthlyTraffic);
 
   const omnipresenceScore =
@@ -129,7 +133,8 @@ function calculateDirectoryCoverage(coverage: CoverageItem[]): number {
 
 function calculateAuthorityMentions(
   opportunities: AuthorityOpportunity[],
-  visibilityResults: VisibilityResult[]
+  visibilityResults: VisibilityResult[],
+  domainAuthority?: number
 ): number {
   const published = opportunities.filter((o) => o.status === "published").length;
   const identified = opportunities.length;
@@ -140,12 +145,17 @@ function calculateAuthorityMentions(
   );
   const sourceScore = Math.min(uniqueSourceDomains.size * 5, 50);
 
-  return opportunityScore + sourceScore;
+  const base = opportunityScore + sourceScore;
+
+  // Blend in Tranco domain authority when available (the AI link-graph
+  // heuristic that makes high-authority domains ~3.5x more likely to be cited).
+  if (typeof domainAuthority === "number" && domainAuthority > 0) {
+    return Math.min(100, base * 0.7 + domainAuthority * 0.3);
+  }
+  return base;
 }
 
-function calculateTechnicalReadiness(findings: TechnicalFinding[]): number {
-  if (findings.length === 0) return 50;
-
+function calculateTechnicalReadiness(findings: TechnicalFinding[], pageSpeedScore?: number): number {
   const severityWeights: Record<string, number> = {
     critical: 25,
     high: 15,
@@ -158,7 +168,13 @@ function calculateTechnicalReadiness(findings: TechnicalFinding[]): number {
     .filter((f) => !f.is_resolved)
     .reduce((sum, f) => sum + (severityWeights[f.severity] || 0), 0);
 
-  return Math.max(0, 100 - penalty);
+  const findingsScore = findings.length === 0 ? 50 : Math.max(0, 100 - penalty);
+
+  // Blend in measured page speed (slow pages time out during AI retrieval).
+  if (typeof pageSpeedScore === "number") {
+    return Math.round(findingsScore * 0.8 + pageSpeedScore * 0.2);
+  }
+  return findingsScore;
 }
 
 function calculateConversionReadiness(

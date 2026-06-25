@@ -41,6 +41,10 @@ export interface CrawlResult {
   wordCount: number;
   hasNoindex: boolean;
   statusCode: number;
+  /** Full visible text content (tags stripped) — for AEO passage analysis */
+  textContent?: string;
+  /** Text of individual <p>/<li> blocks — for liftable-passage scoring */
+  paragraphs?: string[];
 }
 
 export interface SearchResult {

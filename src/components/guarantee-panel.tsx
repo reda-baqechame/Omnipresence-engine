@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import type { ResultsLedgerEntry } from "@/types/database";
+import type { TwoTierGuarantee } from "@/lib/engines/guarantee";
 
 export interface GuaranteeMetrics {
   omnipresence_score: number;
@@ -15,6 +16,7 @@ interface GuaranteePanelProps {
   claims: Array<Record<string, unknown>>;
   ledger: ResultsLedgerEntry[];
   latestMetrics: GuaranteeMetrics;
+  twoTier?: TwoTierGuarantee;
 }
 
 export function GuaranteePanel({
@@ -23,6 +25,7 @@ export function GuaranteePanel({
   claims,
   ledger,
   latestMetrics,
+  twoTier,
 }: GuaranteePanelProps) {
   const [message, setMessage] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
@@ -57,9 +60,61 @@ export function GuaranteePanel({
       <div>
         <h2 className="text-xl font-semibold mb-2">Results Guarantee</h2>
         <p className="text-sm text-muted-foreground">
-          Measurable KPI + service-credit model. Baseline locks at engagement start; claims open when threshold is not met after the window.
+          Two-tier model: deterministic deliverables are shipped outright, and the measured citation/visibility lift is backed by a service credit if the threshold is not met after the window.
         </p>
       </div>
+
+      {twoTier && (
+        <div className="grid md:grid-cols-2 gap-4">
+          <div className="bg-card border border-border rounded-xl p-6">
+            <div className="flex items-center justify-between mb-3">
+              <h3 className="font-semibold">Tier 1 — Guaranteed deliverables</h3>
+              <span className={twoTier.tier1Met ? "text-green-400 text-sm" : "text-yellow-400 text-sm"}>
+                {twoTier.tier1Met ? "All shipped" : "In progress"}
+              </span>
+            </div>
+            <p className="text-xs text-muted-foreground mb-4">
+              Controllable, deterministic levers we deliver outright.
+            </p>
+            <ul className="text-sm space-y-2">
+              {twoTier.deterministicDeliverables.map((d) => (
+                <li key={d.id} className="flex justify-between border-b border-border pb-2">
+                  <span>{d.name}</span>
+                  <span className={d.met ? "text-green-400" : "text-muted-foreground"}>
+                    {d.met ? "Met" : `${d.score}/100`}
+                  </span>
+                </li>
+              ))}
+              {twoTier.deterministicDeliverables.length === 0 && (
+                <li className="text-muted-foreground">Run a scan to populate AEO readiness.</li>
+              )}
+            </ul>
+          </div>
+
+          <div className="bg-card border border-border rounded-xl p-6">
+            <h3 className="font-semibold mb-3">Tier 2 — Measured lift (refundable)</h3>
+            <p className="text-xs text-muted-foreground mb-4">
+              We guarantee a measured aggregate lift over the window, or a service credit. We never promise a specific ChatGPT ranking.
+            </p>
+            <div className="text-sm space-y-2">
+              <div className="flex justify-between border-b border-border pb-2">
+                <span>Guaranteed KPI</span>
+                <span className="text-primary">{twoTier.tier2Kpi}</span>
+              </div>
+              <div className="flex justify-between border-b border-border pb-2">
+                <span>Required lift</span>
+                <span className="text-primary">
+                  +{twoTier.tier2Kpi === "citation_rate" ? `${Math.round(twoTier.tier2Threshold * 100)}%` : twoTier.tier2Threshold}
+                </span>
+              </div>
+              <div className="flex justify-between">
+                <span>Remedy if unmet</span>
+                <span className="text-muted-foreground">Service credit</span>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
 
       <div className="grid md:grid-cols-4 gap-4">
         <div className="bg-card border border-border rounded-xl p-4">

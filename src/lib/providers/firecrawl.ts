@@ -158,6 +158,13 @@ function parseHtmlContent(
 
   const textContent = html.replace(/<[^>]*>/g, " ").replace(/\s+/g, " ").trim();
 
+  const blockMatches = [
+    ...html.matchAll(/<(p|li)[^>]*>([\s\S]*?)<\/\1>/gi),
+  ];
+  const paragraphs = blockMatches
+    .map((m) => m[2].replace(/<[^>]*>/g, " ").replace(/\s+/g, " ").trim())
+    .filter((t) => t.length > 0);
+
   return {
     url,
     title: metadata.title || titleMatch?.[1]?.trim(),
@@ -172,6 +179,8 @@ function parseHtmlContent(
     wordCount: textContent.split(/\s+/).length,
     hasNoindex: !!noindexMatch || metadata.robots?.includes("noindex") || false,
     statusCode: metadata.statusCode || 200,
+    textContent,
+    paragraphs,
   };
 }
 

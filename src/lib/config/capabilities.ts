@@ -148,5 +148,11 @@ export function getCapabilitiesSummary() {
       omnidata: hasEnv("OMNIDATA_BASE_URL"),
       dataForSeoOptional: hasLLMMentionsCapability(),
     },
+    // Free, keyless-first AEO signals (always available, rate-limited).
+    freeSignals: {
+      pageSpeed: true,
+      trancoAuthority: true,
+      aeoReadiness: true,
+    },
   };
 }

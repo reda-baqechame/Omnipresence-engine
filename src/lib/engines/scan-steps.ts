@@ -12,6 +12,9 @@ import { checkPlatformCoverage } from "@/lib/engines/coverage-checker";
 import { findAuthorityOpportunities } from "@/lib/engines/authority-finder";
 import { generateRoadmap } from "@/lib/engines/roadmap-generator";
 import { calculateOmniPresenceScore } from "@/lib/scoring/omnipresence";
+import { calculateAeoReadiness } from "@/lib/engines/aeo-readiness";
+import { getDomainAuthority } from "@/lib/providers/tranco";
+import { getPageSpeed, pageSpeedToRetrievalScore } from "@/lib/providers/pagespeed";
 import { recordScanBaseline } from "@/lib/engines/results-ledger";
 import { lockGuaranteeBaseline } from "@/lib/engines/guarantee";
 import { syncTechnicalFindingsToOpsQueue } from "@/lib/engines/on-page-queue";
@@ -197,6 +200,16 @@ export async function stepScoreAndRoadmap(
     .select("*")
     .eq("project_id", project.id);
 
+  // Free authority + page-speed signals (graceful when unreachable)
+  const [authRes, psRes] = demo
+    ? [null, null]
+    : await Promise.all([
+        getDomainAuthority(project.domain),
+        getPageSpeed(project.domain, "mobile"),
+      ]);
+  const domainAuthority = authRes?.data?.authorityScore;
+  const pageSpeedScore = psRes?.success && psRes.data ? pageSpeedToRetrievalScore(psRes.data) : undefined;
+
   const score = calculateOmniPresenceScore({
     visibilityResults: visibilityResults || [],
     technicalFindings: technicalFindings.map((f) => ({ ...f, project_id: project.id, is_resolved: false, id: "", created_at: "" })),
@@ -205,9 +218,44 @@ export async function stepScoreAndRoadmap(
     hasConversionTracking: false,
     hasGbp: coverageItems.some((c) => c.surface === "google_business" && c.is_present),
     monthlyTraffic: project.current_monthly_traffic ?? undefined,
+    domainAuthority,
+    pageSpeedScore,
   });
 
   await supabase.from("scores").insert({ project_id: project.id, ...score });
+
+  // 7-lever AEO Readiness (deterministic vs measured)
+  const { data: entityProfile } = await supabase
+    .from("entity_profiles")
+    .select("entity_score")
+    .eq("project_id", project.id)
+    .maybeSingle();
+
+  const readiness = calculateAeoReadiness({
+    technicalFindings,
+    visibilityResults: (visibilityResults || []) as never[],
+    entityScore: entityProfile?.entity_score ?? undefined,
+    coverageItems: coverageItems as never[],
+    authorityOpportunities: authorityOpportunities as never[],
+    domainAuthority,
+    pageSpeedScore,
+  });
+
+  await supabase.from("aeo_readiness").upsert(
+    {
+      project_id: project.id,
+      readiness_score: readiness.readinessScore,
+      deterministic_score: readiness.deterministicScore,
+      probabilistic_score: readiness.probabilisticScore,
+      levers: readiness.levers,
+      deterministic_deliverables_met: readiness.deterministicDeliverablesMet,
+      next_best_actions: readiness.nextBestActions,
+      domain_authority: domainAuthority ?? null,
+      page_speed_score: pageSpeedScore ?? null,
+      updated_at: new Date().toISOString(),
+    },
+    { onConflict: "project_id" }
+  );
 
   const roadmap = await generateRoadmap(
     project.id,
@@ -217,7 +265,9 @@ export async function stepScoreAndRoadmap(
     project.location || "",
     technicalFindings.map((f) => ({ ...f, project_id: project.id, is_resolved: false, id: "", created_at: "" })),
     coverageItems.filter((c) => !c.is_present) as never[],
-    authorityOpportunities as never[]
+    authorityOpportunities as never[],
+    90,
+    readiness.nextBestActions
   );
 
   await supabase.from("roadmaps").delete().eq("project_id", project.id);
