@@ -105,3 +105,18 @@
 | 2026-06-25 | wiring-intelligence | done | Architecture in WIRING_GUIDE |
 
 **Phase 6 manifest complete — Intelligence Spine live with OmniData + SERP keys.**
+
+## Phase 7 — Production Launch
+
+| Date | Task | Status | Notes |
+|------|------|--------|-------|
+| 2026-06-25 | vercel-encryption-key | done | INTEGRATION_ENCRYPTION_KEY on Vercel production |
+| 2026-06-25 | prod-setup-script | done | npm run prod:setup + prod:deploy |
+| 2026-06-25 | health-intelligence | done | intelligence_schema + intelligence_api checks |
+| 2026-06-25 | weekly-intelligence-cron | done | Monday 04:00 UTC Inngest sync |
+| 2026-06-25 | pseo-keyword-seed | done | seedFromKeywords from keyword_opportunities |
+| 2026-06-25 | setup-checklist-v7 | done | 0015 + intelligence steps |
+| 2026-06-25 | verify-prod-intelligence | done | verify:prod reports schema + API |
+| 2026-06-25 | incremental-migrations | done | run-migration.mjs applies pending files |
+
+**Phase 7 complete — verify:prod PASS (89%). Run db:migrate with DATABASE_URL for 0015.**

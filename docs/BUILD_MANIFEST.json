@@ -1,17 +1,13 @@
 {
-  "version": "6.0.0",
-  "project": "OmniPresence Super Engine — Phase 6 Intelligence Spine",
+  "version": "7.0.0",
+  "project": "OmniPresence Super Engine — Phase 7 Production Launch",
   "tasks": [
-    { "id": "keyword-difficulty-engine", "title": "SERP-based keyword difficulty + intent", "status": "done", "dependsOn": [], "files": ["services/omnidata/src/engines/keyword-difficulty.ts"], "acceptance": "Difficulty 0-100 from live SERP competition" },
-    { "id": "content-gap-engine", "title": "Competitor content gap analysis", "status": "done", "dependsOn": ["keyword-difficulty-engine"], "files": ["services/omnidata/src/engines/content-gaps.ts"], "acceptance": "Finds keywords where competitors rank top-10 and brand does not" },
-    { "id": "backlink-gap-engine", "title": "Competitor backlink gap analysis", "status": "done", "dependsOn": [], "files": ["services/omnidata/src/engines/backlink-gaps.ts"], "acceptance": "Referring domains linking competitors but not brand" },
-    { "id": "omnidata-labs-api", "title": "OmniData Labs-compatible gap endpoints", "status": "done", "dependsOn": ["content-gap-engine", "backlink-gap-engine"], "files": ["services/omnidata/src/api/routes.ts"], "acceptance": "/labs/content_gaps/live and /backlinks/gap/live" },
-    { "id": "no-fake-serp", "title": "Remove simulated SERP fallback", "status": "done", "dependsOn": [], "files": ["services/omnidata/src/engines/serp.ts"], "acceptance": "Returns error when no SERP keys instead of fake results" },
-    { "id": "keyword-intelligence-app", "title": "App keyword intelligence orchestrator", "status": "done", "dependsOn": ["omnidata-labs-api"], "files": ["src/lib/engines/keyword-intelligence.ts", "src/lib/providers/intelligence-api.ts"], "acceptance": "Research + persist opportunities" },
-    { "id": "aeo-metrics", "title": "AEO share of voice + citation metrics", "status": "done", "dependsOn": [], "files": ["src/lib/engines/aeo-metrics.ts", "src/app/api/intelligence/route.ts"], "acceptance": "Share of voice, citation rate, engine breakdown" },
-    { "id": "keywords-api", "title": "Keywords API (research, gaps, difficulty)", "status": "done", "dependsOn": ["keyword-intelligence-app"], "files": ["src/app/api/keywords/route.ts"], "acceptance": "POST research, content_gaps, backlink_gaps" },
-    { "id": "intelligence-migration", "title": "keyword_opportunities + content_gap_findings tables", "status": "done", "dependsOn": [], "files": ["supabase/migrations/0015_intelligence.sql"], "acceptance": "RLS-protected intelligence storage" },
-    { "id": "keywords-intelligence-ui", "title": "Keywords + AEO Intelligence project tabs", "status": "done", "dependsOn": ["keywords-api", "aeo-metrics"], "files": ["src/components/keywords-panel.tsx", "src/components/intelligence-panel.tsx"], "acceptance": "Live research UI with gap analysis" },
-    { "id": "wiring-intelligence", "title": "Intelligence spine wiring guide", "status": "done", "dependsOn": [], "files": ["docs/WIRING_GUIDE.md"], "acceptance": "Documents reverse-engineered platform architecture" }
+    { "id": "vercel-encryption-key", "title": "INTEGRATION_ENCRYPTION_KEY on Vercel", "status": "done", "dependsOn": [], "files": ["scripts/prod-setup.mjs"], "acceptance": "Production verify:prod passes encryption check" },
+    { "id": "prod-setup-script", "title": "Automated prod:setup + prod:deploy scripts", "status": "done", "dependsOn": [], "files": ["scripts/prod-setup.mjs", "package.json"], "acceptance": "npm run prod:setup sets Vercel key" },
+    { "id": "health-intelligence", "title": "Health checks for intelligence schema + API", "status": "done", "dependsOn": [], "files": ["src/app/api/health/route.ts", "src/lib/config/production.ts"], "acceptance": "intelligence_schema and intelligence_api in /api/health" },
+    { "id": "weekly-intelligence-cron", "title": "Weekly keyword + content gap sync", "status": "done", "dependsOn": [], "files": ["src/lib/inngest/functions.ts"], "acceptance": "weeklyIntelligenceSync cron Monday 04:00 UTC" },
+    { "id": "pseo-keyword-seed", "title": "pSEO seeds from keyword_opportunities", "status": "done", "dependsOn": [], "files": ["src/app/api/pseo/route.ts", "src/components/pseo-panel.tsx"], "acceptance": "seedFromKeywords pulls live research" },
+    { "id": "setup-checklist-v7", "title": "Production setup checklist v7", "status": "done", "dependsOn": [], "files": ["src/app/app/settings/setup/page.tsx"], "acceptance": "0015 migration + intelligence steps" },
+    { "id": "verify-prod-intelligence", "title": "verify:prod intelligence schema hints", "status": "done", "dependsOn": ["health-intelligence"], "files": ["scripts/verify-production.mjs"], "acceptance": "Reports intelligence_schema and migration fix" }
   ]
 }

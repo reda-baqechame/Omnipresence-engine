@@ -3,6 +3,7 @@ import {
   hasSerpCapability,
   preferLiveData,
 } from "@/lib/config/capabilities";
+import { hasIntelligenceApi } from "@/lib/providers/intelligence-api";
 import { hasIntegrationEncryptionKey } from "@/lib/security/credential-vault";
 
 export type ProductionCheckStatus = "ok" | "warning" | "error" | "skipped";
@@ -91,6 +92,13 @@ export function getProductionReadiness(): {
         : "warning"
       : "skipped",
     message: "Self-hosted SERP/rank/backlinks — recommended for production volume",
+  });
+
+  checks.push({
+    id: "intelligence_api",
+    label: "Keyword & gap intelligence API",
+    status: hasIntelligenceApi() ? "ok" : preferLiveData() ? "warning" : "skipped",
+    message: "OMNIDATA_BASE_URL or SERPER for keyword research, content gaps, backlink gaps",
   });
 
   checks.push({

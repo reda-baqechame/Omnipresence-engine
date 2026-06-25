@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { createServiceClient } from "@/lib/supabase/server";
 import { getCapabilitiesSummary } from "@/lib/config/capabilities";
 import { getProductionReadiness } from "@/lib/config/production";
+import { hasIntelligenceApi } from "@/lib/providers/intelligence-api";
 import { hasIntegrationEncryptionKey } from "@/lib/security/credential-vault";
 
 export async function GET() {
@@ -13,6 +14,8 @@ export async function GET() {
     inngest: "skipped",
     omnidata: "skipped",
     integration_encryption: hasIntegrationEncryptionKey() ? "ok" : production.blockers.includes("integration_encryption") ? "error" : "warning",
+    intelligence_schema: "skipped" as const,
+    intelligence_api: hasIntelligenceApi() ? "ok" : caps.liveData ? "warning" : "skipped",
     live_data: caps.liveData ? "ok" : "skipped",
     citation_tracking: caps.citationTracking ? "ok" : "skipped",
     serp: caps.serpCapability ? "ok" : "skipped",
@@ -24,6 +27,17 @@ export async function GET() {
       const supabase = await createServiceClient();
       const { error } = await supabase.from("organizations").select("id").limit(1);
       checks.supabase = error ? "error" : "ok";
+
+      const { error: intelErr } = await supabase
+        .from("keyword_opportunities")
+        .select("id")
+        .limit(1);
+      checks.intelligence_schema =
+        intelErr?.message?.includes("does not exist") || intelErr?.code === "42P01"
+          ? "error"
+          : intelErr
+            ? "warning"
+            : "ok";
     } catch {
       checks.supabase = "error";
     }
@@ -47,7 +61,10 @@ export async function GET() {
     }
   }
 
-  const healthy = checks.supabase !== "error" && production.ready;
+  const healthy =
+    checks.supabase !== "error" &&
+    checks.intelligence_schema !== "error" &&
+    production.ready;
 
   return NextResponse.json(
     {

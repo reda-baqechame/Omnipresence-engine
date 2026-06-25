@@ -26,6 +26,8 @@ try {
   console.log(`SERP providers: ${caps.serpCapability ? "ON" : "OFF"}`);
   console.log(`OmniData:    ${health.checks?.omnidata || "not configured"}`);
   console.log(`Integration encryption: ${health.checks?.integration_encryption || "unknown"}`);
+  console.log(`Intelligence schema: ${health.checks?.intelligence_schema || "unknown"}`);
+  console.log(`Intelligence API:    ${health.checks?.intelligence_api || "unknown"}`);
   console.log(`Providers:   ${caps.configuredCount}/${caps.totalProviders} configured\n`);
 
   const production = health.production || caps.production;
@@ -64,7 +66,12 @@ try {
   }
 
   if (production?.blockers?.includes("integration_encryption")) {
-    console.log("Fix: run npm run prod:keygen locally, then add INTEGRATION_ENCRYPTION_KEY on Vercel and redeploy.\n");
+    console.log("Fix: run npm run prod:setup locally, then redeploy.\n");
+  }
+
+  if (health.checks?.intelligence_schema === "error") {
+    console.log("Fix: run npm run db:migrate locally (0015_intelligence.sql), then verify again.\n");
+    process.exit(1);
   }
 
   process.exit(production?.ready === false ? 1 : 0);

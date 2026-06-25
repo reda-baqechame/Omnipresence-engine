@@ -17,6 +17,11 @@ import { verifyGuaranteeContract } from "@/lib/engines/guarantee";
 import { runAllRankChecks } from "@/lib/engines/rank-tracker-service";
 import { snapshotProjectBacklinks } from "@/lib/engines/backlink-monitor";
 import { processScheduledContent } from "@/lib/engines/content-publish-scheduler";
+import {
+  runKeywordResearch,
+  persistKeywordOpportunities,
+  analyzeContentGaps,
+} from "@/lib/engines/keyword-intelligence";
 import type { Project } from "@/types/database";
 
 export const runFullScan = inngest.createFunction(
@@ -503,6 +508,66 @@ export const scheduledContentPublish = inngest.createFunction(
   }
 );
 
+export const weeklyIntelligenceSync = inngest.createFunction(
+  { id: "weekly-intelligence-sync", retries: 1, triggers: [{ cron: "0 4 * * 1" }] },
+  async ({ step }) => {
+    const supabase = await createServiceClient();
+
+    const projects = await step.run("fetch-active-projects", async () => {
+      const { data } = await supabase
+        .from("projects")
+        .select("id, domain, industry, competitors")
+        .eq("status", "active");
+      return data || [];
+    });
+
+    let synced = 0;
+    for (const project of projects) {
+      await step.run(`intelligence-${project.id}`, async () => {
+        const seed =
+          project.industry || project.domain.replace(/^www\./, "").split(".")[0];
+        const { opportunities, live } = await runKeywordResearch(seed, project.domain);
+        if (live && opportunities.length) {
+          await persistKeywordOpportunities(supabase, project.id, opportunities);
+        }
+
+        const competitors = (project.competitors || []) as string[];
+        if (competitors.length) {
+          const { gaps, live: gapsLive } = await analyzeContentGaps(
+            project.domain,
+            competitors,
+            [seed]
+          );
+          if (gapsLive && gaps.length) {
+            await supabase.from("content_gap_findings").upsert(
+              (gaps as Array<{
+                keyword: string;
+                competitor_domain: string;
+                competitor_position: number;
+                our_position: number | null;
+                opportunity_score: number;
+              }>).map((g) => ({
+                project_id: project.id,
+                keyword: g.keyword,
+                competitor_domain: g.competitor_domain,
+                competitor_position: g.competitor_position,
+                our_position: g.our_position,
+                opportunity_score: g.opportunity_score,
+              })),
+              { onConflict: "project_id,keyword,competitor_domain" }
+            );
+          }
+        }
+
+        return { keywords: opportunities.length, live };
+      });
+      synced++;
+    }
+
+    return { synced };
+  }
+);
+
 export const functions = [
   runFullScan,
   runFullScanLegacy,
@@ -519,4 +584,5 @@ export const functions = [
   weeklyRankCheck,
   weeklyBacklinkMonitor,
   scheduledContentPublish,
+  weeklyIntelligenceSync,
 ];

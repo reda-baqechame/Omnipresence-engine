@@ -1,5 +1,5 @@
--- PresenceOS combined migration (10 files)
--- Generated 2026-06-24T22:42:56.185Z
+-- PresenceOS combined migration (15 files)
+-- Generated 2026-06-25T04:05:40.327Z
 
 -- ========== 0001_init.sql ==========
 
@@ -777,5 +777,244 @@ BEGIN
   RETURN NEW;
 END;
 $function$;
+
+
+-- ========== 0011_guarantee.sql ==========
+
+-- Guarantee spine: contracts, baseline lock, claims workflow
+
+CREATE TABLE IF NOT EXISTS guarantee_contracts (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  project_id UUID NOT NULL UNIQUE REFERENCES projects(id) ON DELETE CASCADE,
+  kpi_metric TEXT NOT NULL CHECK (kpi_metric IN ('omnipresence_score', 'citation_rate', 'ai_referral_traffic', 'visibility_mention_rate')),
+  threshold_value NUMERIC NOT NULL,
+  window_days INTEGER NOT NULL DEFAULT 90,
+  plan_tier TEXT NOT NULL DEFAULT 'tracking',
+  status TEXT NOT NULL DEFAULT 'active' CHECK (status IN ('draft', 'active', 'verified', 'failed', 'claimed', 'closed')),
+  baseline_locked_at TIMESTAMPTZ,
+  baseline_snapshot JSONB DEFAULT '{}',
+  verified_at TIMESTAMPTZ,
+  delta_summary JSONB DEFAULT '{}',
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE TABLE IF NOT EXISTS guarantee_claims (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  contract_id UUID NOT NULL REFERENCES guarantee_contracts(id) ON DELETE CASCADE,
+  project_id UUID NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+  state TEXT NOT NULL DEFAULT 'submitted' CHECK (state IN ('submitted', 'under_review', 'approved', 'denied', 'credited')),
+  evidence JSONB DEFAULT '[]',
+  remedy_type TEXT NOT NULL DEFAULT 'service_credit' CHECK (remedy_type IN ('service_credit', 'work_free')),
+  stripe_credit_id TEXT,
+  credit_amount_cents INTEGER,
+  reviewer_notes TEXT,
+  submitted_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  resolved_at TIMESTAMPTZ,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE INDEX IF NOT EXISTS idx_guarantee_contracts_project ON guarantee_contracts(project_id);
+CREATE INDEX IF NOT EXISTS idx_guarantee_claims_contract ON guarantee_claims(contract_id);
+CREATE INDEX IF NOT EXISTS idx_guarantee_claims_project ON guarantee_claims(project_id);
+
+ALTER TABLE guarantee_contracts ENABLE ROW LEVEL SECURITY;
+ALTER TABLE guarantee_claims ENABLE ROW LEVEL SECURITY;
+
+CREATE POLICY guarantee_contracts_org_access ON guarantee_contracts
+  FOR ALL USING (
+    project_id IN (
+      SELECT p.id FROM projects p
+      JOIN organization_members om ON om.organization_id = p.organization_id
+      WHERE om.user_id = auth.uid()
+    )
+  );
+
+CREATE POLICY guarantee_claims_org_access ON guarantee_claims
+  FOR ALL USING (
+    project_id IN (
+      SELECT p.id FROM projects p
+      JOIN organization_members om ON om.organization_id = p.organization_id
+      WHERE om.user_id = auth.uid()
+    )
+  );
+
+
+-- ========== 0012_phase2.sql ==========
+
+-- Phase 2: Programmatic SEO, rank tracking, internal linking
+
+CREATE TABLE IF NOT EXISTS pseo_campaigns (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  project_id UUID NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+  name TEXT NOT NULL,
+  template_type TEXT NOT NULL CHECK (template_type IN ('location_page', 'service_page', 'best_of_page', 'comparison_page')),
+  url_pattern TEXT NOT NULL DEFAULT '/{slug}',
+  services TEXT[] DEFAULT '{}',
+  locations TEXT[] DEFAULT '{}',
+  keywords TEXT[] DEFAULT '{}',
+  status TEXT NOT NULL DEFAULT 'draft' CHECK (status IN ('draft', 'generating', 'completed', 'paused')),
+  generated_count INT NOT NULL DEFAULT 0,
+  max_pages INT NOT NULL DEFAULT 50,
+  metadata JSONB DEFAULT '{}',
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE TABLE IF NOT EXISTS rank_keywords (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  project_id UUID NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+  keyword TEXT NOT NULL,
+  location TEXT NOT NULL DEFAULT 'United States',
+  target_url TEXT,
+  is_striking_distance BOOLEAN DEFAULT false,
+  last_position INT,
+  last_checked_at TIMESTAMPTZ,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  UNIQUE (project_id, keyword, location)
+);
+
+CREATE TABLE IF NOT EXISTS rank_snapshots (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  keyword_id UUID NOT NULL REFERENCES rank_keywords(id) ON DELETE CASCADE,
+  project_id UUID NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+  position INT,
+  ranking_url TEXT,
+  serp_features TEXT[] DEFAULT '{}',
+  checked_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE INDEX IF NOT EXISTS idx_rank_snapshots_keyword ON rank_snapshots(keyword_id, checked_at DESC);
+
+CREATE TABLE IF NOT EXISTS internal_link_opportunities (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  project_id UUID NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+  source_url TEXT NOT NULL,
+  target_url TEXT NOT NULL,
+  anchor_suggestion TEXT NOT NULL,
+  relevance_score INT NOT NULL DEFAULT 0 CHECK (relevance_score BETWEEN 0 AND 100),
+  status TEXT NOT NULL DEFAULT 'identified' CHECK (status IN ('identified', 'approved', 'applied', 'rejected')),
+  context_snippet TEXT,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  UNIQUE (project_id, source_url, target_url)
+);
+
+ALTER TABLE pseo_campaigns ENABLE ROW LEVEL SECURITY;
+ALTER TABLE rank_keywords ENABLE ROW LEVEL SECURITY;
+ALTER TABLE rank_snapshots ENABLE ROW LEVEL SECURITY;
+ALTER TABLE internal_link_opportunities ENABLE ROW LEVEL SECURITY;
+
+CREATE POLICY pseo_campaigns_org ON pseo_campaigns FOR ALL USING (
+  project_id IN (SELECT p.id FROM projects p JOIN memberships m ON m.organization_id = p.organization_id WHERE m.user_id = auth.uid())
+);
+
+CREATE POLICY rank_keywords_org ON rank_keywords FOR ALL USING (
+  project_id IN (SELECT p.id FROM projects p JOIN memberships m ON m.organization_id = p.organization_id WHERE m.user_id = auth.uid())
+);
+
+CREATE POLICY rank_snapshots_org ON rank_snapshots FOR ALL USING (
+  project_id IN (SELECT p.id FROM projects p JOIN memberships m ON m.organization_id = p.organization_id WHERE m.user_id = auth.uid())
+);
+
+CREATE POLICY internal_links_org ON internal_link_opportunities FOR ALL USING (
+  project_id IN (SELECT p.id FROM projects p JOIN memberships m ON m.organization_id = p.organization_id WHERE m.user_id = auth.uid())
+);
+
+
+-- ========== 0013_backlink_snapshots.sql ==========
+
+-- Backlink monitoring snapshots
+
+CREATE TABLE IF NOT EXISTS backlink_snapshots (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  project_id UUID NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+  backlinks JSONB NOT NULL DEFAULT '[]',
+  total_count INT NOT NULL DEFAULT 0,
+  new_count INT NOT NULL DEFAULT 0,
+  lost_count INT NOT NULL DEFAULT 0,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE INDEX IF NOT EXISTS idx_backlink_snapshots_project ON backlink_snapshots(project_id, created_at DESC);
+
+ALTER TABLE backlink_snapshots ENABLE ROW LEVEL SECURITY;
+
+CREATE POLICY backlink_snapshots_org ON backlink_snapshots FOR ALL USING (
+  project_id IN (SELECT p.id FROM projects p JOIN memberships m ON m.organization_id = p.organization_id WHERE m.user_id = auth.uid())
+);
+
+
+-- ========== 0014_project_integrations.sql ==========
+
+-- Project integrations (CMS, social, GBP credentials — encrypted at app layer)
+
+CREATE TABLE IF NOT EXISTS project_integrations (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  project_id UUID NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+  provider TEXT NOT NULL CHECK (provider IN ('wordpress', 'webflow', 'shopify', 'buffer', 'ayrshare', 'gbp')),
+  credentials_encrypted TEXT NOT NULL,
+  metadata JSONB DEFAULT '{}',
+  is_active BOOLEAN NOT NULL DEFAULT true,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  UNIQUE (project_id, provider)
+);
+
+CREATE INDEX IF NOT EXISTS idx_project_integrations_project ON project_integrations(project_id);
+
+ALTER TABLE project_integrations ENABLE ROW LEVEL SECURITY;
+
+CREATE POLICY project_integrations_org ON project_integrations FOR ALL USING (
+  project_id IN (SELECT p.id FROM projects p JOIN memberships m ON m.organization_id = p.organization_id WHERE m.user_id = auth.uid())
+);
+
+
+-- ========== 0015_intelligence.sql ==========
+
+-- Phase 6: Keyword intelligence + content gap storage
+
+CREATE TABLE IF NOT EXISTS keyword_opportunities (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  project_id UUID NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+  keyword TEXT NOT NULL,
+  volume_estimate INT,
+  difficulty INT CHECK (difficulty IS NULL OR difficulty BETWEEN 0 AND 100),
+  intent TEXT,
+  our_position INT,
+  opportunity_score INT NOT NULL DEFAULT 0 CHECK (opportunity_score BETWEEN 0 AND 100),
+  source TEXT NOT NULL DEFAULT 'omnidata_serp',
+  status TEXT NOT NULL DEFAULT 'identified' CHECK (status IN ('identified', 'tracking', 'targeted', 'ranking', 'dismissed')),
+  metadata JSONB DEFAULT '{}',
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  UNIQUE (project_id, keyword)
+);
+
+CREATE TABLE IF NOT EXISTS content_gap_findings (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  project_id UUID NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+  keyword TEXT NOT NULL,
+  competitor_domain TEXT NOT NULL,
+  competitor_position INT,
+  our_position INT,
+  opportunity_score INT NOT NULL DEFAULT 0,
+  status TEXT NOT NULL DEFAULT 'open' CHECK (status IN ('open', 'brief_queued', 'published', 'dismissed')),
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  UNIQUE (project_id, keyword, competitor_domain)
+);
+
+CREATE INDEX IF NOT EXISTS idx_keyword_opportunities_project ON keyword_opportunities(project_id, opportunity_score DESC);
+CREATE INDEX IF NOT EXISTS idx_content_gap_project ON content_gap_findings(project_id, opportunity_score DESC);
+
+ALTER TABLE keyword_opportunities ENABLE ROW LEVEL SECURITY;
+ALTER TABLE content_gap_findings ENABLE ROW LEVEL SECURITY;
+
+CREATE POLICY keyword_opportunities_org ON keyword_opportunities FOR ALL USING (
+  project_id IN (SELECT p.id FROM projects p JOIN memberships m ON m.organization_id = p.organization_id WHERE m.user_id = auth.uid())
+);
+
+CREATE POLICY content_gap_org ON content_gap_findings FOR ALL USING (
+  project_id IN (SELECT p.id FROM projects p JOIN memberships m ON m.organization_id = p.organization_id WHERE m.user_id = auth.uid())
+);
 
 

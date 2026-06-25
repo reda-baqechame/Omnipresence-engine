@@ -43,7 +43,13 @@ export default function SetupPage() {
           id: "supabase",
           title: "Connect Supabase (login + dashboard)",
           done: p.supabase === true && health.checks?.supabase === "ok",
-          action: "Add NEXT_PUBLIC_SUPABASE_* + SUPABASE_SERVICE_ROLE_KEY. Run npm run db:migrate (through 0014).",
+          action: "Add NEXT_PUBLIC_SUPABASE_* + SUPABASE_SERVICE_ROLE_KEY. Run npm run db:migrate (through 0015).",
+        },
+        {
+          id: "intelligence-db",
+          title: "Apply intelligence migration (0015)",
+          done: health.checks?.intelligence_schema === "ok",
+          action: "npm run db:migrate — creates keyword_opportunities + content_gap_findings tables.",
         },
         {
           id: "encryption",
@@ -56,6 +62,12 @@ export default function SetupPage() {
           title: "Enable live AI citation tracking",
           done: caps.citationTracking === true && caps.liveData === true,
           action: "SERPER or OMNIDATA + OPENAI/ANTHROPIC/GOOGLE key. PERPLEXITY recommended.",
+        },
+        {
+          id: "intelligence",
+          title: "Enable keyword & gap intelligence",
+          done: health.checks?.intelligence_api === "ok",
+          action: "OMNIDATA_BASE_URL + keys on Vercel, or SERPER_API_KEY for app-level SERP. Weekly cron syncs gaps.",
         },
         {
           id: "omnidata",

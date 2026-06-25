@@ -56,6 +56,7 @@ export async function POST(request: NextRequest) {
     maxPages,
     previewOnly,
     generateContent: shouldGenerate,
+    seedFromKeywords,
   } = body as {
     projectId: string;
     name: string;
@@ -68,6 +69,7 @@ export async function POST(request: NextRequest) {
     maxPages?: number;
     previewOnly?: boolean;
     generateContent?: boolean;
+    seedFromKeywords?: boolean;
   };
 
   if (!projectId || !name || !templateType) {
@@ -88,11 +90,22 @@ export async function POST(request: NextRequest) {
   const matrix = matrixCsv ? parsePseoMatrixCsv(matrixCsv) : null;
   const services = matrix?.services.length ? matrix.services : parseCsvLines(servicesCsv || "");
   const locations = matrix?.locations.length ? matrix.locations : parseCsvLines(locationsCsv || "");
-  const keywords = matrix?.keywords.length
+
+  let keywordList = matrix?.keywords.length
     ? matrix.keywords
     : keywordsCsv
       ? parseCsvLines(keywordsCsv)
       : [];
+
+  if (!keywordList.length && seedFromKeywords) {
+    const { data: opportunities } = await supabase
+      .from("keyword_opportunities")
+      .select("keyword")
+      .eq("project_id", projectId)
+      .order("opportunity_score", { ascending: false })
+      .limit(30);
+    keywordList = (opportunities || []).map((o) => o.keyword);
+  }
 
   const input = {
     name,
@@ -100,7 +113,7 @@ export async function POST(request: NextRequest) {
     urlPattern,
     services,
     locations,
-    keywords,
+    keywords: keywordList,
     maxPages: maxPages ?? 50,
   };
 
@@ -120,7 +133,7 @@ export async function POST(request: NextRequest) {
       url_pattern: urlPattern || "/{slug}",
       services,
       locations,
-      keywords,
+      keywords: keywordList,
       max_pages: maxPages ?? 50,
       status: shouldGenerate ? "generating" : "draft",
       metadata: { estimated },

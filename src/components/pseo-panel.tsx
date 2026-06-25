@@ -11,6 +11,8 @@ export function PseoPanel({ projectId }: PseoPanelProps) {
   const [templateType, setTemplateType] = useState("location_page");
   const [servicesCsv, setServicesCsv] = useState("");
   const [locationsCsv, setLocationsCsv] = useState("");
+  const [keywordsCsv, setKeywordsCsv] = useState("");
+  const [seedFromKeywords, setSeedFromKeywords] = useState(true);
   const [preview, setPreview] = useState<Array<{ topic: string; url: string }>>([]);
   const [loading, setLoading] = useState(false);
   const [message, setMessage] = useState("");
@@ -27,6 +29,8 @@ export function PseoPanel({ projectId }: PseoPanelProps) {
         templateType,
         servicesCsv,
         locationsCsv,
+        keywordsCsv: seedFromKeywords ? undefined : keywordsCsv,
+        seedFromKeywords,
         previewOnly: true,
       }),
     });
@@ -48,6 +52,8 @@ export function PseoPanel({ projectId }: PseoPanelProps) {
         templateType,
         servicesCsv,
         locationsCsv,
+        keywordsCsv: seedFromKeywords ? undefined : keywordsCsv,
+        seedFromKeywords,
         generateContent: true,
         maxPages: 10,
       }),
@@ -96,6 +102,23 @@ export function PseoPanel({ projectId }: PseoPanelProps) {
             className="bg-background border border-input rounded-lg px-3 py-2 text-sm font-mono"
           />
         </div>
+        <label className="flex items-center gap-2 mt-3 text-sm">
+          <input
+            type="checkbox"
+            checked={seedFromKeywords}
+            onChange={(e) => setSeedFromKeywords(e.target.checked)}
+          />
+          Seed keywords from live keyword research (Keywords tab)
+        </label>
+        {!seedFromKeywords && (
+          <textarea
+            value={keywordsCsv}
+            onChange={(e) => setKeywordsCsv(e.target.value)}
+            placeholder="Keywords (CSV) — optional override"
+            rows={3}
+            className="mt-2 w-full bg-background border border-input rounded-lg px-3 py-2 text-sm font-mono"
+          />
+        )}
         <div className="flex gap-2 mt-4">
           <button
             type="button"
