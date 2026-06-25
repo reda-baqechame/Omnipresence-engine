@@ -87,3 +87,21 @@
 | 2026-06-25 | prod-keygen | done | npm run prod:keygen |
 
 **Phase 5 manifest complete.**
+
+## Phase 6 (complete)
+
+| Date | Task | Status | Notes |
+|------|------|--------|-------|
+| 2026-06-25 | keyword-difficulty-engine | done | SERP competition scoring |
+| 2026-06-25 | content-gap-engine | done | Competitor ranks / brand absent |
+| 2026-06-25 | backlink-gap-engine | done | Common Crawl gap domains |
+| 2026-06-25 | omnidata-labs-api | done | Labs-compatible endpoints |
+| 2026-06-25 | no-fake-serp | done | No simulated SERP rows |
+| 2026-06-25 | keyword-intelligence-app | done | Research orchestrator + persist |
+| 2026-06-25 | aeo-metrics | done | Share of voice, citation rate |
+| 2026-06-25 | keywords-api | done | /api/keywords + /api/intelligence |
+| 2026-06-25 | intelligence-migration | done | 0015_intelligence.sql |
+| 2026-06-25 | keywords-intelligence-ui | done | Keywords + AEO Intel tabs |
+| 2026-06-25 | wiring-intelligence | done | Architecture in WIRING_GUIDE |
+
+**Phase 6 manifest complete — Intelligence Spine live with OmniData + SERP keys.**

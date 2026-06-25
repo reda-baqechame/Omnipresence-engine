@@ -8,6 +8,9 @@ import { runKeywords } from "../engines/keywords.js";
 import { runRankCheck } from "../engines/rank-tracker.js";
 import { crawlSite } from "../engines/crawler.js";
 import { runDomainAnalytics, runInstantPage } from "../engines/domain-analytics.js";
+import { estimateKeywordDifficulty, scoreKeywordsForDomain } from "../engines/keyword-difficulty.js";
+import { findContentGaps } from "../engines/content-gaps.js";
+import { findBacklinkGaps } from "../engines/backlink-gaps.js";
 
 const router = Router();
 
@@ -140,8 +143,52 @@ router.post("/v3/on_page/crawl", async (req, res) => {
   }
 });
 
+router.post("/v3/keywords/difficulty/live", async (req, res) => {
+  const keyword = (req.body as Array<{ keyword?: string }>)?.[0]?.keyword;
+  if (!keyword) {
+    res.status(400).json(dfsResponse([], 40000));
+    return;
+  }
+  const result = await estimateKeywordDifficulty(keyword);
+  res.json(dfsResponse([{ result: [result] }]));
+});
+
+router.post("/v3/labs/content_gaps/live", async (req, res) => {
+  const item = (req.body as Array<{ domain?: string; competitors?: string[]; seeds?: string[] }>)?.[0];
+  if (!item?.domain) {
+    res.status(400).json(dfsResponse([], 40000));
+    return;
+  }
+  const gaps = await findContentGaps(
+    item.domain,
+    item.competitors || [],
+    item.seeds || [item.domain.split(".")[0]]
+  );
+  res.json(dfsResponse([{ result: [{ gaps, total: gaps.length }] }]));
+});
+
+router.post("/v3/backlinks/gap/live", async (req, res) => {
+  const item = (req.body as Array<{ domain?: string; competitors?: string[] }>)?.[0];
+  if (!item?.domain) {
+    res.status(400).json(dfsResponse([], 40000));
+    return;
+  }
+  const gaps = await findBacklinkGaps(item.domain, item.competitors || []);
+  res.json(dfsResponse([{ result: [{ gaps, total: gaps.length }] }]));
+});
+
+router.post("/v3/labs/keyword_opportunities/live", async (req, res) => {
+  const item = (req.body as Array<{ domain?: string; keywords?: string[] }>)?.[0];
+  if (!item?.domain || !item?.keywords?.length) {
+    res.status(400).json(dfsResponse([], 40000));
+    return;
+  }
+  const scored = await scoreKeywordsForDomain(item.keywords, item.domain);
+  res.json(dfsResponse([{ result: [{ opportunities: scored }] }]));
+});
+
 router.get("/health", (_req, res) => {
-  res.json({ ok: true, service: "omnidata", version: "0.2.0" });
+  res.json({ ok: true, service: "omnidata", version: "0.3.0" });
 });
 
 router.post("/v3/domain_analytics/overview/live", async (req, res) => {

@@ -201,24 +201,26 @@ async function fetchAutocomplete(keyword: string): Promise<string[]> {
 export async function runSerpLive(keyword: string, location = "United States"): Promise<{
   tasks: Array<{ result: Array<{ items: SerpItem[]; keyword: string; location_name: string }> }>;
 }> {
-  const result =
+  let result =
     (await searchSerper(keyword)) ||
     (await searchBing(keyword)) ||
-    (await searchBrave(keyword)) || {
-      keyword,
-      location,
-      source: "simulated" as const,
-      items: [
+    (await searchBrave(keyword));
+
+  if (!result) {
+    return {
+      tasks: [
         {
-          type: "organic",
-          rank_absolute: 1,
-          title: `Results for ${keyword}`,
-          url: `https://www.google.com/search?q=${encodeURIComponent(keyword)}`,
-          description: "Configure SERPER_API_KEY, BING_SEARCH_API_KEY, or BRAVE_SEARCH_API_KEY for live SERP.",
-          pixel_rank: 1,
+          result: [
+            {
+              keyword,
+              location_name: location,
+              items: [],
+            },
+          ],
         },
       ],
     };
+  }
 
   const related = await fetchAutocomplete(keyword);
   if (related.length && !result.people_also_ask) {

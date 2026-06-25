@@ -73,8 +73,27 @@ npm run db:migrate
 
 ## What still needs your action after Phase 2
 
-1. **GBP OAuth** — currently manual token paste; OAuth flow is Wave B
-2. **Directory auto-submit** — G2/Yelp APIs require partner access; we track submissions manually
-3. **LinkedIn native API** — use Buffer/Ayrshare instead
-4. **HARO/journalist DB** — no free API; authority finder uses SERP heuristics
-5. **Google Ads keyword volume** — needs Google Ads API developer token (Wave C)
+1. **GBP OAuth** — connect from Distribution tab (`google_business_profile` provider)
+2. **OmniData VPS** — required for keyword intelligence, content gaps, backlink gaps at scale
+3. **INTEGRATION_ENCRYPTION_KEY** — before saving CMS credentials in production
+
+## Intelligence Spine (Phase 6 — real data architecture)
+
+How state-of-the-art SEO/AEO platforms operate (reverse-engineered into OmniPresence):
+
+| Layer | What leaders do | OmniPresence implementation |
+|-------|-----------------|------------------------------|
+| **SERP** | Live Google/Bing results, AI Overviews, PAA | OmniData `serp.js` → Serper/Bing/Brave (no fake fallback) |
+| **Keywords** | Autocomplete + volume signals + difficulty | `/api/keywords` + OmniData `keywords.ts`, `keyword-difficulty.ts` |
+| **Rank tracking** | Position + SERP features + striking distance | `rank-tracker-service` + weekly cron |
+| **Content gaps** | Competitor ranks, you don't | OmniData `content-gaps.ts` → `/api/keywords` action `content_gaps` |
+| **Backlink gaps** | Competitor referring domains you lack | OmniData `backlink-gaps.ts` + Common Crawl |
+| **AEO metrics** | Share of voice, citation rate, drift | `aeo-metrics.ts` + `/api/intelligence` from live visibility probes |
+| **pSEO** | Matrix × real keyword data | pSEO campaigns + keyword research seed |
+| **Programmatic** | Location × service × keyword pages | `programmatic-seo.ts` + `matrixCsv` import |
+
+Minimum for **real intelligence** (not demo):
+- `OMNIDATA_BASE_URL` + `OMNIDATA_API_KEY` on Vercel
+- `SERPER_API_KEY` on OmniData VPS (or Vercel for app-only SERP)
+- At least one LLM key for AEO visibility probes
+- `npm run db:migrate` through `0015_intelligence.sql`
