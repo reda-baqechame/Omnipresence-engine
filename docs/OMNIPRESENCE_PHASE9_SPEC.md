@@ -43,7 +43,7 @@
 
 ## Success metrics
 
-- [ ] `npm run audit:phase9` PASS
-- [ ] `verify:prod` stays 100%
+- [x] `npm run audit:phase9` PASS
+- [x] `verify:prod` stays 100%
 - [ ] Prompt campaign imports 500+ rows without timeout
 - [ ] Visitor sessions visible when beacon installed

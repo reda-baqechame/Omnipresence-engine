@@ -168,5 +168,15 @@
 | 2026-06-25 | phase9-migration | done | `0017_phase9.sql` visitor_sessions |
 | 2026-06-25 | phase9-wiring-docs | done | `npm run audit:phase9` |
 
-**Phase 9 manifest complete — run `npm run db:migrate:prod` for 0017 on production.**
+**Phase 9 manifest complete — `0017_phase9.sql` applied to production DB.**
+
+## Phase 9 production pass (complete)
+
+| Date | Task | Status | Notes |
+|------|------|--------|-------|
+| 2026-06-25 | phase9-health | done | `phase9_schema` in /api/health + setup checklist |
+| 2026-06-25 | migrate-prod-0017 | done | visitor_sessions applied via db:migrate:prod |
+| 2026-06-25 | prod-deploy | done | Vercel production READY |
+| 2026-06-25 | verify-prod | done | 100% ready, phase8 + phase9 schema ok |
+| 2026-06-25 | github-push | done | Phase 8–9 on origin/main |
 
