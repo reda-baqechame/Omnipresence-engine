@@ -98,7 +98,7 @@ export function getProductionReadiness(): {
     id: "intelligence_api",
     label: "Keyword & gap intelligence API",
     status: hasIntelligenceApi() ? "ok" : preferLiveData() ? "warning" : "skipped",
-    message: "OMNIDATA_BASE_URL or SERPER for keyword research, content gaps, backlink gaps",
+    message: "OMNIDATA, DataForSEO, or SERPER for keyword research, content gaps, backlink gaps",
   });
 
   checks.push({

@@ -20,6 +20,7 @@
     "omnidata:test": "npm run test --prefix services/omnidata",
     "install:integrations": "node scripts/install-integrations.mjs",
     "db:migrate": "node scripts/run-migration.mjs",
+    "db:migrate:prod": "node scripts/migrate-production.mjs",
     "db:configure-auth": "node scripts/configure-supabase-auth.mjs",
     "db:create-user": "node scripts/create-user.mjs",
     "db:combine": "node scripts/combine-migrations.mjs"

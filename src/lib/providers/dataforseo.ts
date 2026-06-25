@@ -58,6 +58,26 @@ async function dataForSEORequest<T>(endpoint: string, body: unknown[]): Promise<
   return response.json() as Promise<T>;
 }
 
+/** Labs-compatible POST for OmniData or DataForSEO (keyword intelligence spine). */
+export async function labsApiPost<T>(endpoint: string, body: unknown[]): Promise<T | null> {
+  const hasCreds =
+    USE_OMNIDATA ||
+    (Boolean(process.env.DATAFORSEO_LOGIN) && Boolean(process.env.DATAFORSEO_PASSWORD));
+  if (!hasCreds) return null;
+  try {
+    return await dataForSEORequest<T>(endpoint, body);
+  } catch {
+    return null;
+  }
+}
+
+export function hasLabsApi(): boolean {
+  return (
+    USE_OMNIDATA ||
+    (Boolean(process.env.DATAFORSEO_LOGIN) && Boolean(process.env.DATAFORSEO_PASSWORD))
+  );
+}
+
 export async function searchGoogleOrganic(
   keyword: string,
   location = "United States",
@@ -462,6 +482,71 @@ export async function getLLMTopDomains(
       success: false,
       error: error instanceof Error ? error.message : "LLM top domains failed",
     };
+  }
+}
+
+export async function getKeywordSuggestionsLive(seed: string): Promise<{
+  seed: string;
+  suggestions: Array<{ keyword: string; volume_estimate?: number; source?: string }>;
+  related: Array<{ keyword: string; volume_estimate?: number }>;
+} | null> {
+  if (USE_OMNIDATA) return null;
+  try {
+    const data = await dataForSEORequest<{
+      tasks: Array<{
+        result: Array<{
+          items: Array<{
+            keyword: string;
+            keyword_info?: { search_volume?: number };
+          }>;
+        }>;
+      }>;
+    }>("/dataforseo_labs/google/keyword_suggestions/live", [
+      {
+        keyword: seed,
+        location_name: "United States",
+        language_code: "en",
+        include_seed_keyword: true,
+        limit: 25,
+      },
+    ]);
+
+    const items = data.tasks?.[0]?.result?.[0]?.items || [];
+    const suggestions = items.slice(0, 15).map((i) => ({
+      keyword: i.keyword,
+      volume_estimate: i.keyword_info?.search_volume,
+      source: "dataforseo_labs",
+    }));
+
+    const ideasData = await dataForSEORequest<{
+      tasks: Array<{
+        result: Array<{
+          items: Array<{
+            keyword: string;
+            keyword_info?: { search_volume?: number };
+          }>;
+        }>;
+      }>;
+    }>("/dataforseo_labs/google/keyword_ideas/live", [
+      {
+        keywords: [seed],
+        location_name: "United States",
+        language_code: "en",
+        limit: 15,
+      },
+    ]);
+
+    const related = (ideasData.tasks?.[0]?.result?.[0]?.items || [])
+      .filter((i) => i.keyword !== seed)
+      .slice(0, 10)
+      .map((i) => ({
+        keyword: i.keyword,
+        volume_estimate: i.keyword_info?.search_volume,
+      }));
+
+    return { seed, suggestions, related };
+  } catch {
+    return null;
   }
 }
 

@@ -70,8 +70,12 @@ try {
   }
 
   if (health.checks?.intelligence_schema === "error") {
-    console.log("Fix: run npm run db:migrate locally (0015_intelligence.sql), then verify again.\n");
+    console.log("Fix: run npm run db:migrate:prod (or npm run db:migrate with DATABASE_URL).\n");
     process.exit(1);
+  }
+
+  if (production?.warnings?.includes("intelligence_api")) {
+    console.log("Tip: DataForSEO, SERPER, or OMNIDATA_BASE_URL powers keyword intelligence.\n");
   }
 
   process.exit(production?.ready === false ? 1 : 0);
