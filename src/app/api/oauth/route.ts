@@ -10,18 +10,28 @@ const OAUTH_PROVIDERS = {
     scopes: ["https://www.googleapis.com/auth/webmasters.readonly"],
     clientIdEnv: "GOOGLE_CLIENT_ID",
     google: true,
+    redirectPath: "attribution",
   },
   bing_webmaster: {
     authUrl: "https://www.bing.com/webmasters/oauth/authorize",
     scopes: ["webmaster.manage"],
     clientIdEnv: "BING_CLIENT_ID",
     google: false,
+    redirectPath: "attribution",
   },
   google_analytics: {
     authUrl: "https://accounts.google.com/o/oauth2/v2/auth",
     scopes: ["https://www.googleapis.com/auth/analytics.readonly"],
     clientIdEnv: "GOOGLE_CLIENT_ID",
     google: true,
+    redirectPath: "attribution",
+  },
+  google_business_profile: {
+    authUrl: "https://accounts.google.com/o/oauth2/v2/auth",
+    scopes: ["https://www.googleapis.com/auth/business.manage"],
+    clientIdEnv: "GOOGLE_CLIENT_ID",
+    google: true,
+    redirectPath: "distribution",
   },
 };
 

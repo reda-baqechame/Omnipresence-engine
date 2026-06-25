@@ -49,7 +49,11 @@ export async function getValidOAuthToken(
     return conn.access_token;
   }
 
-  if (provider === "google_search_console" || provider === "google_analytics") {
+  if (
+    provider === "google_search_console" ||
+    provider === "google_analytics" ||
+    provider === "google_business_profile"
+  ) {
     const refreshed = await refreshGoogleAccessToken(conn.refresh_token);
     if (!refreshed) return conn.access_token;
 

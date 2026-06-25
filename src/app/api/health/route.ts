@@ -62,6 +62,7 @@ export async function GET() {
         score: production.score,
         blockers: production.blockers,
         warnings: production.warnings,
+        checks: production.checks,
       },
       checks,
       timestamp: new Date().toISOString(),

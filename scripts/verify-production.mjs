@@ -29,10 +29,11 @@ try {
   console.log(`Providers:   ${caps.configuredCount}/${caps.totalProviders} configured\n`);
 
   const production = health.production || caps.production;
+  const checkList = production?.checks || [];
   if (production?.blockers?.length) {
     console.log("BLOCKERS:");
     for (const id of production.blockers) {
-      const check = production.checks?.find((c) => c.id === id);
+      const check = checkList.find((c) => c.id === id);
       console.log(`  ✗ ${check?.label || id}: ${check?.message || ""}`);
     }
     console.log("");
@@ -41,7 +42,7 @@ try {
   if (production?.warnings?.length) {
     console.log("Warnings:");
     for (const id of production.warnings) {
-      const check = production.checks?.find((c) => c.id === id);
+      const check = checkList.find((c) => c.id === id);
       console.log(`  ○ ${check?.label || id}: ${check?.message || ""}`);
     }
     console.log("");
@@ -60,6 +61,10 @@ try {
 
   if (!caps.liveData) {
     console.log("Next step: Add SERPER or OMNIDATA + OPENAI/PERPLEXITY keys for live citation tracking.\n");
+  }
+
+  if (production?.blockers?.includes("integration_encryption")) {
+    console.log("Fix: run npm run prod:keygen locally, then add INTEGRATION_ENCRYPTION_KEY on Vercel and redeploy.\n");
   }
 
   process.exit(production?.ready === false ? 1 : 0);

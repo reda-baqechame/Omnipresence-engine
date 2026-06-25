@@ -73,3 +73,17 @@
 | 2026-06-25 | setup-checklist-v4 | done | Setup page with readiness score |
 
 **Phase 4 manifest complete. Platform production-ready when env checklist passes.**
+
+## Phase 5 (complete)
+
+| Date | Task | Status | Notes |
+|------|------|--------|-------|
+| 2026-06-25 | health-checks-detail | done | Full checks in /api/health for verify:prod |
+| 2026-06-25 | gbp-oauth | done | google_business_profile OAuth + location discovery |
+| 2026-06-25 | gbp-oauth-publish | done | Distribution GBP uses stored OAuth |
+| 2026-06-25 | oauth-status-api | done | /api/oauth/status per project |
+| 2026-06-25 | embed-audit | done | /embed/audit + snippet API |
+| 2026-06-25 | embed-headers | done | frame-ancestors * for embed routes |
+| 2026-06-25 | prod-keygen | done | npm run prod:keygen |
+
+**Phase 5 manifest complete.**

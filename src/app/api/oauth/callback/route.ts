@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient, createServiceClient } from "@/lib/supabase/server";
 import { discoverGa4Property } from "@/lib/engines/attribution";
+import { discoverGbpAccountLocation } from "@/lib/providers/gbp-discovery";
 import { verifyOAuthState } from "@/lib/security/oauth-state";
 import { verifyProjectAccess } from "@/lib/security/project-access";
 
@@ -82,8 +83,10 @@ export async function GET(request: NextRequest) {
       : await exchangeGoogleToken(code, redirectUri);
 
   if (!tokens) {
+    const failPath =
+      payload.provider === "google_business_profile" ? "distribution" : "attribution";
     return NextResponse.redirect(
-      `${appUrl}/app/projects/${payload.projectId}/attribution?error=token_failed`
+      `${appUrl}/app/projects/${payload.projectId}/${failPath}?error=token_failed`
     );
   }
 
@@ -101,6 +104,13 @@ export async function GET(request: NextRequest) {
     if (propertyId) metadata = { property_id: propertyId };
   }
 
+  if (payload.provider === "google_business_profile") {
+    const gbp = await discoverGbpAccountLocation(tokens.access_token);
+    if (gbp.accountId) metadata.account_id = gbp.accountId;
+    if (gbp.locationId) metadata.location_id = gbp.locationId;
+    if (gbp.locationName) metadata.location_name = gbp.locationName;
+  }
+
   await service.from("oauth_connections").upsert(
     {
       project_id: payload.projectId,
@@ -113,7 +123,10 @@ export async function GET(request: NextRequest) {
     { onConflict: "project_id,provider" }
   );
 
+  const redirectTab =
+    payload.provider === "google_business_profile" ? "distribution" : "attribution";
+
   return NextResponse.redirect(
-    `${appUrl}/app/projects/${payload.projectId}/attribution?connected=true`
+    `${appUrl}/app/projects/${payload.projectId}/${redirectTab}?connected=true`
   );
 }

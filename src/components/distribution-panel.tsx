@@ -32,6 +32,9 @@ export function DistributionPanel({ projectId, domain, assets }: DistributionPan
   const [scheduleResult, setScheduleResult] = useState<string | null>(null);
   const [savedProviders, setSavedProviders] = useState<string[]>([]);
 
+  const [gbpConnected, setGbpConnected] = useState(false);
+  const [gbpLocationName, setGbpLocationName] = useState<string | null>(null);
+
   useEffect(() => {
     let active = true;
     fetch(`/api/integrations?projectId=${projectId}`)
@@ -41,6 +44,17 @@ export function DistributionPanel({ projectId, domain, assets }: DistributionPan
           setSavedProviders((data.integrations || []).map((i: { provider: string }) => i.provider));
         }
       });
+    fetch(`/api/oauth/status?projectId=${projectId}`)
+      .then((r) => r.json())
+      .then((data) => {
+        if (!active) return;
+        const gbp = (data.connections || []).find(
+          (c: { provider: string }) => c.provider === "google_business_profile"
+        );
+        setGbpConnected(Boolean(gbp));
+        setGbpLocationName(gbp?.metadata?.location_name || null);
+      })
+      .catch(() => {});
     return () => {
       active = false;
     };
@@ -255,29 +269,43 @@ export function DistributionPanel({ projectId, domain, assets }: DistributionPan
       <div className="bg-card border border-border rounded-xl p-6">
         <h3 className="font-semibold mb-4">Google Business Profile</h3>
         <p className="text-sm text-muted-foreground mb-3">
-          Publish local posts directly to GBP (requires OAuth token, account ID, location ID).
+          Publish local posts via OAuth (recommended) or manual token paste.
         </p>
-        <div className="grid md:grid-cols-3 gap-3 mb-3">
-          <input
-            value={gbpToken}
-            onChange={(e) => setGbpToken(e.target.value)}
-            placeholder="GBP OAuth token"
-            type="password"
-            className="bg-background border border-input rounded-lg px-3 py-2 text-sm"
-          />
-          <input
-            value={gbpAccountId}
-            onChange={(e) => setGbpAccountId(e.target.value)}
-            placeholder="Account ID"
-            className="bg-background border border-input rounded-lg px-3 py-2 text-sm"
-          />
-          <input
-            value={gbpLocationId}
-            onChange={(e) => setGbpLocationId(e.target.value)}
-            placeholder="Location ID"
-            className="bg-background border border-input rounded-lg px-3 py-2 text-sm"
-          />
-        </div>
+        {gbpConnected ? (
+          <p className="text-xs text-green-400 mb-3">
+            GBP connected{gbpLocationName ? `: ${gbpLocationName}` : ""}
+          </p>
+        ) : (
+          <a
+            href={`/api/oauth?provider=google_business_profile&projectId=${projectId}`}
+            className="inline-block text-sm bg-secondary px-3 py-1.5 rounded-lg mb-3"
+          >
+            Connect Google Business Profile
+          </a>
+        )}
+        {!gbpConnected && (
+          <div className="grid md:grid-cols-3 gap-3 mb-3">
+            <input
+              value={gbpToken}
+              onChange={(e) => setGbpToken(e.target.value)}
+              placeholder="GBP OAuth token"
+              type="password"
+              className="bg-background border border-input rounded-lg px-3 py-2 text-sm"
+            />
+            <input
+              value={gbpAccountId}
+              onChange={(e) => setGbpAccountId(e.target.value)}
+              placeholder="Account ID"
+              className="bg-background border border-input rounded-lg px-3 py-2 text-sm"
+            />
+            <input
+              value={gbpLocationId}
+              onChange={(e) => setGbpLocationId(e.target.value)}
+              placeholder="Location ID"
+              className="bg-background border border-input rounded-lg px-3 py-2 text-sm"
+            />
+          </div>
+        )}
         <textarea
           value={gbpPostText}
           onChange={(e) => setGbpPostText(e.target.value)}
@@ -297,18 +325,20 @@ export function DistributionPanel({ projectId, domain, assets }: DistributionPan
                 platform: "gbp",
                 projectId,
                 text: gbpPostText,
-                credentials: {
-                  gbpToken,
-                  accountId: gbpAccountId,
-                  locationId: gbpLocationId,
-                },
+                credentials: gbpConnected
+                  ? {}
+                  : {
+                      gbpToken,
+                      accountId: gbpAccountId,
+                      locationId: gbpLocationId,
+                    },
               }),
             });
             const data = await res.json();
             setGbpResult(data.success ? "GBP post published" : data.error || "GBP publish failed");
             setGbpPublishing(false);
           }}
-          disabled={gbpPublishing || !gbpPostText.trim()}
+          disabled={gbpPublishing || !gbpPostText.trim() || (!gbpConnected && (!gbpToken || !gbpAccountId || !gbpLocationId))}
           className="bg-primary text-primary-foreground px-4 py-2 rounded-lg text-sm font-medium disabled:opacity-50"
         >
           {gbpPublishing ? "Publishing..." : "Publish GBP Post"}

@@ -7,6 +7,7 @@ import { submitBingUrls } from "@/lib/providers/bing-webmaster";
 import { recordLedgerAction } from "@/lib/engines/results-ledger";
 import { submitIndexNow } from "@/lib/engines/indexnow";
 import { loadProjectIntegration, type CmsCredentials } from "@/lib/integrations/store";
+import { getValidOAuthToken } from "@/lib/oauth/tokens";
 import { verifyProjectAccess } from "@/lib/security/project-access";
 import { apiError, apiForbidden, apiNotFound, apiUnauthorized } from "@/lib/security/api-response";
 
@@ -290,16 +291,31 @@ export async function PATCH(request: NextRequest) {
   if (!text?.trim()) return apiError("Post text required");
 
   if (platform === "gbp") {
-    const token = credentials.gbpToken || credentials.accessToken;
-    if (!token || !credentials.accountId || !credentials.locationId) {
-      return apiError("GBP requires gbpToken, accountId, locationId");
+    let token = credentials.gbpToken || credentials.accessToken;
+    let accountId = credentials.accountId;
+    let locationId = credentials.locationId;
+
+    if (!token) {
+      token = (await getValidOAuthToken(supabase, projectId, "google_business_profile")) || undefined;
     }
-    const result = await createGBPLocalPost(
-      token,
-      credentials.accountId,
-      credentials.locationId,
-      { summary: text }
-    );
+
+    if ((!accountId || !locationId) && token) {
+      const { data: conn } = await supabase
+        .from("oauth_connections")
+        .select("metadata")
+        .eq("project_id", projectId)
+        .eq("provider", "google_business_profile")
+        .maybeSingle();
+      const meta = (conn?.metadata || {}) as Record<string, string>;
+      accountId = accountId || meta.account_id;
+      locationId = locationId || meta.location_id;
+    }
+
+    if (!token || !accountId || !locationId) {
+      return apiError("Connect GBP OAuth in Distribution tab or provide token + account/location IDs");
+    }
+
+    const result = await createGBPLocalPost(token, accountId, locationId, { summary: text });
     if (result.success) {
       await recordLedgerAction(supabase, {
         project_id: projectId,

@@ -11,6 +11,7 @@
     "smoke": "node scripts/smoke-test.mjs",
     "check:env": "node scripts/check-env.mjs",
     "verify:prod": "node scripts/verify-production.mjs",
+    "prod:keygen": "node scripts/generate-integration-key.mjs",
     "wire:diy": "node scripts/wire-diy-stack.mjs",
     "verify:all": "node scripts/verify-all.mjs",
     "e2e:happy-path": "node scripts/e2e-happy-path.mjs",

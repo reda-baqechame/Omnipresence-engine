@@ -1,17 +1,13 @@
 {
-  "version": "4.0.0",
-  "project": "OmniPresence Super Engine — Phase 4 Production Ready",
+  "version": "5.0.0",
+  "project": "OmniPresence Super Engine — Phase 5 Launch",
   "tasks": [
-    { "id": "production-readiness-engine", "title": "Production readiness scoring + health API", "status": "done", "dependsOn": [], "files": ["src/lib/config/production.ts", "src/app/api/health/route.ts"], "acceptance": "/api/health returns production.ready and score" },
-    { "id": "env-example", "title": "Complete .env.example template", "status": "done", "dependsOn": [], "files": [".env.example"], "acceptance": "All production env vars documented" },
-    { "id": "credential-vault-prod", "title": "Require INTEGRATION_ENCRYPTION_KEY in production", "status": "done", "dependsOn": [], "files": ["src/lib/security/credential-vault.ts"], "acceptance": "Encrypt fails without key on Vercel production" },
-    { "id": "integrations-ui", "title": "CMS integrations save panel", "status": "done", "dependsOn": ["credential-vault-prod"], "files": ["src/components/integrations-panel.tsx"], "acceptance": "Distribution tab saves encrypted WordPress/Webflow/Shopify creds" },
-    { "id": "publish-vault-fallback", "title": "Publish uses saved integration creds", "status": "done", "dependsOn": ["integrations-ui"], "files": ["src/app/api/distribution/route.ts", "src/lib/integrations/store.ts"], "acceptance": "POST publish works without inline credentials when saved" },
-    { "id": "scheduler-multi-cms", "title": "Scheduler supports WordPress/Webflow/Shopify", "status": "done", "dependsOn": ["publish-vault-fallback"], "files": ["src/lib/engines/content-publish-scheduler.ts"], "acceptance": "Hourly cron auto-publishes via vault" },
-    { "id": "weekly-gsc-sync", "title": "Weekly GSC/attribution sync cron", "status": "done", "dependsOn": [], "files": ["src/lib/inngest/functions.ts"], "acceptance": "weekly-attribution-sync runs Mondays 07:00 UTC" },
-    { "id": "prompt-import-ui", "title": "Prompt CSV import on Visibility tab", "status": "done", "dependsOn": [], "files": ["src/components/prompt-import-panel.tsx"], "acceptance": "Bulk import prompts from CSV in UI" },
-    { "id": "startup-warnings", "title": "Server startup production warnings", "status": "done", "dependsOn": ["production-readiness-engine"], "files": ["src/instrumentation.ts"], "acceptance": "Logs blockers/warnings on production boot" },
-    { "id": "verify-prod-script", "title": "verify:prod uses production readiness", "status": "done", "dependsOn": ["production-readiness-engine"], "files": ["scripts/verify-production.mjs", "scripts/check-env.mjs"], "acceptance": "CLI reports blockers and OmniData status" },
-    { "id": "setup-checklist-v4", "title": "Production setup checklist UI v4", "status": "done", "dependsOn": ["production-readiness-engine"], "files": ["src/app/app/settings/setup/page.tsx"], "acceptance": "Setup page shows readiness score and encryption step" }
+    { "id": "health-checks-detail", "title": "Health API returns full production checks", "status": "done", "dependsOn": [], "files": ["src/app/api/health/route.ts"], "acceptance": "verify:prod shows blocker messages" },
+    { "id": "gbp-oauth", "title": "Google Business Profile OAuth flow", "status": "done", "dependsOn": [], "files": ["src/app/api/oauth/route.ts", "src/lib/providers/gbp-discovery.ts"], "acceptance": "Connect GBP from Distribution tab" },
+    { "id": "gbp-oauth-publish", "title": "GBP publish uses OAuth token + discovered location", "status": "done", "dependsOn": ["gbp-oauth"], "files": ["src/app/api/distribution/route.ts"], "acceptance": "Post without manual token when connected" },
+    { "id": "oauth-status-api", "title": "OAuth connection status API", "status": "done", "dependsOn": ["gbp-oauth"], "files": ["src/app/api/oauth/status/route.ts"], "acceptance": "UI shows connected providers per project" },
+    { "id": "embed-audit", "title": "Embeddable public audit widget", "status": "done", "dependsOn": [], "files": ["src/app/embed/audit/page.tsx", "src/app/api/embed/audit-snippet/route.ts"], "acceptance": "iframe embed + snippet endpoint" },
+    { "id": "embed-headers", "title": "CSP frame-ancestors for embed routes", "status": "done", "dependsOn": ["embed-audit"], "files": ["next.config.ts"], "acceptance": "/embed/audit loadable in external iframe" },
+    { "id": "prod-keygen", "title": "Integration encryption key generator", "status": "done", "dependsOn": [], "files": ["scripts/generate-integration-key.mjs"], "acceptance": "npm run prod:keygen outputs Vercel-ready key" }
   ]
 }

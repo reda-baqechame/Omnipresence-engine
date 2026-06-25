@@ -101,7 +101,7 @@ export function getProductionReadiness(): {
       : isProductionDeploy()
         ? "error"
         : "warning",
-    message: "Set INTEGRATION_ENCRYPTION_KEY (32+ chars) before storing CMS/social creds",
+    message: "Set INTEGRATION_ENCRYPTION_KEY (32+ chars) on Vercel before saving CMS credentials",
   });
 
   checks.push({
