@@ -62,21 +62,21 @@ Read `docs/OMNIPRESENCE_PHASE8_SPEC.md` for competitive gap analysis vs AEO Engi
 | Phase 1–5 | v1–v5 | done |
 | Phase 6 Intelligence Spine | v6.0.0 | done |
 | Phase 7 Production Launch | v7.0.0 | done |
-| **Phase 8 Beat AEO Engine** | **v8.0.0** | **done — run wire:diy + verify:prod** |
+| **Phase 8 Beat AEO Engine** | **v8.0.0** | **done** |
+| **Phase 9 Dominate AEO** | **v9.0.0** | **done — run audit:phase9 + verify:prod** |
 
-## Phase 8 focus order
+## Phase 9 focus order
 
-1. **Wave A** — on-page-automation, internal-link-cms, bulk-indexing-ui, distribution-kanban
-2. **Wave B** — free-tools-expansion, public-audit-v2, coverage-map-ui
-3. **Wave C** — link-building-campaigns, authority-crm, reddit-quora-tracker
-4. **Wave D** — omnidata-task-queue, omnidata-maps-serp, omnidata-on-page-instant, serp-history-redis
-5. **Wave E** — omnipresence-dashboard, ads-replacement-calc, friday-report-v2
+1. **Wave A** — prompt-campaign-ui, gsc-prompt-import, blog-pipeline-ui, llm-referral-chart
+2. **Wave B** — visitor-identity, embed-widget-v2, nap-consistency
+3. **Wave C** — guarantee-traffic-rules, podcast-audio-stub, prompt-heatmap
+4. **Wave D** — phase9-migration, phase9-wiring-docs
 
 ## Loop prompt (Cursor)
 
 ```
-Read .cursor/skills/omnipresence-loop/SKILL.md and docs/OMNIPRESENCE_PHASE8_SPEC.md.
-Execute the next pending BUILD_MANIFEST v8 task only. Run verify:all. Commit if green.
+Read .cursor/skills/omnipresence-loop/SKILL.md and docs/OMNIPRESENCE_PHASE9_SPEC.md.
+Execute the next pending BUILD_MANIFEST v9 task only. Run verify:all. Commit if green.
 ```
 
 ## Phase 2 manifest (v2.0.0) — archived

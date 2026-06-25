@@ -151,4 +151,22 @@
 | 2026-06-25 | migrate-prod-0016 | done | Fixed migrate-production.mjs for Windows paths; 0016 applied |
 | 2026-06-25 | wire-diy-expanded | done | OmniData, encryption, IndexNow, Phase 8 crons in wire:diy |
 
+## Phase 9 (complete)
+
+| Date | Task | Status | Notes |
+|------|------|--------|-------|
+| 2026-06-25 | prompt-campaign-ui | done | Prompts tab + funnel clustering |
+| 2026-06-25 | gsc-prompt-import | done | `import_gsc` action + batch insert 500 rows |
+| 2026-06-25 | blog-pipeline-ui | done | 14-step tracker on Content tab |
+| 2026-06-25 | llm-referral-chart | done | `/api/attribution/referrals` + chart |
+| 2026-06-25 | visitor-identity | done | visitor_sessions + Clearbit optional |
+| 2026-06-25 | embed-widget-v2 | done | brand/color/logo query params |
+| 2026-06-25 | nap-consistency | done | Entity tab NAP scan |
+| 2026-06-25 | guarantee-traffic-rules | done | Qualified traffic rules UI |
+| 2026-06-25 | podcast-audio-stub | done | `/api/podcast/generate` OpenAI TTS |
+| 2026-06-25 | prompt-heatmap | done | Category ownership grid on Visibility |
+| 2026-06-25 | phase9-migration | done | `0017_phase9.sql` visitor_sessions |
+| 2026-06-25 | phase9-wiring-docs | done | `npm run audit:phase9` |
+
+**Phase 9 manifest complete — run `npm run db:migrate:prod` for 0017 on production.**
 

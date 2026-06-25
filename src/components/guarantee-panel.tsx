@@ -97,6 +97,37 @@ export function GuaranteePanel({ projectId, contract, claims, ledger }: Guarante
       {message && <p className="text-sm text-muted-foreground">{message}</p>}
 
       <div className="bg-card border border-border rounded-xl p-6">
+        <h3 className="font-semibold mb-3">Qualified traffic rules</h3>
+        <p className="text-sm text-muted-foreground mb-4">
+          Traffic counts toward guarantee KPI only when all qualification rules pass.
+        </p>
+        <ul className="text-sm space-y-2">
+          <li className="flex justify-between border-b border-border pb-2">
+            <span>Minimum session duration</span>
+            <span className="text-muted-foreground">30 seconds</span>
+          </li>
+          <li className="flex justify-between border-b border-border pb-2">
+            <span>Exclude bot user-agents</span>
+            <span className="text-green-400">Enabled</span>
+          </li>
+          <li className="flex justify-between border-b border-border pb-2">
+            <span>Organic or AI-referral source required</span>
+            <span className="text-green-400">Enabled</span>
+          </li>
+          <li className="flex justify-between border-b border-border pb-2">
+            <span>Geographic match (project locale)</span>
+            <span className="text-muted-foreground">When GA4 connected</span>
+          </li>
+          <li className="flex justify-between">
+            <span>KPI threshold for credit claim</span>
+            <span className="text-primary">
+              +{(contract?.threshold_value as number) ?? 15} {(contract?.kpi_metric as string) || "omnipresence_score"}
+            </span>
+          </li>
+        </ul>
+      </div>
+
+      <div className="bg-card border border-border rounded-xl p-6">
         <h3 className="font-semibold mb-3">Results ledger (proof)</h3>
         <div className="space-y-2 max-h-80 overflow-y-auto">
           {ledger.map((entry) => (

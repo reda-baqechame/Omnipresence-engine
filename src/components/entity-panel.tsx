@@ -2,10 +2,20 @@
 
 import { useEffect, useState } from "react";
 
+interface NapFinding {
+  field: string;
+  expected: string;
+  found?: string;
+  url?: string;
+  severity: string;
+}
+
 export function EntityPanel({ projectId }: { projectId: string }) {
   const [profile, setProfile] = useState<Record<string, unknown> | null>(null);
   const [wikidataDraft, setWikidataDraft] = useState("");
+  const [napFindings, setNapFindings] = useState<NapFinding[]>([]);
   const [loading, setLoading] = useState(false);
+  const [napLoading, setNapLoading] = useState(false);
 
   useEffect(() => {
     fetch(`/api/entity?projectId=${projectId}`)
@@ -24,6 +34,14 @@ export function EntityPanel({ projectId }: { projectId: string }) {
     setProfile(data.profile);
     setWikidataDraft(data.wikidataDraft || "");
     setLoading(false);
+  }
+
+  async function checkNap() {
+    setNapLoading(true);
+    const res = await fetch(`/api/entity?projectId=${projectId}&checkNap=1`);
+    const data = await res.json();
+    setNapFindings(data.findings || []);
+    setNapLoading(false);
   }
 
   async function generateSchema() {
@@ -86,6 +104,34 @@ export function EntityPanel({ projectId }: { projectId: string }) {
           </div>
         </div>
       )}
+
+      <div className="bg-card border border-border rounded-xl p-6">
+        <div className="flex items-center justify-between mb-3">
+          <h3 className="font-semibold">NAP Consistency</h3>
+          <button
+            onClick={checkNap}
+            disabled={napLoading}
+            className="text-sm bg-secondary px-3 py-1.5 rounded-lg hover:bg-secondary/80 disabled:opacity-50"
+          >
+            {napLoading ? "Scanning..." : "Check NAP"}
+          </button>
+        </div>
+        {napFindings.length > 0 ? (
+          <ul className="text-sm space-y-2">
+            {napFindings.map((f, i) => (
+              <li key={i} className="text-yellow-400">
+                {f.field}: expected &quot;{f.expected}&quot;
+                {f.found && ` — found "${f.found}"`}
+                {f.url && <span className="text-muted-foreground"> on {f.url}</span>}
+              </li>
+            ))}
+          </ul>
+        ) : (
+          <p className="text-sm text-muted-foreground">
+            Scan homepage for name, address, and phone mismatches vs brand profile.
+          </p>
+        )}
+      </div>
 
       <div className="bg-card border border-border rounded-xl p-6">
         <div className="flex items-center justify-between mb-3">

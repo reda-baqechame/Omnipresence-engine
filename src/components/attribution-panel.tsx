@@ -1,10 +1,23 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { formatCurrency } from "@/lib/utils";
 import type { AttributionMetric } from "@/types/database";
 import { Ga4PropertyPicker } from "@/components/ga4-property-picker";
 import { AdsEquivalentPanel } from "@/components/ads-equivalent";
+import { LlmReferralChart } from "@/components/llm-referral-chart";
+import { VisitorIdentityPanel } from "@/components/visitor-identity-panel";
+
+interface VisitorSession {
+  id: string;
+  company_name?: string | null;
+  company_domain?: string | null;
+  industry?: string | null;
+  referrer_source?: string | null;
+  landing_path?: string | null;
+  enriched: boolean;
+  created_at: string;
+}
 
 interface AttributionPanelProps {
   projectId: string;
@@ -36,8 +49,19 @@ export function AttributionPanel({
   const [plausibleSite, setPlausibleSite] = useState(plausibleSiteId || domain);
   const [plausibleApiKey, setPlausibleApiKey] = useState("");
   const [connectingPlausible, setConnectingPlausible] = useState(false);
+  const [referrals, setReferrals] = useState<Array<{ source: string; count: number }>>([]);
+  const [sessions, setSessions] = useState<VisitorSession[]>([]);
   const current = metrics[0];
   const previous = metrics[1];
+
+  useEffect(() => {
+    fetch(`/api/attribution/referrals?projectId=${projectId}`)
+      .then((r) => r.json())
+      .then((d) => setReferrals(d.referrals || []));
+    fetch(`/api/visitors?projectId=${projectId}`)
+      .then((r) => r.json())
+      .then((d) => setSessions(d.sessions || []));
+  }, [projectId]);
 
   async function connectPlausible() {
     if (!plausibleApiKey.trim()) return;
@@ -245,6 +269,9 @@ export function AttributionPanel({
         </div>
       )}
 
+      <LlmReferralChart referrals={referrals} />
+      <VisitorIdentityPanel sessions={sessions} />
+
       <div className="bg-card border border-border rounded-xl p-6 mt-8">
         <h3 className="font-semibold mb-2">AI Referral Tracking (v2)</h3>
         <p className="text-sm text-muted-foreground mb-3">
@@ -256,7 +283,7 @@ export function AttributionPanel({
   fetch("${process.env.NEXT_PUBLIC_APP_URL || "https://omnipresence-engine.vercel.app"}/api/track",{
     method:"POST",
     headers:{"Content-Type":"application/json"},
-    body:JSON.stringify({projectId:"${projectId}",referrer:r,path:location.pathname})
+    body:JSON.stringify({projectId:"${projectId}",referrer:r,path:location.pathname,sessionId:sessionStorage.getItem("op_sid")||crypto.randomUUID()})
   }).catch(function(){});
 })();
 </script>`}</pre>

@@ -5,6 +5,7 @@ import { assertContentGenerationAllowed } from "@/lib/engines/content-guardrails
 import { verifyProjectAccess } from "@/lib/security/project-access";
 import { trackApiUsage } from "@/lib/metering/api-usage";
 import { apiError, apiForbidden, apiNotFound, apiServerError, apiUnauthorized } from "@/lib/security/api-response";
+import { advancePipeline, type BlogPipelineStepKey } from "@/lib/engines/blog-pipeline";
 import type { ContentAssetType } from "@/types/database";
 
 const VALID_TYPES = new Set<ContentAssetType>([
@@ -164,13 +165,18 @@ export async function PATCH(request: NextRequest) {
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) return apiUnauthorized();
 
-  const { assetId, status } = await request.json();
-  if (!assetId || !status) return apiError("assetId and status required");
-  if (!VALID_STATUSES.has(status)) return apiError("Invalid status");
+  const { assetId, status, pipelineStep } = await request.json() as {
+    assetId: string;
+    status?: string;
+    pipelineStep?: BlogPipelineStepKey;
+  };
+  if (!assetId) return apiError("assetId required");
+  if (!status && !pipelineStep) return apiError("status or pipelineStep required");
+  if (status && !VALID_STATUSES.has(status)) return apiError("Invalid status");
 
   const { data: asset } = await supabase
     .from("content_assets")
-    .select("project_id")
+    .select("project_id, metadata")
     .eq("id", assetId)
     .single();
 
@@ -179,9 +185,18 @@ export async function PATCH(request: NextRequest) {
   const access = await verifyProjectAccess(supabase, asset.project_id, user.id, "member");
   if (!access) return apiForbidden();
 
+  const updates: Record<string, unknown> = {};
+  if (status) updates.status = status;
+  if (pipelineStep) {
+    updates.metadata = advancePipeline(
+      (asset.metadata || {}) as Record<string, unknown>,
+      pipelineStep
+    );
+  }
+
   const { data, error } = await supabase
     .from("content_assets")
-    .update({ status })
+    .update(updates)
     .eq("id", assetId)
     .select()
     .single();

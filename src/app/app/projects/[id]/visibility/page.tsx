@@ -8,6 +8,8 @@ import { getProject } from "@/lib/projects";
 import { VisibilityTable } from "@/components/visibility-table";
 import { CitationMovementPanel } from "@/components/citation-movement-panel";
 import { PromptImportPanel } from "@/components/prompt-import-panel";
+import { PromptHeatmap } from "@/components/prompt-heatmap";
+import type { PromptCategory } from "@/types/database";
 
 export default async function VisibilityPage({
   params,
@@ -22,7 +24,7 @@ export default async function VisibilityPage({
 
   const [{ data: visibility }, { data: prompts }, { data: runs }] = await Promise.all([
     supabase.from("visibility_results").select("*").eq("project_id", id).order("created_at", { ascending: false }),
-    supabase.from("prompts").select("*").eq("project_id", id).order("priority", { ascending: false }).limit(50),
+    supabase.from("prompts").select("*").eq("project_id", id).order("priority", { ascending: false }),
     supabase.from("visibility_runs").select("*").eq("project_id", id).order("created_at", { ascending: false }).limit(5),
   ]);
 
@@ -59,6 +61,28 @@ export default async function VisibilityPage({
     {} as Record<string, { total: number; mentioned: number; cited: number }>
   );
 
+  const heatmapCells = (() => {
+    const promptMap = new Map((prompts || []).map((p) => [p.id, p.category as PromptCategory]));
+    const byCat: Record<string, { total: number; mentioned: number; cited: number; prompts: number }> = {};
+    for (const p of prompts || []) {
+      if (!byCat[p.category]) byCat[p.category] = { total: 0, mentioned: 0, cited: 0, prompts: 0 };
+      byCat[p.category].prompts++;
+    }
+    for (const r of results) {
+      const cat = r.prompt_id ? promptMap.get(r.prompt_id) : null;
+      if (!cat) continue;
+      byCat[cat].total++;
+      if (r.brand_mentioned) byCat[cat].mentioned++;
+      if (r.brand_cited) byCat[cat].cited++;
+    }
+    return Object.entries(byCat).map(([category, stats]) => ({
+      category: category as PromptCategory,
+      prompts: stats.prompts,
+      mentionRate: stats.total > 0 ? stats.mentioned / stats.total : 0,
+      citationRate: stats.total > 0 ? stats.cited / stats.total : 0,
+    }));
+  })();
+
   return (
     <div className="space-y-8">
       <div className="flex items-center gap-3 text-sm">
@@ -89,6 +113,7 @@ export default async function VisibilityPage({
       )}
 
       <PromptImportPanel projectId={id} />
+      <PromptHeatmap cells={heatmapCells} />
 
       <div>
         <h2 className="text-xl font-semibold mb-4">Visibility by Engine</h2>
