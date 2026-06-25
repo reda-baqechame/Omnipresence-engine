@@ -15,9 +15,14 @@ jobs:
         with:
           node-version: 22
           cache: npm
-      - run: npm install --no-audit --no-fund
-      - name: Install Linux native bindings for Tailwind/Next
-        run: npm install --no-save lightningcss-linux-x64-gnu@1.32.0 @next/swc-linux-x64-gnu@16.2.9
+      - name: Install dependencies (Linux optional native bindings)
+        run: |
+          rm -rf node_modules
+          npm install --no-audit --no-fund --include=optional
+          npm install --no-save \
+            @tailwindcss/oxide-linux-x64-gnu@4.3.1 \
+            lightningcss-linux-x64-gnu@1.32.0 \
+            @next/swc-linux-x64-gnu@16.2.9
       - run: npm run typecheck
       - run: npm run lint
       - run: npm run build
