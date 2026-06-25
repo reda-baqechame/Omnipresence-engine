@@ -178,5 +178,7 @@
 | 2026-06-25 | migrate-prod-0017 | done | visitor_sessions applied via db:migrate:prod |
 | 2026-06-25 | prod-deploy | done | Vercel production READY |
 | 2026-06-25 | verify-prod | done | 100% ready, phase8 + phase9 schema ok |
-| 2026-06-25 | github-push | done | Phase 8–9 on origin/main |
+| 2026-06-25 | wiring-audit | done | Whitelabel embed, podcast TTS, audit:full, WIRING_GUIDE Phase 9 |
+
+**Full stack audit:** `npm run audit:full` — Phase 8 + Phase 9 + verify:prod against production.
 

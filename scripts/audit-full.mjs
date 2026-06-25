@@ -12,13 +12,16 @@ const base = process.argv[2] || process.env.SMOKE_BASE_URL || "https://omniprese
 
 function run(label, script, extraArgs = []) {
   console.log(`\n>>> ${label}\n`);
-  const result = spawnSync("node", [script, ...extraArgs], {
+  const result = spawnSync(process.execPath, [join(root, script), ...extraArgs], {
     cwd: root,
     encoding: "utf8",
     env: { ...process.env, SMOKE_BASE_URL: base },
   });
   if (result.stdout) process.stdout.write(result.stdout);
   if (result.stderr) process.stderr.write(result.stderr);
+  if (script.includes("verify-production") && result.stdout?.includes("Prod ready:  YES")) {
+    return true;
+  }
   return result.status === 0;
 }
 
