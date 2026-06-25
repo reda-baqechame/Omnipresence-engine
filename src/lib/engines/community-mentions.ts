@@ -1,9 +1,147 @@
+import { searchGoogleOrganicRouter } from "@/lib/providers/serp-router";
+
 export interface CommunityMentionRow {
   platform: "reddit" | "quora" | "other";
   url: string;
   keyword?: string;
   mention_type?: "brand" | "competitor" | "category";
   competitor?: string;
+  title?: string;
+  /** "live" = fetched from a real API/SERP; "import" = user CSV upload. */
+  source?: "live" | "import";
+}
+
+const REDDIT_CLIENT_ID = process.env.REDDIT_CLIENT_ID;
+const REDDIT_CLIENT_SECRET = process.env.REDDIT_CLIENT_SECRET;
+const REDDIT_USER_AGENT =
+  process.env.REDDIT_USER_AGENT || "web:omnipresence-engine:v1.0 (by /u/omnipresence)";
+
+export function hasRedditApi(): boolean {
+  return Boolean(REDDIT_CLIENT_ID && REDDIT_CLIENT_SECRET);
+}
+
+let redditToken: { value: string; expiresAt: number } | null = null;
+
+async function getRedditToken(): Promise<string | null> {
+  if (redditToken && redditToken.expiresAt > Date.now() + 30_000) return redditToken.value;
+  if (!REDDIT_CLIENT_ID || !REDDIT_CLIENT_SECRET) return null;
+  try {
+    const auth = Buffer.from(`${REDDIT_CLIENT_ID}:${REDDIT_CLIENT_SECRET}`).toString("base64");
+    const res = await fetch("https://www.reddit.com/api/v1/access_token", {
+      method: "POST",
+      headers: {
+        Authorization: `Basic ${auth}`,
+        "Content-Type": "application/x-www-form-urlencoded",
+        "User-Agent": REDDIT_USER_AGENT,
+      },
+      body: "grant_type=client_credentials",
+    });
+    if (!res.ok) return null;
+    const data = (await res.json()) as { access_token?: string; expires_in?: number };
+    if (!data.access_token) return null;
+    redditToken = {
+      value: data.access_token,
+      expiresAt: Date.now() + (data.expires_in ?? 3600) * 1000,
+    };
+    return redditToken.value;
+  } catch {
+    return null;
+  }
+}
+
+/** Real Reddit mention search via the official API (read-only OAuth). */
+export async function searchRedditMentions(
+  query: string,
+  limit = 25
+): Promise<CommunityMentionRow[]> {
+  const token = await getRedditToken();
+  if (!token) return [];
+  try {
+    const url = `https://oauth.reddit.com/search?q=${encodeURIComponent(
+      query
+    )}&limit=${limit}&sort=relevance&type=link`;
+    const res = await fetch(url, {
+      headers: { Authorization: `Bearer ${token}`, "User-Agent": REDDIT_USER_AGENT },
+    });
+    if (!res.ok) return [];
+    const data = (await res.json()) as {
+      data?: { children?: Array<{ data?: { permalink?: string; title?: string } }> };
+    };
+    return (data.data?.children || [])
+      .map((c) => c.data)
+      .filter((d): d is { permalink?: string; title?: string } => Boolean(d?.permalink))
+      .map((d) => ({
+        platform: "reddit" as const,
+        url: `https://www.reddit.com${d.permalink}`,
+        title: d.title,
+        keyword: query,
+        mention_type: "brand" as const,
+        source: "live" as const,
+      }));
+  } catch {
+    return [];
+  }
+}
+
+/** Best-effort Quora mention discovery via `site:quora.com` SERP. */
+export async function searchQuoraMentions(query: string): Promise<CommunityMentionRow[]> {
+  try {
+    const res = await searchGoogleOrganicRouter(
+      `site:quora.com ${query}`,
+      "United States",
+      "",
+      []
+    );
+    if (!res.success || !res.data) return [];
+    return res.data.organicResults
+      .filter((r) => r.url.includes("quora.com"))
+      .slice(0, 15)
+      .map((r) => ({
+        platform: "quora" as const,
+        url: r.url,
+        title: r.title,
+        keyword: query,
+        mention_type: "brand" as const,
+        source: "live" as const,
+      }));
+  } catch {
+    return [];
+  }
+}
+
+/** Aggregate real community mentions for a brand + competitors across Reddit/Quora. */
+export async function fetchLiveCommunityMentions(
+  brand: string,
+  competitors: string[] = []
+): Promise<{ rows: CommunityMentionRow[]; redditAvailable: boolean }> {
+  const queries = [brand, ...competitors.slice(0, 3)].filter(Boolean);
+  const redditAvailable = hasRedditApi();
+
+  const results = await Promise.all(
+    queries.flatMap((q) => [searchRedditMentions(q), searchQuoraMentions(q)])
+  );
+
+  const rows: CommunityMentionRow[] = [];
+  const seen = new Set<string>();
+  for (const list of results) {
+    for (const row of list) {
+      if (seen.has(row.url)) continue;
+      seen.add(row.url);
+      const isCompetitor = competitors.some(
+        (c) => `${row.url} ${row.title || ""}`.toLowerCase().includes(c.toLowerCase())
+      );
+      rows.push({
+        ...row,
+        mention_type: isCompetitor ? "competitor" : "brand",
+        competitor: isCompetitor
+          ? competitors.find((c) =>
+              `${row.url} ${row.title || ""}`.toLowerCase().includes(c.toLowerCase())
+            )
+          : undefined,
+      });
+    }
+  }
+  return { rows, redditAvailable };
 }
 
 export function parseMentionsCsv(csv: string): CommunityMentionRow[] {
@@ -30,6 +168,7 @@ export function parseMentionsCsv(csv: string): CommunityMentionRow[] {
       url,
       keyword: kwIdx >= 0 ? cols[kwIdx] : undefined,
       mention_type: "brand" as const,
+      source: "import" as const,
     };
   }).filter((r) => r.url.startsWith("http"));
 }

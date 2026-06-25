@@ -24,6 +24,7 @@
     "verify:all": "node scripts/verify-all.mjs",
     "e2e:happy-path": "node scripts/e2e-happy-path.mjs",
     "omnidata:test": "npm run test --prefix services/omnidata",
+    "omnidata:parity": "npm run parity --prefix services/omnidata",
     "install:integrations": "node scripts/install-integrations.mjs",
     "db:migrate": "node scripts/run-migration.mjs",
     "db:migrate:prod": "node scripts/migrate-production.mjs",

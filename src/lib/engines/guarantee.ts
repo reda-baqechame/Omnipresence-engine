@@ -128,10 +128,53 @@ export function evaluateGuaranteeFailure(
   };
 }
 
+/**
+ * Read the latest AEO readiness snapshot and derive Tier-1 deterministic
+ * deliverable status (crawlable, schema, passages, freshness) — the part of the
+ * guarantee we promise outright.
+ */
+export async function gatherTier1Deliverables(
+  supabase: SupabaseClient,
+  projectId: string
+): Promise<{ deliverables: DeterministicDeliverable[]; tier1Met: boolean }> {
+  const { data } = await supabase
+    .from("aeo_readiness")
+    .select("levers, deterministic_deliverables_met")
+    .eq("project_id", projectId)
+    .maybeSingle();
+
+  const levers = (data?.levers || []) as AeoLever[];
+  if (!levers.length) {
+    return { deliverables: [], tier1Met: Boolean(data?.deterministic_deliverables_met) };
+  }
+  const tier = buildTwoTierGuarantee(levers);
+  return { deliverables: tier.deterministicDeliverables, tier1Met: tier.tier1Met };
+}
+
+/** Completed/verified ledger actions are the real evidence of work delivered. */
+export async function gatherLedgerEvidence(
+  supabase: SupabaseClient,
+  projectId: string
+): Promise<ResultsLedgerEntry[]> {
+  const { data } = await supabase
+    .from("results_ledger")
+    .select("*")
+    .eq("project_id", projectId)
+    .in("status", ["completed", "verified"]);
+  return (data || []) as ResultsLedgerEntry[];
+}
+
+export interface GuaranteeVerificationOptions {
+  tier1Deliverables?: DeterministicDeliverable[];
+  tier1Met?: boolean;
+  evidence?: ResultsLedgerEntry[];
+}
+
 export async function verifyGuaranteeContract(
   supabase: SupabaseClient,
   projectId: string,
-  currentMetrics: Record<string, number>
+  currentMetrics: Record<string, number>,
+  options: GuaranteeVerificationOptions = {}
 ): Promise<{ contract: GuaranteeContract; failed: boolean } | null> {
   const { data: contract } = await supabase
     .from("guarantee_contracts")
@@ -148,8 +191,11 @@ export async function verifyGuaranteeContract(
     return { contract: contract as GuaranteeContract, failed: false };
   }
 
+  // Tier 2 — measured aggregate KPI movement from real scans/visibility runs.
   const evaluation = evaluateGuaranteeFailure(contract as GuaranteeContract, currentMetrics);
   const status = evaluation.failed ? "failed" : "verified";
+
+  const evidenceCount = options.evidence?.length ?? 0;
 
   await supabase
     .from("guarantee_contracts")
@@ -161,6 +207,11 @@ export async function verifyGuaranteeContract(
         improvement: evaluation.delta,
         threshold: contract.threshold_value,
         message: evaluation.message,
+        // Tier 1 — deterministic deliverables we promise outright.
+        tier1_met: options.tier1Met ?? null,
+        tier1_deliverables: options.tier1Deliverables ?? [],
+        // Real evidence backing the verification.
+        actions_completed: evidenceCount,
       },
       updated_at: new Date().toISOString(),
     })

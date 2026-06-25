@@ -1,0 +1,44 @@
+# Fly.io deployment for the OmniData engine.
+# Setup:
+#   fly launch --no-deploy --copy-config --name omnidata-<yourname>
+#   fly volumes create omnidata_data --size 20      # for the Common Crawl webgraph index
+#   fly secrets set OMNIDATA_API_KEY=... OMNIDATA_SIGNING_SECRET=... REDIS_URL=... \
+#                   SERPER_API_KEY=... OPENPAGERANK_API_KEY=...
+#   fly deploy
+app = "omnidata"
+primary_region = "iad"
+
+[build]
+  dockerfile = "Dockerfile"
+
+[env]
+  PORT = "8787"
+  WEBGRAPH_DB_PATH = "/data/webgraph.duckdb"
+  OMNIDATA_ENABLE_SCRAPE = "false"
+
+[[mounts]]
+  source = "omnidata_data"
+  destination = "/data"
+
+[http_service]
+  internal_port = 8787
+  force_https = true
+  auto_stop_machines = "stop"
+  auto_start_machines = true
+  min_machines_running = 1
+
+  [http_service.concurrency]
+    type = "requests"
+    soft_limit = 80
+    hard_limit = 100
+
+  [[http_service.checks]]
+    interval = "30s"
+    timeout = "5s"
+    grace_period = "10s"
+    method = "GET"
+    path = "/health"
+
+[[vm]]
+  size = "shared-cpu-1x"
+  memory = "1gb"

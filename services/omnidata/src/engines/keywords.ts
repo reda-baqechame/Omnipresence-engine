@@ -1,4 +1,5 @@
 import type { KeywordSuggestion } from "../types.js";
+import { getKeywordMetrics, hasKeywordPlanner } from "./keyword-planner.js";
 
 const SERPER_KEY = process.env.SERPER_API_KEY;
 
@@ -75,6 +76,7 @@ export async function runKeywords(seed: string): Promise<{
   seed: string;
   suggestions: KeywordSuggestion[];
   related: KeywordSuggestion[];
+  data_source: "keyword_planner" | "estimated";
 }> {
   const autocomplete = await googleAutocomplete(seed);
   const relatedSeeds = autocomplete.slice(0, 3);
@@ -85,7 +87,7 @@ export async function runKeywords(seed: string): Promise<{
 
   const seedSerpCount = await serpResultCountEstimate(seed);
 
-  const suggestions = clusterKeywords(autocomplete).map((s, idx) => ({
+  let suggestions: KeywordSuggestion[] = clusterKeywords(autocomplete).map((s, idx) => ({
     ...s,
     volume_estimate: estimateVolume(
       s.keyword,
@@ -93,13 +95,43 @@ export async function runKeywords(seed: string): Promise<{
       autocomplete.filter((k) => k.startsWith(s.keyword.split(" ")[0])).length,
       s.keyword === seed ? seedSerpCount : undefined
     ),
+    data_source: "estimated" as const,
   }));
 
-  const related = relatedFlat.map((keyword, idx) => ({
+  let related: KeywordSuggestion[] = relatedFlat.map((keyword, idx) => ({
     keyword,
     source: "related" as const,
     volume_estimate: estimateVolume(keyword, idx, 1),
+    data_source: "estimated" as const,
   }));
 
-  return { seed, suggestions, related };
+  // Upgrade to REAL volume + CPC via Google Ads Keyword Planner when configured.
+  let dataSource: "keyword_planner" | "estimated" = "estimated";
+  if (hasKeywordPlanner()) {
+    const allKeywords = [
+      seed,
+      ...suggestions.map((s) => s.keyword),
+      ...related.map((r) => r.keyword),
+    ];
+    const metrics = await getKeywordMetrics(allKeywords);
+    if (metrics && metrics.length > 0) {
+      const byKw = new Map(metrics.map((m) => [m.keyword.toLowerCase(), m]));
+      const enrich = (s: KeywordSuggestion): KeywordSuggestion => {
+        const m = byKw.get(s.keyword.toLowerCase());
+        if (!m) return s;
+        return {
+          ...s,
+          volume_estimate: m.avg_monthly_searches,
+          cpc: m.cpc,
+          competition: m.competition,
+          data_source: "keyword_planner",
+        };
+      };
+      suggestions = suggestions.map(enrich);
+      related = related.map(enrich);
+      dataSource = "keyword_planner";
+    }
+  }
+
+  return { seed, suggestions, related, data_source: dataSource };
 }

@@ -23,7 +23,7 @@ description: >-
    ```bash
    npm run verify:all
    ```
-   If OmniData changed: `npm run omnidata:test`
+   If OmniData changed: `npm run omnidata:test` + `npm run omnidata:parity`
 5. If green: set task `status: "done"` in manifest, append progress log, commit
 6. If red after 3 fix attempts: set `status: "blocked"`, log error, stop loop
 
@@ -55,7 +55,8 @@ When all tasks are `done`, run `npm run production:ready` (or `verify:all` + `au
 
 ## Phase priority
 
-Read `docs/OMNIPRESENCE_PHASE8_SPEC.md` for competitive gap analysis vs AEO Engine.
+Read `docs/OMNIPRESENCE_PHASE10_SPEC.md` for the current (real-data) plan and
+`docs/OMNIPRESENCE_PHASE8_SPEC.md` for competitive gap analysis vs AEO Engine.
 
 | Phase | Manifest version | Status |
 |-------|------------------|--------|
@@ -63,20 +64,25 @@ Read `docs/OMNIPRESENCE_PHASE8_SPEC.md` for competitive gap analysis vs AEO Engi
 | Phase 6 Intelligence Spine | v6.0.0 | done |
 | Phase 7 Production Launch | v7.0.0 | done |
 | **Phase 8 Beat AEO Engine** | **v8.0.0** | **done** |
-| **Phase 9 Dominate AEO** | **v9.0.0** | **done — run audit:phase9 + verify:prod** |
+| **Phase 9 Dominate AEO** | **v9.0.0** | **done** |
+| **Phase 10 Real Results, Real Data** | **v10.0.0** | **done — provision OmniData host + keys, then `audit:live`** |
 
-## Phase 9 focus order
+## Phase 10 focus order (v10.0.0)
 
-1. **Wave A** — prompt-campaign-ui, gsc-prompt-import, blog-pipeline-ui, llm-referral-chart
-2. **Wave B** — visitor-identity, embed-widget-v2, nap-consistency
-3. **Wave C** — guarantee-traffic-rules, podcast-audio-stub, prompt-heatmap
-4. **Wave D** — phase9-migration, phase9-wiring-docs
+1. **Wave A (real data)** — cc-webgraph-backlinks, keyword-planner-real, serp-scrape-fallback
+2. **Wave B (real signals)** — community-local-real, guarantee-real-loop, tech-probes
+3. **Wave C (parity)** — aeo-parity-extras
+4. **Wave D (ship)** — omnidata-deploy, phase10-loop
+
+All Phase 10 tasks are implemented; the only remaining step is user provisioning of
+the OmniData host + provider keys, then `npm run audit:live` to verify real data.
 
 ## Loop prompt (Cursor)
 
 ```
-Read .cursor/skills/omnipresence-loop/SKILL.md and docs/OMNIPRESENCE_PHASE9_SPEC.md.
-Execute the next pending BUILD_MANIFEST v9 task only. Run verify:all. Commit if green.
+Read .cursor/skills/omnipresence-loop/SKILL.md and docs/OMNIPRESENCE_PHASE10_SPEC.md.
+Execute the next pending BUILD_MANIFEST v10 task only. Run verify:all (+ omnidata:parity
+if OmniData changed). Commit if green.
 ```
 
 ## Phase 2 manifest (v2.0.0) — archived

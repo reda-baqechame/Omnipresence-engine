@@ -1,6 +1,8 @@
 /**
- * Local/maps SERP — inspired by google-maps-scraper patterns; uses Serper places when available.
+ * Local/maps SERP — inspired by google-maps-scraper patterns; uses Serper places
+ * when available, with an env-gated keyless Playwright fallback.
  */
+import { scrapeGoogleMaps } from "./scrape.js";
 
 const SERPER_KEY = process.env.SERPER_API_KEY;
 
@@ -18,9 +20,26 @@ export interface MapsResult {
   }>;
 }
 
+async function mapsViaScrape(keyword: string, location: string): Promise<MapsResult> {
+  const scraped = await scrapeGoogleMaps(keyword);
+  if (!scraped) return { keyword, location, items: [] };
+  return {
+    keyword,
+    location,
+    items: scraped.map((p) => ({
+      title: p.title,
+      address: p.address,
+      rating: p.rating,
+      reviews: p.reviews,
+      domain: p.domain,
+      position: p.position,
+    })),
+  };
+}
+
 export async function runMapsLive(keyword: string, location = "United States"): Promise<MapsResult> {
   if (!SERPER_KEY) {
-    return { keyword, location, items: [] };
+    return mapsViaScrape(keyword, location);
   }
 
   try {
@@ -30,7 +49,7 @@ export async function runMapsLive(keyword: string, location = "United States"): 
       body: JSON.stringify({ q: keyword, location }),
       signal: AbortSignal.timeout(15000),
     });
-    if (!res.ok) return { keyword, location, items: [] };
+    if (!res.ok) return mapsViaScrape(keyword, location);
 
     const data = (await res.json()) as {
       places?: Array<{
@@ -65,6 +84,6 @@ export async function runMapsLive(keyword: string, location = "United States"): 
 
     return { keyword, location, items };
   } catch {
-    return { keyword, location, items: [] };
+    return mapsViaScrape(keyword, location);
   }
 }

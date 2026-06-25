@@ -13,7 +13,11 @@ import { gatherReportData, saveReportArtifacts } from "@/lib/engines/report-buil
 import { syncProjectAttribution } from "@/lib/engines/attribution-sync";
 import { sendWeeklyReport } from "@/lib/email/reports";
 import { sendSlackWebhook, buildWeeklyReportSlackMessage } from "@/lib/notifications/slack";
-import { verifyGuaranteeContract } from "@/lib/engines/guarantee";
+import {
+  verifyGuaranteeContract,
+  gatherTier1Deliverables,
+  gatherLedgerEvidence,
+} from "@/lib/engines/guarantee";
 import { runAllRankChecks } from "@/lib/engines/rank-tracker-service";
 import { snapshotProjectBacklinks } from "@/lib/engines/backlink-monitor";
 import { processScheduledContent } from "@/lib/engines/content-publish-scheduler";
@@ -414,6 +418,8 @@ export const guaranteeVerificationCron = inngest.createFunction(
           .select("*", { count: "exact", head: true })
           .eq("project_id", contract.project_id);
 
+        // Tier 2 KPIs from real measured sources: latest score breakdown
+        // (citation/mention rate derived from visibility runs) + AI referrals.
         const breakdown = (score?.breakdown || {}) as Record<string, number>;
         const metrics: Record<string, number> = {
           omnipresence_score: Number(score?.omnipresence_score ?? 0),
@@ -422,7 +428,17 @@ export const guaranteeVerificationCron = inngest.createFunction(
           ai_referral_traffic: aiReferrals ?? 0,
         };
 
-        await verifyGuaranteeContract(supabase, contract.project_id, metrics);
+        // Tier 1 deterministic deliverables + real ledger evidence.
+        const [{ deliverables, tier1Met }, evidence] = await Promise.all([
+          gatherTier1Deliverables(supabase, contract.project_id),
+          gatherLedgerEvidence(supabase, contract.project_id),
+        ]);
+
+        await verifyGuaranteeContract(supabase, contract.project_id, metrics, {
+          tier1Deliverables: deliverables,
+          tier1Met,
+          evidence,
+        });
       });
       verified++;
     }

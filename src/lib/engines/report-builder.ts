@@ -2,6 +2,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import { generateReportHTML, type ReportData } from "@/lib/engines/report-generator";
 import { generateReportPDF } from "@/lib/engines/report-pdf";
 import { calculateAdsEquivalent } from "@/lib/engines/ads-equivalent";
+import { getRealKeywordCpc } from "@/lib/providers/dataforseo";
 import type { RoadmapItem, VisibilityResult } from "@/types/database";
 
 export interface WhiteLabelBranding {
@@ -64,12 +65,24 @@ export async function gatherReportData(
 
   const whiteLabel = await getOrgWhiteLabel(supabase, project.organization_id);
 
+  let realCpc: number | null = null;
+  if (attribution) {
+    const { data: kwRows } = await supabase
+      .from("keywords")
+      .select("keyword")
+      .eq("project_id", projectId)
+      .limit(50);
+    const kwList = (kwRows || []).map((k) => k.keyword).filter(Boolean);
+    if (kwList.length) realCpc = await getRealKeywordCpc(kwList);
+  }
+
   const adsEquivalent = attribution
     ? calculateAdsEquivalent({
         organicSessions: attribution.organic_traffic ?? 0,
         aiReferralSessions: attribution.ai_referral_traffic ?? 0,
         monthlyAdSpend: project.monthly_ad_spend ?? 0,
         industry: project.industry,
+        customCpc: realCpc ?? undefined,
       })
     : undefined;
 

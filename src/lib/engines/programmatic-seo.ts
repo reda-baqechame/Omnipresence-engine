@@ -1,5 +1,8 @@
 import type { ContentAssetType } from "@/types/database";
 
+/** Hard ceiling for a single programmatic campaign (10k-row matrices). */
+export const PSEO_MAX_PAGES = 10000;
+
 export type PseoTemplateType = "location_page" | "service_page" | "best_of_page" | "comparison_page";
 
 export interface PseoCampaignInput {
@@ -64,7 +67,7 @@ export function expandPseoMatrix(
   input: PseoCampaignInput,
   domain: string
 ): PseoPageSpec[] {
-  const maxPages = input.maxPages ?? 50;
+  const maxPages = Math.min(input.maxPages ?? 50, PSEO_MAX_PAGES);
   const pattern = input.urlPattern || "/{type}/{slug}";
   const services = input.services.length ? input.services : ["services"];
   const locations = input.locations.length ? input.locations : ["local"];
@@ -128,7 +131,88 @@ export function estimatePseoMatrixSize(input: PseoCampaignInput): number {
   const services = Math.max(input.services.length, 1);
   const locations = Math.max(input.locations.length, 1);
   const keywords = input.keywords?.length ? input.keywords.length : 1;
-  return Math.min(services * locations * keywords, input.maxPages ?? 50);
+  return Math.min(services * locations * keywords, Math.min(input.maxPages ?? 50, PSEO_MAX_PAGES));
+}
+
+/** Per-page Search Console performance (from searchAnalytics with dimensions=["page"]). */
+export interface PseoPagePerformance {
+  url: string;
+  clicks: number;
+  impressions: number;
+  ctr: number;
+  position: number;
+}
+
+export interface PseoRefreshCandidate {
+  url: string;
+  reason: string;
+  priority: number;
+  clicks: number;
+  impressions: number;
+  position: number;
+}
+
+/** Expected organic CTR by average position (industry curve, approximate). */
+function expectedCtr(position: number): number {
+  if (position <= 1) return 0.28;
+  if (position <= 2) return 0.15;
+  if (position <= 3) return 0.1;
+  if (position <= 5) return 0.06;
+  if (position <= 10) return 0.025;
+  return 0.01;
+}
+
+/**
+ * GSC refresh loop: scan real per-page Search Console performance and flag
+ * programmatic pages worth refreshing — striking-distance pages, high-impression
+ * low-CTR pages, and high-impression zero-click pages. Sorted by opportunity.
+ */
+export function selectPagesToRefresh(
+  rows: PseoPagePerformance[],
+  opts: { minImpressions?: number } = {}
+): PseoRefreshCandidate[] {
+  const minImpressions = opts.minImpressions ?? 50;
+  const candidates: PseoRefreshCandidate[] = [];
+
+  for (const r of rows) {
+    if (r.impressions < minImpressions) continue;
+    const reasons: string[] = [];
+    let priority = 0;
+
+    // Striking distance — small push can win page-1 / AI-citation eligibility.
+    if (r.position > 7 && r.position <= 20) {
+      reasons.push(`striking distance (avg position ${r.position.toFixed(1)})`);
+      priority += r.impressions * 0.5;
+    }
+
+    // High impressions but CTR well below expectation for its position.
+    const target = expectedCtr(r.position);
+    if (r.ctr < target * 0.5) {
+      reasons.push(
+        `low CTR ${(r.ctr * 100).toFixed(1)}% vs ~${(target * 100).toFixed(0)}% expected`
+      );
+      priority += r.impressions * 0.3;
+    }
+
+    // Lots of impressions, no clicks — title/meta or intent mismatch.
+    if (r.clicks === 0 && r.impressions >= minImpressions * 2) {
+      reasons.push("high impressions, zero clicks");
+      priority += r.impressions * 0.4;
+    }
+
+    if (reasons.length) {
+      candidates.push({
+        url: r.url,
+        reason: reasons.join("; "),
+        priority: Math.round(priority),
+        clicks: r.clicks,
+        impressions: r.impressions,
+        position: Math.round(r.position * 10) / 10,
+      });
+    }
+  }
+
+  return candidates.sort((a, b) => b.priority - a.priority);
 }
 
 export function parseCsvLines(csv: string): string[] {

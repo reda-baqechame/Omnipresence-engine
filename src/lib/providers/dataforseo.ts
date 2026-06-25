@@ -283,6 +283,35 @@ export async function getBacklinks(
   }
 }
 
+/**
+ * Real average CPC (USD) for keywords from the Google Ads Keyword Planner via
+ * OmniData. Returns null when the planner is not configured so callers can fall
+ * back to industry defaults honestly.
+ */
+export async function getRealKeywordCpc(keywords: string[]): Promise<number | null> {
+  if (!USE_OMNIDATA || keywords.length === 0) return null;
+  try {
+    const data = await dataForSEORequest<{
+      tasks: Array<{
+        result: Array<{
+          data_source?: string;
+          metrics?: Array<{ cpc?: number }>;
+        }>;
+      }>;
+    }>("/keywords/metrics/live", [{ keywords: keywords.slice(0, 200) }]);
+
+    const block = data.tasks?.[0]?.result?.[0];
+    if (block?.data_source !== "keyword_planner" || !block.metrics?.length) return null;
+    const cpcs = block.metrics
+      .map((m) => m.cpc)
+      .filter((c): c is number => typeof c === "number" && c > 0);
+    if (cpcs.length === 0) return null;
+    return Math.round((cpcs.reduce((a, b) => a + b, 0) / cpcs.length) * 100) / 100;
+  } catch {
+    return null;
+  }
+}
+
 export type LLMPlatform = "google" | "chat_gpt";
 
 export interface LLMMentionSource {

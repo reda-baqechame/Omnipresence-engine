@@ -40,6 +40,9 @@ export async function runTechnicalAudit(
 
     // Meta check
     findings.push(...checkMeta(page.title, page.metaDescription, baseUrl));
+
+    // JS-render dependency (most AI crawlers do NOT execute JavaScript)
+    findings.push(...await checkJsRendering(baseUrl, page.wordCount));
   } else {
     findings.push({
       category: "crawlability",
@@ -54,6 +57,9 @@ export async function runTechnicalAudit(
 
   // AI bot access check
   findings.push(...await checkAIBotAccess(baseUrl));
+
+  // Apple Business Connect (manual — no public lookup API)
+  findings.push(appleBusinessConnectStatus(baseUrl));
 
   // Core Web Vitals / page speed (retrieval timeout risk for AI engines)
   findings.push(...await checkPageSpeed(baseUrl));
@@ -394,9 +400,88 @@ async function checkPageSpeed(baseUrl: string): Promise<TechnicalAuditFinding[]>
   return findings;
 }
 
+/** Strip HTML to approximate visible text word count. */
+function htmlToWordCount(html: string): number {
+  const text = html
+    .replace(/<script[\s\S]*?<\/script>/gi, " ")
+    .replace(/<style[\s\S]*?<\/style>/gi, " ")
+    .replace(/<noscript[\s\S]*?<\/noscript>/gi, " ")
+    .replace(/<[^>]+>/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+  if (!text) return 0;
+  return text.split(" ").filter(Boolean).length;
+}
+
+/**
+ * Detect JS-dependent rendering: most AI crawlers (GPTBot, ClaudeBot,
+ * PerplexityBot) do NOT execute JavaScript. If the raw HTML is nearly empty but
+ * the rendered page is content-rich, that content is invisible to AI engines.
+ */
+async function checkJsRendering(
+  baseUrl: string,
+  renderedWordCount: number
+): Promise<TechnicalAuditFinding[]> {
+  const findings: TechnicalAuditFinding[] = [];
+  if (renderedWordCount < 50) return findings; // nothing meaningful to compare
+  try {
+    const res = await fetch(baseUrl, {
+      signal: AbortSignal.timeout(10000),
+      headers: { "User-Agent": "PresenceOS-Audit/1.0" },
+    });
+    if (!res.ok) return findings;
+    const html = await res.text();
+    const rawWords = htmlToWordCount(html);
+    const ratio = rawWords / Math.max(renderedWordCount, 1);
+
+    if (ratio < 0.3) {
+      findings.push({
+        category: "crawlability",
+        severity: "high",
+        title: "Content requires JavaScript to render",
+        description: `Raw HTML exposes only ~${rawWords} words vs ~${renderedWordCount} after rendering. Most AI crawlers do not execute JavaScript.`,
+        impact:
+          "GPTBot, ClaudeBot, and PerplexityBot likely see an almost-empty page, so your content cannot be cited.",
+        fix_recommendation:
+          "Server-side render (SSR) or pre-render key content into the initial HTML response.",
+        affected_url: baseUrl,
+      });
+    } else if (ratio < 0.6) {
+      findings.push({
+        category: "crawlability",
+        severity: "medium",
+        title: "Partial JavaScript-dependent content",
+        description: `Raw HTML contains ~${Math.round(ratio * 100)}% of the rendered text. Some content depends on JavaScript.`,
+        impact: "Portions of your content may be invisible to non-JS AI crawlers.",
+        fix_recommendation: "Ensure primary content and answers are present in server-rendered HTML.",
+        affected_url: baseUrl,
+      });
+    }
+  } catch {
+    // Raw fetch failed — skip (covered by unreachable finding elsewhere)
+  }
+  return findings;
+}
+
+function appleBusinessConnectStatus(baseUrl: string): TechnicalAuditFinding {
+  return {
+    category: "local",
+    severity: "low",
+    title: "Apple Business Connect not verified",
+    description:
+      "Apple Business Connect has no public lookup API, so registration must be confirmed manually.",
+    impact:
+      "Without it, Apple Maps, Siri, and Apple Intelligence cannot reliably surface your business.",
+    fix_recommendation:
+      "Register and verify your business at businessconnect.apple.com to feed Apple's AI surfaces.",
+    affected_url: baseUrl,
+  };
+}
+
 async function checkAIBotAccess(baseUrl: string): Promise<TechnicalAuditFinding[]> {
   const findings: TechnicalAuditFinding[] = [];
-  const criticalBots = ["OAI-SearchBot", "PerplexityBot", "Google-Extended"];
+  // Perplexity-User is the live user-triggered fetcher (distinct from PerplexityBot).
+  const criticalBots = ["OAI-SearchBot", "PerplexityBot", "Perplexity-User", "Google-Extended"];
 
   for (const bot of criticalBots) {
     try {

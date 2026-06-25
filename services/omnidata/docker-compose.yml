@@ -1,39 +1,68 @@
 version: "3.9"
 
+x-omnidata-env: &omnidata-env
+  REDIS_URL: redis://redis:6379
+  OMNIDATA_API_KEY: ${OMNIDATA_API_KEY:-dev-local-key}
+  OMNIDATA_SIGNING_SECRET: ${OMNIDATA_SIGNING_SECRET:-}
+  BING_SEARCH_API_KEY: ${BING_SEARCH_API_KEY:-}
+  SERPER_API_KEY: ${SERPER_API_KEY:-}
+  BRAVE_SEARCH_API_KEY: ${BRAVE_SEARCH_API_KEY:-}
+  OPENPAGERANK_API_KEY: ${OPENPAGERANK_API_KEY:-}
+  WEBGRAPH_DB_PATH: /data/webgraph.duckdb
+  OMNIDATA_ENABLE_SCRAPE: ${OMNIDATA_ENABLE_SCRAPE:-false}
+  GOOGLE_ADS_DEVELOPER_TOKEN: ${GOOGLE_ADS_DEVELOPER_TOKEN:-}
+  GOOGLE_ADS_CLIENT_ID: ${GOOGLE_ADS_CLIENT_ID:-}
+  GOOGLE_ADS_CLIENT_SECRET: ${GOOGLE_ADS_CLIENT_SECRET:-}
+  GOOGLE_ADS_REFRESH_TOKEN: ${GOOGLE_ADS_REFRESH_TOKEN:-}
+  GOOGLE_ADS_CUSTOMER_ID: ${GOOGLE_ADS_CUSTOMER_ID:-}
+  GOOGLE_ADS_LOGIN_CUSTOMER_ID: ${GOOGLE_ADS_LOGIN_CUSTOMER_ID:-}
+
 services:
   redis:
     image: redis:7-alpine
-    ports:
-      - "6379:6379"
+    restart: unless-stopped
+    command: ["redis-server", "--appendonly", "yes"]
     volumes:
       - omnidata-redis:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
 
   omnidata:
     build: .
+    restart: unless-stopped
     ports:
       - "8787:8787"
     environment:
+      <<: *omnidata-env
       PORT: "8787"
-      REDIS_URL: redis://redis:6379
-      OMNIDATA_API_KEY: ${OMNIDATA_API_KEY:-dev-local-key}
-      BING_SEARCH_API_KEY: ${BING_SEARCH_API_KEY:-}
-      SERPER_API_KEY: ${SERPER_API_KEY:-}
-      BRAVE_SEARCH_API_KEY: ${BRAVE_SEARCH_API_KEY:-}
+    volumes:
+      - omnidata-data:/data
     depends_on:
-      - redis
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://localhost:8787/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
 
   omnidata-worker:
     build: .
+    restart: unless-stopped
     command: ["node", "dist/worker.js"]
     environment:
-      REDIS_URL: redis://redis:6379
-      OMNIDATA_API_KEY: ${OMNIDATA_API_KEY:-dev-local-key}
-      BING_SEARCH_API_KEY: ${BING_SEARCH_API_KEY:-}
-      SERPER_API_KEY: ${SERPER_API_KEY:-}
-      BRAVE_SEARCH_API_KEY: ${BRAVE_SEARCH_API_KEY:-}
+      <<: *omnidata-env
+    volumes:
+      - omnidata-data:/data
     depends_on:
-      - redis
-      - omnidata
+      redis:
+        condition: service_healthy
+      omnidata:
+        condition: service_started
 
 volumes:
   omnidata-redis:
+  omnidata-data:

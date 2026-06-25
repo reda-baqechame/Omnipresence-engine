@@ -14,6 +14,7 @@ import {
   getDataForSEOTopDomains,
 } from "@/lib/engines/citation-intelligence";
 import { generateStructured } from "@/lib/providers/ai-gateway";
+import { searchGoogleOrganicRouter } from "@/lib/providers/serp-router";
 import { z } from "zod";
 import type { AuthorityOpportunity, AuthorityType } from "@/types/database";
 
@@ -224,6 +225,11 @@ export async function findAuthorityOpportunities(
     });
   }
 
+  // HARO / journalist source-request finder (real, via SERP)
+  for (const opp of await findJournalistOpportunities(projectId, brandName, industry)) {
+    addOpp(opp);
+  }
+
   // AI supplement for directories/podcasts when measured data is thin
   if (opportunities.length < 10) {
     const aiResult = await generateStructured(
@@ -257,6 +263,132 @@ Find 10 opportunities: directories, podcasts, journalist pitches, guest posts.`,
   }
 
   return opportunities.slice(0, 50);
+}
+
+/**
+ * HARO / journalist source-request finder. Uses real SERP queries to surface
+ * live "looking for sources" / #journorequest / Connectively / Qwoted / Featured
+ * opportunities a brand can pitch for earned media (which AI engines cite).
+ */
+export async function findJournalistOpportunities(
+  projectId: string,
+  brandName: string,
+  industry: string
+): Promise<Omit<AuthorityOpportunity, "id" | "created_at" | "updated_at">[]> {
+  const out: Omit<AuthorityOpportunity, "id" | "created_at" | "updated_at">[] = [];
+  const queries = [
+    `${industry} "looking for sources"`,
+    `${industry} "request for sources" journalist`,
+    `#journorequest ${industry}`,
+    `${industry} expert quote request (connectively.us OR qwoted.com OR featured.com OR sourcebottle.com)`,
+  ];
+
+  const seen = new Set<string>();
+  for (const q of queries) {
+    const res = await searchGoogleOrganicRouter(q, "United States", "", []);
+    if (!res.success || !res.data) continue;
+    for (const r of res.data.organicResults.slice(0, 5)) {
+      let host = "";
+      try {
+        host = new URL(r.url).hostname.replace(/^www\./, "");
+      } catch {
+        continue;
+      }
+      if (!host || seen.has(host)) continue;
+      seen.add(host);
+      out.push({
+        project_id: projectId,
+        type: "journalist",
+        target_site: host,
+        target_url: r.url,
+        pitch_angle: `Source/quote request matching ${industry}: "${r.title}". Pitch ${brandName} as an expert source with a concise, data-backed quote.`,
+        status: "identified",
+        estimated_impact: 80,
+        difficulty_score: 45,
+        competitor_present: false,
+        measured: true,
+      });
+      if (out.length >= 12) return out;
+    }
+  }
+  return out;
+}
+
+export interface OutreachSequenceStep {
+  touch: number;
+  day_offset: number;
+  channel: "email";
+  subject: string;
+  body: string;
+  status: "scheduled";
+}
+
+/**
+ * Multi-touch outreach CRM sequence: initial pitch + spaced follow-ups
+ * (day 0 / 3 / 7), generated for a specific opportunity. Ready to persist and
+ * schedule via the existing Resend sender.
+ */
+export async function buildOutreachSequence(
+  brandName: string,
+  opportunity: AuthorityOpportunity,
+  recipientName = "there"
+): Promise<OutreachSequenceStep[]> {
+  const { generateStructured: gen } = await import("@/lib/providers/ai-gateway");
+  const SeqSchema = z.object({
+    initial_subject: z.string(),
+    initial_body: z.string(),
+    followup_1_subject: z.string(),
+    followup_1_body: z.string(),
+    followup_2_subject: z.string(),
+    followup_2_body: z.string(),
+  });
+
+  const result = await gen(
+    `You are an outreach CRM strategist. Write a 3-touch outreach sequence (initial + 2 polite, value-adding follow-ups). Keep each email under 120 words, personalized, and non-spammy.`,
+    `Brand: ${brandName}
+Recipient: ${recipientName}
+Target: ${opportunity.target_site}
+Opportunity type: ${opportunity.type}
+Pitch angle: ${opportunity.pitch_angle}`,
+    SeqSchema
+  );
+
+  if (result.success && result.data) {
+    const d = result.data;
+    return [
+      { touch: 1, day_offset: 0, channel: "email", subject: d.initial_subject, body: d.initial_body, status: "scheduled" },
+      { touch: 2, day_offset: 3, channel: "email", subject: d.followup_1_subject, body: d.followup_1_body, status: "scheduled" },
+      { touch: 3, day_offset: 7, channel: "email", subject: d.followup_2_subject, body: d.followup_2_body, status: "scheduled" },
+    ];
+  }
+
+  // Deterministic fallback sequence.
+  return [
+    {
+      touch: 1,
+      day_offset: 0,
+      channel: "email",
+      subject: `Quick idea for ${opportunity.target_site}`,
+      body: `Hi ${recipientName},\n\n${opportunity.pitch_angle}\n\nWould this be a fit? Happy to send specifics.\n\n— ${brandName}`,
+      status: "scheduled",
+    },
+    {
+      touch: 2,
+      day_offset: 3,
+      channel: "email",
+      subject: `Following up — ${brandName}`,
+      body: `Hi ${recipientName},\n\nJust floating this back to the top of your inbox. I can make it turnkey on our end.\n\n— ${brandName}`,
+      status: "scheduled",
+    },
+    {
+      touch: 3,
+      day_offset: 7,
+      channel: "email",
+      subject: `Last note from ${brandName}`,
+      body: `Hi ${recipientName},\n\nI'll stop here so I'm not a bother — if the timing's better later, just reply and I'll pick it up.\n\n— ${brandName}`,
+      status: "scheduled",
+    },
+  ];
 }
 
 export async function generateOutreachEmail(

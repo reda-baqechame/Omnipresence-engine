@@ -1,4 +1,5 @@
 import type { SerpItem, SerpResult } from "../types.js";
+import { scrapeGoogleSerp } from "./scrape.js";
 
 const BING_KEY = process.env.BING_SEARCH_API_KEY;
 const SERPER_KEY = process.env.SERPER_API_KEY;
@@ -204,7 +205,9 @@ export async function runSerpLive(keyword: string, location = "United States"): 
   let result =
     (await searchSerper(keyword)) ||
     (await searchBing(keyword)) ||
-    (await searchBrave(keyword));
+    (await searchBrave(keyword)) ||
+    // Keyless fallback (env-gated): real results with no API key/spend.
+    (await scrapeGoogleSerp(keyword, location));
 
   if (!result) {
     return {

@@ -76,6 +76,104 @@ export function calculateAttribution(
   };
 }
 
+export type AttributionModel =
+  | "first_touch"
+  | "last_touch"
+  | "linear"
+  | "position_based";
+
+export interface ChannelCredit {
+  channel: string;
+  credit: number;
+  percent: number;
+}
+
+/**
+ * True multi-touch attribution from ordered conversion paths (each path is the
+ * sequence of channels a converting user touched). Supports first/last-touch,
+ * linear, and position-based (40/20/40 U-shaped) models.
+ */
+export function computeMultiTouchAttribution(
+  paths: string[][],
+  model: AttributionModel
+): ChannelCredit[] {
+  const credit = new Map<string, number>();
+  const add = (channel: string, value: number) =>
+    credit.set(channel, (credit.get(channel) || 0) + value);
+
+  for (const path of paths) {
+    if (!path.length) continue;
+    if (model === "first_touch") {
+      add(path[0], 1);
+    } else if (model === "last_touch") {
+      add(path[path.length - 1], 1);
+    } else if (model === "linear") {
+      const share = 1 / path.length;
+      for (const c of path) add(c, share);
+    } else {
+      // position_based: 40% first, 40% last, 20% spread across middle.
+      if (path.length === 1) {
+        add(path[0], 1);
+      } else if (path.length === 2) {
+        add(path[0], 0.5);
+        add(path[1], 0.5);
+      } else {
+        add(path[0], 0.4);
+        add(path[path.length - 1], 0.4);
+        const middle = path.slice(1, -1);
+        const share = 0.2 / middle.length;
+        for (const c of middle) add(c, share);
+      }
+    }
+  }
+
+  const total = [...credit.values()].reduce((a, b) => a + b, 0) || 1;
+  return [...credit.entries()]
+    .map(([channel, value]) => ({
+      channel,
+      credit: Math.round(value * 100) / 100,
+      percent: Math.round((value / total) * 1000) / 10,
+    }))
+    .sort((a, b) => b.credit - a.credit);
+}
+
+/**
+ * Modeled multi-touch breakdown from channel-level aggregates (when per-user
+ * paths aren't available). Discovery channels (AI/organic/social/directories)
+ * are weighted toward first-touch; intent channels (search) toward last-touch.
+ * Clearly a model, not raw paths.
+ */
+export function modelChannelAttribution(
+  channelTotals: Record<string, number>
+): Record<AttributionModel, ChannelCredit[]> {
+  const entries = Object.entries(channelTotals).filter(([, v]) => v > 0);
+  const grand = entries.reduce((a, [, v]) => a + v, 0) || 1;
+
+  const discovery = new Set(["ai_referrals", "organic", "social", "directories"]);
+  const intent = new Set(["search", "direct"]);
+
+  const toCredits = (weightFn: (channel: string, vol: number) => number): ChannelCredit[] => {
+    const weighted = entries.map(([c, v]) => [c, weightFn(c, v)] as const);
+    const total = weighted.reduce((a, [, w]) => a + w, 0) || 1;
+    return weighted
+      .map(([channel, w]) => ({
+        channel,
+        credit: Math.round((w / total) * grand),
+        percent: Math.round((w / total) * 1000) / 10,
+      }))
+      .sort((a, b) => b.credit - a.credit);
+  };
+
+  return {
+    linear: toCredits((_, v) => v),
+    first_touch: toCredits((c, v) => v * (discovery.has(c) ? 1.6 : 0.6)),
+    last_touch: toCredits((c, v) => v * (intent.has(c) ? 1.8 : 0.7)),
+    position_based: toCredits((c, v) =>
+      v * (discovery.has(c) ? 1.3 : intent.has(c) ? 1.3 : 0.9)
+    ),
+  };
+}
+
 export function calculateMoMDelta(
   current: AttributionMetric,
   previous: AttributionMetric

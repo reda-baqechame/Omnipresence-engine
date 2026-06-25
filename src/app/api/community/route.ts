@@ -1,6 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
-import { parseMentionsCsv, summarizeMentions } from "@/lib/engines/community-mentions";
+import {
+  parseMentionsCsv,
+  summarizeMentions,
+  fetchLiveCommunityMentions,
+} from "@/lib/engines/community-mentions";
 import { verifyProjectAccess } from "@/lib/security/project-access";
 import { apiError, apiForbidden, apiUnauthorized } from "@/lib/security/api-response";
 
@@ -45,11 +49,61 @@ export async function POST(request: NextRequest) {
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) return apiUnauthorized();
 
-  const { projectId, csv } = await request.json() as { projectId: string; csv: string };
-  if (!projectId || !csv) return apiError("projectId and csv required");
+  const body = (await request.json()) as {
+    projectId: string;
+    csv?: string;
+    action?: "fetch_live";
+  };
+  const { projectId, csv, action } = body;
+  if (!projectId) return apiError("projectId required");
 
   const access = await verifyProjectAccess(supabase, projectId, user.id, "member");
   if (!access) return apiForbidden();
+
+  // Live fetch: real Reddit (API) + Quora (SERP) mentions, deduped against stored rows.
+  if (action === "fetch_live") {
+    const { data: project } = await supabase
+      .from("projects")
+      .select("name, competitors")
+      .eq("id", projectId)
+      .single();
+    if (!project?.name) return apiError("Project name required for live fetch");
+
+    const { rows: liveRows, redditAvailable } = await fetchLiveCommunityMentions(
+      project.name,
+      (project.competitors || []) as string[]
+    );
+
+    const { data: existing } = await supabase
+      .from("community_mentions")
+      .select("url")
+      .eq("project_id", projectId);
+    const existingUrls = new Set((existing || []).map((e) => e.url));
+    const newRows = liveRows.filter((r) => !existingUrls.has(r.url));
+
+    if (newRows.length) {
+      await supabase.from("community_mentions").insert(
+        newRows.map((r) => ({
+          project_id: projectId,
+          platform: r.platform,
+          url: r.url,
+          keyword: r.keyword,
+          mention_type: r.mention_type || "brand",
+        }))
+      );
+    }
+
+    return NextResponse.json({
+      fetched: liveRows.length,
+      inserted: newRows.length,
+      redditAvailable,
+      note: redditAvailable
+        ? undefined
+        : "Reddit API not configured — only Quora (SERP) mentions returned. Set REDDIT_CLIENT_ID/SECRET for full coverage.",
+    });
+  }
+
+  if (!csv) return apiError("csv or action required");
 
   const rows = parseMentionsCsv(csv);
   if (rows.length) {

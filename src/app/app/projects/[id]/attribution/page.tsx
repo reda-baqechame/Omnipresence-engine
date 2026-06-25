@@ -3,6 +3,10 @@ import { createClient } from "@/lib/supabase/server";
 import { AttributionPanel } from "@/components/attribution-panel";
 import type { AttributionMetric } from "@/types/database";
 import { getProject } from "@/lib/projects";
+import {
+  modelChannelAttribution,
+  type AttributionModel,
+} from "@/lib/engines/attribution";
 
 export default async function AttributionPage({
   params,
@@ -28,19 +32,83 @@ export default async function AttributionPage({
   const ga4Conn = connections?.find((c) => c.provider === "google_analytics");
   const plausibleConn = connections?.find((c) => c.provider === "plausible");
 
+  const latest = (attribution || [])[0] as AttributionMetric | undefined;
+  const channelTotals = latest
+    ? {
+        ai_referrals: latest.ai_referral_traffic ?? 0,
+        organic: latest.organic_traffic ?? 0,
+        social: latest.social_clicks ?? 0,
+        directories: latest.directory_referrals ?? 0,
+        search: latest.search_clicks ?? 0,
+      }
+    : null;
+  const hasChannelData =
+    channelTotals && Object.values(channelTotals).some((v) => v > 0);
+  const models = hasChannelData ? modelChannelAttribution(channelTotals) : null;
+  const modelOrder: AttributionModel[] = [
+    "first_touch",
+    "last_touch",
+    "linear",
+    "position_based",
+  ];
+  const modelLabels: Record<AttributionModel, string> = {
+    first_touch: "First touch",
+    last_touch: "Last touch",
+    linear: "Linear",
+    position_based: "Position-based (40/20/40)",
+  };
+
   return (
-    <AttributionPanel
-      projectId={id}
-      domain={project.domain}
-      industry={project.industry}
-      monthlyAdSpend={project.monthly_ad_spend}
-      metrics={(attribution || []) as AttributionMetric[]}
-      hasGscConnection={connections?.some((c) => c.provider === "google_search_console") || false}
-      hasBingConnection={connections?.some((c) => c.provider === "bing_webmaster") || false}
-      hasGa4Connection={!!ga4Conn}
-      hasPlausibleConnection={!!plausibleConn}
-      ga4PropertyId={(ga4Conn?.metadata as { property_id?: string } | null)?.property_id}
-      plausibleSiteId={(plausibleConn?.metadata as { site_id?: string } | null)?.site_id}
-    />
+    <div className="space-y-6">
+      <AttributionPanel
+        projectId={id}
+        domain={project.domain}
+        industry={project.industry}
+        monthlyAdSpend={project.monthly_ad_spend}
+        metrics={(attribution || []) as AttributionMetric[]}
+        hasGscConnection={connections?.some((c) => c.provider === "google_search_console") || false}
+        hasBingConnection={connections?.some((c) => c.provider === "bing_webmaster") || false}
+        hasGa4Connection={!!ga4Conn}
+        hasPlausibleConnection={!!plausibleConn}
+        ga4PropertyId={(ga4Conn?.metadata as { property_id?: string } | null)?.property_id}
+        plausibleSiteId={(plausibleConn?.metadata as { site_id?: string } | null)?.site_id}
+      />
+
+      {models && (
+        <div className="bg-card border border-border rounded-xl p-6">
+          <h3 className="font-semibold">Multi-Touch Attribution</h3>
+          <p className="text-sm text-muted-foreground mt-1 mb-4">
+            Credit distribution across channels under four models, modeled from this
+            period&apos;s channel volumes (discovery channels weighted toward first touch,
+            intent channels toward last touch).
+          </p>
+          <div className="grid gap-4 sm:grid-cols-2">
+            {modelOrder.map((m) => (
+              <div key={m} className="rounded-lg border border-border p-4">
+                <p className="text-sm font-medium mb-3">{modelLabels[m]}</p>
+                <ul className="space-y-2">
+                  {models[m].map((c) => (
+                    <li key={c.channel} className="text-xs">
+                      <div className="flex items-center justify-between mb-1">
+                        <span className="capitalize">{c.channel.replace(/_/g, " ")}</span>
+                        <span className="text-muted-foreground">
+                          {c.percent}% · {c.credit.toLocaleString()}
+                        </span>
+                      </div>
+                      <div className="h-1.5 rounded-full bg-muted">
+                        <div
+                          className="h-1.5 rounded-full bg-primary"
+                          style={{ width: `${Math.min(c.percent, 100)}%` }}
+                        />
+                      </div>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
   );
 }

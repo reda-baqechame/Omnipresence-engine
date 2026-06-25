@@ -26,6 +26,10 @@ if (existsSync(omnidataPkg)) {
     name: "omnidata-typecheck",
     ok: () => run("npm", ["run", "typecheck"], join(root, "services", "omnidata")),
   });
+  steps.push({
+    name: "omnidata-parity",
+    ok: () => run("npm", ["run", "parity"], join(root, "services", "omnidata")),
+  });
 }
 
 let failed = 0;

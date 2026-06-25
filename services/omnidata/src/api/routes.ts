@@ -13,6 +13,9 @@ import { findContentGaps } from "../engines/content-gaps.js";
 import { findBacklinkGaps } from "../engines/backlink-gaps.js";
 import { runMapsLive } from "../engines/maps-serp.js";
 import { getRankHistoryHydrated } from "../store.js";
+import { isWebgraphReady } from "../engines/webgraph.js";
+import { getKeywordMetrics, hasKeywordPlanner } from "../engines/keyword-planner.js";
+import { dfsResponse } from "./response.js";
 
 const router = Router();
 
@@ -26,19 +29,6 @@ const taskPostSchema = z.array(
     tag: z.string().optional(),
   })
 );
-
-function dfsResponse(tasks: unknown[], status = 20000) {
-  return {
-    version: "0.1.20240624",
-    status_code: status,
-    status_message: "Ok.",
-    time: new Date().toISOString(),
-    cost: 0,
-    tasks_count: tasks.length,
-    tasks_error: 0,
-    tasks,
-  };
-}
 
 // DataForSEO-compatible: task_post
 router.post("/v3/serp/google/organic/task_post", async (req, res) => {
@@ -116,6 +106,28 @@ router.post("/v3/keywords/suggestions/live", async (req, res) => {
   }
   const result = await runKeywords(keyword);
   res.json(dfsResponse([{ result: [result] }]));
+});
+
+router.post("/v3/keywords/metrics/live", async (req, res) => {
+  const item = (req.body as Array<{ keywords?: string[]; keyword?: string }>)?.[0];
+  const keywords = item?.keywords || (item?.keyword ? [item.keyword] : []);
+  if (!keywords.length) {
+    res.status(400).json(dfsResponse([], 40000));
+    return;
+  }
+  const metrics = await getKeywordMetrics(keywords);
+  res.json(
+    dfsResponse([
+      {
+        result: [
+          {
+            data_source: hasKeywordPlanner() && metrics ? "keyword_planner" : "unavailable",
+            metrics: metrics || [],
+          },
+        ],
+      },
+    ])
+  );
 });
 
 router.post("/v3/rank_tracker/check/live", async (req, res) => {
@@ -205,7 +217,12 @@ router.get("/v3/rank_tracker/history/:key", async (req, res) => {
 });
 
 router.get("/health", (_req, res) => {
-  res.json({ ok: true, service: "omnidata", version: "0.4.0" });
+  res.json({ ok: true, service: "omnidata", version: "0.5.0" });
+});
+
+router.get("/v3/backlinks/webgraph/status", async (_req, res) => {
+  const ready = await isWebgraphReady();
+  res.json(dfsResponse([{ result: [{ webgraph_ready: ready }] }]));
 });
 
 router.post("/v3/domain_analytics/overview/live", async (req, res) => {

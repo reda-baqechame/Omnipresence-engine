@@ -18,7 +18,7 @@ export interface SerpResult {
   featured_snippet?: SerpItem;
   people_also_ask?: Array<{ question: string; answer?: string }>;
   local_pack?: SerpItem[];
-  source: "bing_api" | "serper" | "brave" | "playwright" | "simulated";
+  source: "bing_api" | "serper" | "brave" | "playwright";
 }
 
 export interface BacklinkRow {
@@ -29,12 +29,21 @@ export interface BacklinkRow {
   first_seen?: string;
   last_seen?: string;
   domain_rank?: number;
+  /** Provenance of this row so callers can label real vs. estimated data. */
+  source?: "webgraph" | "link_operator";
+  /** Number of links from this referring domain (webgraph only). */
+  link_count?: number;
 }
 
 export interface KeywordSuggestion {
   keyword: string;
   source: "autocomplete" | "related" | "cluster";
   volume_estimate?: number;
+  /** Real CPC (USD) from Google Ads Keyword Planner when available. */
+  cpc?: number;
+  competition?: "LOW" | "MEDIUM" | "HIGH" | "UNSPECIFIED";
+  /** "keyword_planner" = real Google Ads data; "estimated" = autocomplete heuristic. */
+  data_source?: "keyword_planner" | "estimated";
 }
 
 export interface RankSnapshot {

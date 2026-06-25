@@ -12,6 +12,8 @@ export interface AdsEquivalentResult {
   statedAdSpend: number;
   replacementRatio: number;
   savingsEstimate: number;
+  /** "real" = Google Ads Keyword Planner CPC; "industry_estimate" = static default. */
+  cpcSource: "real" | "industry_estimate";
 }
 
 const DEFAULT_CPC_BY_INDUSTRY: Record<string, number> = {
@@ -37,6 +39,8 @@ export function calculateAdsEquivalent(opts: {
     opts.customCpc ??
     DEFAULT_CPC_BY_INDUSTRY[opts.industry?.toLowerCase() || ""] ??
     DEFAULT_CPC_BY_INDUSTRY.default;
+  const cpcSource: AdsEquivalentResult["cpcSource"] =
+    opts.customCpc !== undefined ? "real" : "industry_estimate";
 
   const organicValue = Math.round(organicSessions * estimatedCpc);
   const aiValue = Math.round(aiReferralSessions * estimatedCpc * 1.15);
@@ -55,5 +59,6 @@ export function calculateAdsEquivalent(opts: {
     statedAdSpend,
     replacementRatio,
     savingsEstimate,
+    cpcSource,
   };
 }
