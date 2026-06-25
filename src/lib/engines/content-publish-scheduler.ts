@@ -1,8 +1,15 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { submitBingUrls } from "@/lib/providers/bing-webmaster";
 import { submitIndexNow } from "@/lib/engines/indexnow";
-import { loadProjectIntegration, publishViaWordPress } from "@/lib/integrations/store";
+import {
+  loadProjectIntegration,
+  publishViaCms,
+  type CmsCredentials,
+  type CmsPlatform,
+} from "@/lib/integrations/store";
 import { recordLedgerAction } from "@/lib/engines/results-ledger";
+
+const CMS_PLATFORMS = new Set<CmsPlatform>(["wordpress", "webflow", "shopify"]);
 
 /**
  * Process content assets scheduled for publish. Uses stored CMS integrations when available.
@@ -32,7 +39,7 @@ export async function processScheduledContent(
 
   for (const asset of due) {
     const meta = (asset.metadata || {}) as Record<string, unknown>;
-    const platform = (meta.publisher_platform as string) || "wordpress";
+    const platform = ((meta.publisher_platform as string) || "wordpress") as CmsPlatform;
 
     const { data: project } = await supabase
       .from("projects")
@@ -43,14 +50,12 @@ export async function processScheduledContent(
 
     let publishedUrl = (meta.target_url as string) || asset.published_url || undefined;
 
-    const wpCreds = await loadProjectIntegration<{ url: string; apiKey: string }>(
-      supabase,
-      asset.project_id,
-      platform
-    );
+    const cmsCreds = CMS_PLATFORMS.has(platform)
+      ? await loadProjectIntegration<CmsCredentials>(supabase, asset.project_id, platform)
+      : null;
 
-    if (wpCreds && asset.content) {
-      const result = await publishViaWordPress(wpCreds, {
+    if (cmsCreds && asset.content) {
+      const result = await publishViaCms(platform, cmsCreds, {
         title: asset.title,
         content: asset.content,
       });

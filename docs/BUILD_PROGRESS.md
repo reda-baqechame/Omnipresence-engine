@@ -55,3 +55,21 @@
 | 2026-06-25 | publish-scheduler-v2 | done | Integration vault + auto CMS publish |
 
 **Phase 3 manifest complete.**
+
+## Phase 4 (complete)
+
+| Date | Task | Status | Notes |
+|------|------|--------|-------|
+| 2026-06-25 | production-readiness-engine | done | Score + blockers on /api/health and /api/capabilities |
+| 2026-06-25 | env-example | done | .env.example with all production vars |
+| 2026-06-25 | credential-vault-prod | done | INTEGRATION_ENCRYPTION_KEY required on Vercel prod |
+| 2026-06-25 | integrations-ui | done | Encrypted CMS save panel on Distribution tab |
+| 2026-06-25 | publish-vault-fallback | done | Publish + scheduler use saved creds |
+| 2026-06-25 | scheduler-multi-cms | done | WordPress/Webflow/Shopify auto-publish |
+| 2026-06-25 | weekly-gsc-sync | done | Weekly attribution sync Inngest cron |
+| 2026-06-25 | prompt-import-ui | done | CSV import on Visibility tab |
+| 2026-06-25 | startup-warnings | done | instrumentation.ts logs prod misconfig |
+| 2026-06-25 | verify-prod-script | done | verify:prod + check:env hardened |
+| 2026-06-25 | setup-checklist-v4 | done | Setup page with readiness score |
+
+**Phase 4 manifest complete. Platform production-ready when env checklist passes.**

@@ -123,6 +123,32 @@ export const weeklyRescan = inngest.createFunction(
   }
 );
 
+export const weeklyAttributionSync = inngest.createFunction(
+  { id: "weekly-attribution-sync", retries: 1, triggers: [{ cron: "0 7 * * 1" }] },
+  async ({ step }) => {
+    const supabase = await createServiceClient();
+
+    const projectIds = await step.run("fetch-connected-projects", async () => {
+      const { data } = await supabase
+        .from("oauth_connections")
+        .select("project_id")
+        .in("provider", ["google_search_console", "bing_webmaster", "google_analytics", "plausible"]);
+
+      return [...new Set((data || []).map((c) => c.project_id))];
+    });
+
+    let synced = 0;
+    for (const projectId of projectIds) {
+      const result = await step.run(`weekly-sync-${projectId}`, async () => {
+        return syncProjectAttribution(supabase, projectId);
+      });
+      if (result.success) synced++;
+    }
+
+    return { synced, total: projectIds.length };
+  }
+);
+
 export const monthlyAttributionSync = inngest.createFunction(
   { id: "monthly-attribution-sync", retries: 1, triggers: [{ cron: "0 7 2 * *" }] },
   async ({ step }) => {
@@ -484,6 +510,7 @@ export const functions = [
   weeklyRescan,
   generateReport,
   syncAttribution,
+  weeklyAttributionSync,
   monthlyAttributionSync,
   weeklyReportEmail,
   dailyFreshnessCheck,

@@ -6,6 +6,7 @@ import { createGBPLocalPost } from "@/lib/providers/gbp";
 import { submitBingUrls } from "@/lib/providers/bing-webmaster";
 import { recordLedgerAction } from "@/lib/engines/results-ledger";
 import { submitIndexNow } from "@/lib/engines/indexnow";
+import { loadProjectIntegration, type CmsCredentials } from "@/lib/integrations/store";
 import { verifyProjectAccess } from "@/lib/security/project-access";
 import { apiError, apiForbidden, apiNotFound, apiUnauthorized } from "@/lib/security/api-response";
 
@@ -96,7 +97,7 @@ export async function POST(request: NextRequest) {
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) return apiUnauthorized();
 
-  const { assetId, platform, credentials } = await request.json();
+  const { assetId, platform, credentials: inlineCredentials } = await request.json();
 
   const { data: asset } = await supabase
     .from("content_assets")
@@ -112,9 +113,23 @@ export async function POST(request: NextRequest) {
   const publisher = PUBLISHERS[platform as keyof typeof PUBLISHERS];
   if (!publisher) return NextResponse.json({ error: "Unknown platform" }, { status: 400 });
 
+  let credentials = inlineCredentials as CmsCredentials | undefined;
+  if (!credentials?.apiKey) {
+    const stored = await loadProjectIntegration<CmsCredentials>(
+      supabase,
+      asset.project_id,
+      platform
+    );
+    if (stored) credentials = stored;
+  }
+
+  if (!credentials?.apiKey) {
+    return apiError("No credentials provided. Save integration in Distribution tab or pass credentials.");
+  }
+
   try {
     const result = await publisher(
-      credentials.url || credentials.siteId || credentials.shop,
+      credentials.url || credentials.siteId || credentials.shop || "",
       credentials.apiKey,
       { title: asset.title, content: asset.content || "" },
       credentials.collectionId

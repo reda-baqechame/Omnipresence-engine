@@ -21,7 +21,8 @@ export type ProviderId =
   | "google_oauth"
   | "bing_oauth"
   | "supabase"
-  | "posthog";
+  | "posthog"
+  | "stripe";
 
 export interface ProviderStatus {
   id: ProviderId;
@@ -31,7 +32,7 @@ export interface ProviderStatus {
   category: "ai" | "data" | "infra" | "social" | "oauth";
 }
 
-export const V2_VERSION = "0.2.0";
+export const V2_VERSION = "0.3.0";
 
 /** All execution engines are enabled — paywalls deferred. */
 export const ENGINES_ENABLED = {
@@ -72,6 +73,13 @@ export function getProviderStatuses(): ProviderStatus[] {
     { id: "google_oauth", name: "Google OAuth", configured: hasEnv("GOOGLE_CLIENT_ID") && hasEnv("GOOGLE_CLIENT_SECRET"), required: false, category: "oauth" },
     { id: "bing_oauth", name: "Bing OAuth", configured: hasEnv("BING_CLIENT_ID") && hasEnv("BING_CLIENT_SECRET"), required: false, category: "oauth" },
     { id: "posthog", name: "PostHog", configured: hasEnv("NEXT_PUBLIC_POSTHOG_KEY"), required: false, category: "infra" },
+    {
+      id: "stripe",
+      name: "Stripe",
+      configured: hasEnv("STRIPE_SECRET_KEY") && hasEnv("STRIPE_WEBHOOK_SECRET"),
+      required: false,
+      category: "infra",
+    },
   ];
 }
 

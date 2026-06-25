@@ -1,18 +1,17 @@
 {
-  "version": "3.0.0",
-  "project": "OmniPresence Super Engine — Phase 3 Hardening",
+  "version": "4.0.0",
+  "project": "OmniPresence Super Engine — Phase 4 Production Ready",
   "tasks": [
-    { "id": "credential-vault", "title": "Encrypted project integrations vault", "status": "done", "dependsOn": [], "files": ["src/lib/security/credential-vault.ts", "supabase/migrations/0014_project_integrations.sql"], "acceptance": "CMS/social creds stored AES-256-GCM" },
-    { "id": "integrations-api", "title": "Integrations API + WordPress auto-publish", "status": "done", "dependsOn": ["credential-vault"], "files": ["src/app/api/integrations/route.ts", "src/lib/integrations/store.ts"], "acceptance": "Save/list integrations; scheduler publishes when creds exist" },
-    { "id": "robots-guard", "title": "robots.txt crawl compliance", "status": "done", "dependsOn": [], "files": ["src/lib/crawl/robots-guard.ts", "services/omnidata/src/robots-guard.ts"], "acceptance": "Site crawler and OmniData respect disallow rules" },
-    { "id": "direct-scrape", "title": "Direct page scrape fallback", "status": "done", "dependsOn": [], "files": ["src/lib/crawl/page-scrape.ts"], "acceptance": "Brand extraction works without Firecrawl" },
-    { "id": "indexnow-wire", "title": "IndexNow on publish paths", "status": "done", "dependsOn": [], "files": ["src/lib/engines/indexnow.ts", "src/app/api/distribution/route.ts"], "acceptance": "Successful publish submits IndexNow" },
-    { "id": "omnidata-domain-analytics", "title": "OmniData domain analytics endpoints", "status": "done", "dependsOn": [], "files": ["services/omnidata/src/engines/domain-analytics.ts"], "acceptance": "/v3/domain_analytics/overview/live returns real signals" },
-    { "id": "prompt-fallback", "title": "Template prompt fallback on LLM failure", "status": "done", "dependsOn": [], "files": ["src/lib/engines/scan-steps.ts"], "acceptance": "Scans never stall on empty prompt universe" },
-    { "id": "prompts-csv-api", "title": "Prompt CSV import API", "status": "done", "dependsOn": [], "files": ["src/app/api/prompts/route.ts"], "acceptance": "Bulk import prompts from CSV" },
-    { "id": "pseo-matrix-csv", "title": "pSEO matrix CSV bulk import", "status": "done", "dependsOn": [], "files": ["src/lib/engines/programmatic-seo.ts"], "acceptance": "matrixCsv expands service×location rows" },
-    { "id": "backlinks-trends-ui", "title": "Backlinks + Trends project tabs", "status": "done", "dependsOn": [], "files": ["src/components/backlinks-panel.tsx", "src/components/trends-panel.tsx"], "acceptance": "New tabs render with live API data" },
-    { "id": "health-omnidata", "title": "Health probe for OmniData", "status": "done", "dependsOn": ["omnidata-domain-analytics"], "files": ["src/app/api/health/route.ts"], "acceptance": "checks.omnidata when OMNIDATA_BASE_URL set" },
-    { "id": "publish-scheduler-v2", "title": "Scheduler uses integration vault", "status": "done", "dependsOn": ["integrations-api", "indexnow-wire"], "files": ["src/lib/engines/content-publish-scheduler.ts"], "acceptance": "Auto WordPress publish + IndexNow on schedule" }
+    { "id": "production-readiness-engine", "title": "Production readiness scoring + health API", "status": "done", "dependsOn": [], "files": ["src/lib/config/production.ts", "src/app/api/health/route.ts"], "acceptance": "/api/health returns production.ready and score" },
+    { "id": "env-example", "title": "Complete .env.example template", "status": "done", "dependsOn": [], "files": [".env.example"], "acceptance": "All production env vars documented" },
+    { "id": "credential-vault-prod", "title": "Require INTEGRATION_ENCRYPTION_KEY in production", "status": "done", "dependsOn": [], "files": ["src/lib/security/credential-vault.ts"], "acceptance": "Encrypt fails without key on Vercel production" },
+    { "id": "integrations-ui", "title": "CMS integrations save panel", "status": "done", "dependsOn": ["credential-vault-prod"], "files": ["src/components/integrations-panel.tsx"], "acceptance": "Distribution tab saves encrypted WordPress/Webflow/Shopify creds" },
+    { "id": "publish-vault-fallback", "title": "Publish uses saved integration creds", "status": "done", "dependsOn": ["integrations-ui"], "files": ["src/app/api/distribution/route.ts", "src/lib/integrations/store.ts"], "acceptance": "POST publish works without inline credentials when saved" },
+    { "id": "scheduler-multi-cms", "title": "Scheduler supports WordPress/Webflow/Shopify", "status": "done", "dependsOn": ["publish-vault-fallback"], "files": ["src/lib/engines/content-publish-scheduler.ts"], "acceptance": "Hourly cron auto-publishes via vault" },
+    { "id": "weekly-gsc-sync", "title": "Weekly GSC/attribution sync cron", "status": "done", "dependsOn": [], "files": ["src/lib/inngest/functions.ts"], "acceptance": "weekly-attribution-sync runs Mondays 07:00 UTC" },
+    { "id": "prompt-import-ui", "title": "Prompt CSV import on Visibility tab", "status": "done", "dependsOn": [], "files": ["src/components/prompt-import-panel.tsx"], "acceptance": "Bulk import prompts from CSV in UI" },
+    { "id": "startup-warnings", "title": "Server startup production warnings", "status": "done", "dependsOn": ["production-readiness-engine"], "files": ["src/instrumentation.ts"], "acceptance": "Logs blockers/warnings on production boot" },
+    { "id": "verify-prod-script", "title": "verify:prod uses production readiness", "status": "done", "dependsOn": ["production-readiness-engine"], "files": ["scripts/verify-production.mjs", "scripts/check-env.mjs"], "acceptance": "CLI reports blockers and OmniData status" },
+    { "id": "setup-checklist-v4", "title": "Production setup checklist UI v4", "status": "done", "dependsOn": ["production-readiness-engine"], "files": ["src/app/app/settings/setup/page.tsx"], "acceptance": "Setup page shows readiness score and encryption step" }
   ]
 }

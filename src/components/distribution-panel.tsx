@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import type { ContentAsset } from "@/types/database";
 
 interface DistributionPanelProps {
@@ -30,6 +30,24 @@ export function DistributionPanel({ projectId, domain, assets }: DistributionPan
   const [socialPlatforms, setSocialPlatforms] = useState("linkedin,x");
   const [scheduling, setScheduling] = useState(false);
   const [scheduleResult, setScheduleResult] = useState<string | null>(null);
+  const [savedProviders, setSavedProviders] = useState<string[]>([]);
+
+  useEffect(() => {
+    let active = true;
+    fetch(`/api/integrations?projectId=${projectId}`)
+      .then((r) => r.json())
+      .then((data) => {
+        if (active) {
+          setSavedProviders((data.integrations || []).map((i: { provider: string }) => i.provider));
+        }
+      });
+    return () => {
+      active = false;
+    };
+  }, [projectId]);
+
+  const hasSavedCms = savedProviders.includes(publishPlatform);
+  const canPublish = Boolean(credentials.apiKey || hasSavedCms);
 
   const publishedAssets = assets.filter((a) => a.status === "published" || a.status === "indexed");
   const draftAssets = assets.filter((a) => a.status === "drafted" || a.status === "approved");
@@ -107,6 +125,11 @@ export function DistributionPanel({ projectId, domain, assets }: DistributionPan
 
       <div className="bg-card border border-border rounded-xl p-6">
         <h3 className="font-semibold mb-4">CMS Publishing</h3>
+        {hasSavedCms && (
+          <p className="text-xs text-green-400 mb-3">
+            Using saved {publishPlatform} integration — API key optional for one-off publish.
+          </p>
+        )}
         <div className="flex gap-3 mb-4">
           <select
             value={publishPlatform}
@@ -146,7 +169,7 @@ export function DistributionPanel({ projectId, domain, assets }: DistributionPan
               </div>
               <button
                 onClick={() => publishAsset(asset.id)}
-                disabled={publishing === asset.id || !credentials.apiKey}
+                disabled={publishing === asset.id || !canPublish}
                 className="bg-primary text-primary-foreground px-3 py-1 rounded-lg text-xs font-medium disabled:opacity-50"
               >
                 {publishing === asset.id ? "Publishing..." : "Publish"}

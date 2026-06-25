@@ -7,6 +7,7 @@ import type { VisibilityResult } from "@/types/database";
 import { getProject } from "@/lib/projects";
 import { VisibilityTable } from "@/components/visibility-table";
 import { CitationMovementPanel } from "@/components/citation-movement-panel";
+import { PromptImportPanel } from "@/components/prompt-import-panel";
 
 export default async function VisibilityPage({
   params,
@@ -86,6 +87,8 @@ export default async function VisibilityPage({
       {runDelta && (
         <CitationMovementPanel delta={runDelta} competitors={project.competitors || []} />
       )}
+
+      <PromptImportPanel projectId={id} />
 
       <div>
         <h2 className="text-xl font-semibold mb-4">Visibility by Engine</h2>

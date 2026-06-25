@@ -1,6 +1,7 @@
 import { notFound } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { DistributionPanel } from "@/components/distribution-panel";
+import { IntegrationsPanel } from "@/components/integrations-panel";
 import { LocalListingDraftsPanel } from "@/components/local-listing-drafts-panel";
 import { DirectoryTracker } from "@/components/directory-tracker";
 import { generateLocalListingDrafts } from "@/lib/engines/local-listings";
@@ -45,6 +46,7 @@ export default async function DistributionPage({
           Publish to WordPress, Webflow, Shopify, local listings, and submit URLs for faster indexing.
         </p>
       </div>
+      <IntegrationsPanel projectId={id} />
       <LocalListingDraftsPanel drafts={localDrafts} />
       <div className="bg-card border border-border rounded-xl p-6">
         <h3 className="font-semibold mb-4">Directory Submission Tracker</h3>

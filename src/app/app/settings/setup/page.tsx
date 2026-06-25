@@ -11,9 +11,19 @@ interface SetupStep {
   href?: string;
 }
 
+interface ProductionCheck {
+  id: string;
+  label: string;
+  status: string;
+  message?: string;
+}
+
 export default function SetupPage() {
   const [steps, setSteps] = useState<SetupStep[]>([]);
   const [version, setVersion] = useState("");
+  const [prodScore, setProdScore] = useState(0);
+  const [prodReady, setProdReady] = useState(false);
+  const [checks, setChecks] = useState<ProductionCheck[]>([]);
 
   useEffect(() => {
     Promise.all([
@@ -21,6 +31,11 @@ export default function SetupPage() {
       fetch("/api/capabilities").then((r) => r.json()),
     ]).then(([health, caps]) => {
       setVersion(health.version || caps.version);
+      const production = health.production || caps.production;
+      setProdScore(production?.score ?? 0);
+      setProdReady(production?.ready ?? false);
+      setChecks(production?.checks || []);
+
       const p = Object.fromEntries((caps.providers || []).map((x: { id: string; configured: boolean }) => [x.id, x.configured]));
 
       setSteps([
@@ -28,44 +43,43 @@ export default function SetupPage() {
           id: "supabase",
           title: "Connect Supabase (login + dashboard)",
           done: p.supabase === true && health.checks?.supabase === "ok",
-          action: "Add NEXT_PUBLIC_SUPABASE_* + SUPABASE_SERVICE_ROLE_KEY on Vercel. Run supabase/migrations/combined.sql.",
+          action: "Add NEXT_PUBLIC_SUPABASE_* + SUPABASE_SERVICE_ROLE_KEY. Run npm run db:migrate (through 0014).",
         },
         {
-          id: "migration",
-          title: "Apply database migration 0009 (v2 tables)",
-          done: health.checks?.supabase === "ok",
-          action: "SQL Editor → paste combined.sql (includes results_ledger, citation_sources, ops_queue).",
+          id: "encryption",
+          title: "Set INTEGRATION_ENCRYPTION_KEY (production)",
+          done: health.checks?.integration_encryption === "ok",
+          action: "32+ char random string on Vercel — required before saving WordPress/CMS credentials.",
         },
         {
           id: "live",
           title: "Enable live AI citation tracking",
           done: caps.citationTracking === true && caps.liveData === true,
-          action:
-            "Set at least one: SERPER_API_KEY or BRAVE_SEARCH_API_KEY (free tier) + OPENAI/ANTHROPIC/GOOGLE key. PERPLEXITY recommended. DATAFORSEO optional.",
+          action: "SERPER or OMNIDATA + OPENAI/ANTHROPIC/GOOGLE key. PERPLEXITY recommended.",
         },
         {
-          id: "serp",
-          title: "Google SERP + AI Overview data",
-          done: caps.serpCapability === true,
-          action: "Serper (cheap) or Brave Search API (2,000 free queries/mo at brave.com/search/api).",
+          id: "omnidata",
+          title: "Deploy OmniData engine (recommended)",
+          done: health.checks?.omnidata === "ok",
+          action: "docker compose up in services/omnidata. Set OMNIDATA_BASE_URL + API key + signing secret.",
         },
         {
           id: "inngest",
-          title: "Connect Inngest (background scans + agents)",
-          done: p.inngest === true,
-          action: "Set INNGEST_EVENT_KEY + INNGEST_SIGNING_KEY. Sync https://your-domain/api/inngest",
+          title: "Connect Inngest (background scans + crons)",
+          done: p.inngest === true && health.checks?.inngest === "ok",
+          action: "INNGEST_EVENT_KEY + INNGEST_SIGNING_KEY. Sync /api/inngest — includes weekly GSC sync.",
         },
         {
           id: "indexnow",
           title: "IndexNow for faster URL discovery",
           done: p.indexnow === true,
-          action: "Set INDEXNOW_KEY on Vercel. Host {key}.txt on client domains when submitting URLs.",
+          action: "Set INDEXNOW_KEY. Auto-submitted on CMS publish.",
         },
         {
           id: "oauth",
           title: "OAuth for GSC / Bing / GA4 attribution",
-          done: p.google_oauth === true && p.bing_oauth === true,
-          action: "Set GOOGLE_CLIENT_* and BING_CLIENT_* + redirect URI /api/oauth/callback",
+          done: p.google_oauth === true,
+          action: "GOOGLE_CLIENT_* + BING_CLIENT_* + redirect URI /api/oauth/callback",
         },
       ]);
     });
@@ -76,9 +90,15 @@ export default function SetupPage() {
   return (
     <div>
       <h2 className="text-xl font-bold mb-2">Production Setup Checklist</h2>
+      <p className="text-sm text-muted-foreground mb-2">
+        OmniPresence Engine v{version} — {doneCount}/{steps.length} steps complete.
+        Production readiness:{" "}
+        <strong className={prodReady ? "text-green-400" : "text-yellow-400"}>
+          {prodReady ? "READY" : `${prodScore}%`}
+        </strong>
+      </p>
       <p className="text-sm text-muted-foreground mb-6">
-        OmniPresence Engine v{version} — {doneCount}/{steps.length} complete.
-        See DEPLOY.md in the repo for the full guide. Run <code className="text-xs bg-secondary px-1 rounded">npm run verify:prod</code> from CLI.
+        See DEPLOY.md and .env.example. Run <code className="text-xs bg-secondary px-1 rounded">npm run verify:prod</code> against your live URL.
       </p>
 
       <div className="space-y-4">
@@ -101,6 +121,26 @@ export default function SetupPage() {
           </div>
         ))}
       </div>
+
+      {checks.length > 0 && (
+        <div className="mt-8 border border-border rounded-xl p-4 bg-card">
+          <h3 className="font-semibold mb-3">Full production audit</h3>
+          <ul className="space-y-1 text-sm">
+            {checks.map((c) => (
+              <li key={c.id} className="flex justify-between gap-4">
+                <span>{c.label}</span>
+                <span className={
+                  c.status === "ok" ? "text-green-400" :
+                  c.status === "error" ? "text-red-400" :
+                  c.status === "warning" ? "text-yellow-400" : "text-muted-foreground"
+                }>
+                  {c.status}
+                </span>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
 
       <div className="mt-8 flex gap-3">
         <Link href="/app/settings/capabilities" className="text-sm bg-primary text-primary-foreground px-4 py-2 rounded-lg">

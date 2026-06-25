@@ -78,7 +78,9 @@ Optional paid boost: `DATAFORSEO_LOGIN` + `DATAFORSEO_PASSWORD` (global backlink
 
 Validate locally: `npm run wire:diy` — checks env + remote `/api/capabilities`.
 
-Verify after deploy: `GET /api/health` should show `version: "0.2.0"` and `GET /api/capabilities` lists configured providers.
+Verify after deploy: `GET /api/health` should show `version: "0.3.0"`, `production.ready`, and `GET /api/capabilities` lists configured providers.
+
+Set `INTEGRATION_ENCRYPTION_KEY` (32+ chars) before saving CMS credentials in production.
 
 **Free access mode** (default): `FREE_ACCESS_MODE=true` unlocks all features with no billing. Stripe keys are optional.
 
@@ -104,6 +106,7 @@ Cron jobs registered:
 - **Monthly rescan** — 1st of month
 - **Weekly rescan** — Mondays (all active projects in free access mode)
 - **Weekly email report** — Fridays 9:00 UTC
+- **Weekly attribution sync** — Mondays 07:00 UTC (GSC/Bing/GA4)
 - **Monthly attribution sync** — 2nd of month
 
 ## 5. OAuth (GSC, Bing, GA4)

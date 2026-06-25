@@ -20,38 +20,49 @@ try {
 
   console.log(`Version:     ${health.version}`);
   console.log(`Status:      ${health.status}`);
+  console.log(`Prod ready:  ${health.production?.ready ? "YES" : "NO"} (score ${health.production?.score ?? 0}%)`);
   console.log(`Live data:   ${caps.liveData ? "ON" : "OFF (demo fallback)"}`);
   console.log(`Citation tracking: ${caps.citationTracking ? "ON" : "OFF"}`);
   console.log(`SERP providers: ${caps.serpCapability ? "ON" : "OFF"}`);
-  console.log(`DataForSEO fallback: ${caps.dataForSeoFallback ? "ON" : "OFF"}`);
+  console.log(`OmniData:    ${health.checks?.omnidata || "not configured"}`);
+  console.log(`Integration encryption: ${health.checks?.integration_encryption || "unknown"}`);
   console.log(`Providers:   ${caps.configuredCount}/${caps.totalProviders} configured\n`);
 
-  const required = caps.providers.filter((p) => p.required && !p.configured);
-  const recommended = caps.providers.filter(
-    (p) => !p.required && !p.configured && ["serper", "brave", "openai", "perplexity", "inngest", "supabase"].includes(p.id)
-  );
+  const production = health.production || caps.production;
+  if (production?.blockers?.length) {
+    console.log("BLOCKERS:");
+    for (const id of production.blockers) {
+      const check = production.checks?.find((c) => c.id === id);
+      console.log(`  ✗ ${check?.label || id}: ${check?.message || ""}`);
+    }
+    console.log("");
+  }
 
+  if (production?.warnings?.length) {
+    console.log("Warnings:");
+    for (const id of production.warnings) {
+      const check = production.checks?.find((c) => c.id === id);
+      console.log(`  ○ ${check?.label || id}: ${check?.message || ""}`);
+    }
+    console.log("");
+  }
+
+  const required = caps.providers.filter((p) => p.required && !p.configured);
   if (required.length) {
-    console.log("BLOCKERS (required):");
+    console.log("Missing required providers:");
     for (const p of required) console.log(`  ✗ ${p.name} (${p.id})`);
     console.log("");
   }
 
-  if (recommended.length) {
-    console.log("Recommended for real results:");
-    for (const p of recommended) console.log(`  ○ ${p.name}`);
-    console.log("");
-  }
-
   if (health.checks?.supabase === "skipped") {
-    console.log("Next step: Add Supabase env vars on Vercel, run combined.sql migration, redeploy.\n");
+    console.log("Next step: Add Supabase env vars on Vercel, run npm run db:migrate, redeploy.\n");
   }
 
   if (!caps.liveData) {
-    console.log("Next step: Add SERPER or BRAVE_SEARCH + OPENAI/PERPLEXITY keys for live citation tracking.\n");
+    console.log("Next step: Add SERPER or OMNIDATA + OPENAI/PERPLEXITY keys for live citation tracking.\n");
   }
 
-  process.exit(required.length ? 1 : 0);
+  process.exit(production?.ready === false ? 1 : 0);
 } catch (error) {
   console.error("Verification failed:", error instanceof Error ? error.message : error);
   process.exit(1);

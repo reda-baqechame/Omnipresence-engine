@@ -60,6 +60,15 @@ const GROUPS = [
     ],
   },
   {
+    title: "OmniData + integration security",
+    vars: [
+      { key: "OMNIDATA_BASE_URL", required: false },
+      { key: "OMNIDATA_API_KEY", required: false },
+      { key: "OMNIDATA_SIGNING_SECRET", required: false },
+      { key: "INTEGRATION_ENCRYPTION_KEY", required: false },
+    ],
+  },
+  {
     title: "Background jobs + email",
     vars: [
       { key: "INNGEST_EVENT_KEY", required: false },
@@ -117,6 +126,11 @@ console.log(`DataForSEO fallback: ${has("DATAFORSEO_LOGIN") && has("DATAFORSEO_P
 if (missingRequired > 0) {
   console.log(`Missing ${missingRequired} required variable(s). Copy .env.example → .env.local and fill values.\n`);
   process.exit(1);
+}
+
+const prodEncryption = has("INTEGRATION_ENCRYPTION_KEY");
+if (process.env.VERCEL_ENV === "production" && !prodEncryption) {
+  console.log("WARNING: INTEGRATION_ENCRYPTION_KEY not set — required before saving CMS integrations in production.\n");
 }
 
 console.log(`All required vars set. ${optionalSet} optional vars configured.\n`);

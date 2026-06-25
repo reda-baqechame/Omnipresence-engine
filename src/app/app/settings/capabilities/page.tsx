@@ -27,6 +27,8 @@ export default function CapabilitiesSettingsPage() {
   const [activeSerp, setActiveSerp] = useState<string | null>(null);
   const [diyStack, setDiyStack] = useState<DiyStack | null>(null);
   const [version, setVersion] = useState("");
+  const [prodReady, setProdReady] = useState(false);
+  const [prodScore, setProdScore] = useState(0);
 
   useEffect(() => {
     fetch("/api/capabilities")
@@ -39,6 +41,8 @@ export default function CapabilitiesSettingsPage() {
         setActiveSerp(d.activeSerpProvider);
         setDiyStack(d.diyStack);
         setVersion(d.version);
+        setProdReady(d.production?.ready ?? false);
+        setProdScore(d.production?.score ?? 0);
       });
   }, []);
 
@@ -60,6 +64,8 @@ export default function CapabilitiesSettingsPage() {
         Live data: <strong className={liveData ? "text-green-400" : "text-yellow-400"}>{liveData ? "ON" : "Demo fallback"}</strong>
         {" · "}
         Citation tracking: <strong className={citationTracking ? "text-green-400" : "text-yellow-400"}>{citationTracking ? "ON" : "OFF"}</strong>
+        {" · "}
+        Production: <strong className={prodReady ? "text-green-400" : "text-yellow-400"}>{prodReady ? "READY" : `${prodScore}%`}</strong>
       </p>
 
       <div className="mb-8 border border-border rounded-xl p-4 bg-card">

@@ -1,14 +1,18 @@
 import { NextResponse } from "next/server";
 import { createServiceClient } from "@/lib/supabase/server";
 import { getCapabilitiesSummary } from "@/lib/config/capabilities";
+import { getProductionReadiness } from "@/lib/config/production";
+import { hasIntegrationEncryptionKey } from "@/lib/security/credential-vault";
 
 export async function GET() {
   const caps = getCapabilitiesSummary();
-  const checks: Record<string, "ok" | "error" | "skipped"> = {
+  const production = getProductionReadiness();
+  const checks: Record<string, "ok" | "error" | "skipped" | "warning"> = {
     supabase: "skipped",
     stripe: "skipped",
     inngest: "skipped",
     omnidata: "skipped",
+    integration_encryption: hasIntegrationEncryptionKey() ? "ok" : production.blockers.includes("integration_encryption") ? "error" : "warning",
     live_data: caps.liveData ? "ok" : "skipped",
     citation_tracking: caps.citationTracking ? "ok" : "skipped",
     serp: caps.serpCapability ? "ok" : "skipped",
@@ -43,7 +47,7 @@ export async function GET() {
     }
   }
 
-  const healthy = checks.supabase !== "error";
+  const healthy = checks.supabase !== "error" && production.ready;
 
   return NextResponse.json(
     {
@@ -53,6 +57,12 @@ export async function GET() {
       providersConfigured: caps.configuredCount,
       activeSerpProvider: caps.activeSerpProvider,
       diyStack: caps.diyStack,
+      production: {
+        ready: production.ready,
+        score: production.score,
+        blockers: production.blockers,
+        warnings: production.warnings,
+      },
       checks,
       timestamp: new Date().toISOString(),
     },
