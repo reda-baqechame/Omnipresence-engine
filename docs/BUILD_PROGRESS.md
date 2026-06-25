@@ -30,9 +30,11 @@
 | 2026-06-25 | guarantee-cron | done | Daily verify + window_days enforcement |
 | 2026-06-25 | llms-txt-pro | done | Sitemap-driven llms.txt |
 | 2026-06-25 | phase2-ui | done | pSEO, Rankings, Internal Links tabs |
-| — | public-audit-live | pending | Live visibility when keys set |
-| — | on-page-queue | pending | Ops queue from technical findings |
-| — | omnidata-keywords-volume | pending | SERP-based volume estimates |
-| — | trend-discovery | pending | Google Trends RSS |
-| — | backlink-monitor | pending | New/lost link diff |
-| — | publish-scheduler | pending | Scheduled CMS publish |
+| 2026-06-25 | public-audit-live | done | Real SERP/AI visibility when keys configured |
+| 2026-06-25 | on-page-queue | done | Technical findings → ops_queue |
+| 2026-06-25 | omnidata-keywords-volume | done | Autocomplete rank + Serper volume signals |
+| 2026-06-25 | trend-discovery | done | Google Trends RSS + /api/trends |
+| 2026-06-25 | backlink-monitor | done | Weekly snapshots + /api/backlinks |
+| 2026-06-25 | publish-scheduler | done | Hourly Inngest + IndexNow |
+
+**Phase 2 manifest complete.**

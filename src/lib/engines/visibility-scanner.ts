@@ -177,7 +177,7 @@ async function sampleLLMVisibility(
       config.competitors
     );
     if (res.success && res.data) {
-      runs.push({ ...mapAIResult(res.data), data_source: "simulated" as DataSource });
+      runs.push({ ...mapAIResult(res.data), data_source: "measured" as DataSource });
     }
   }
 
@@ -208,11 +208,11 @@ async function sampleLLMVisibility(
       sample_runs: runs.length,
       mention_rate: mentionRate,
       citation_rate: citationRate,
-      data_source: "simulated",
+      data_source: "measured",
       data_source_detail: "llm_direct",
       label: `Live LLM (${runs.length}-run sample)`,
     },
-    data_source: "simulated",
+    data_source: "measured",
   };
 }
 
@@ -299,7 +299,7 @@ function mapAIResult(data: {
     cited_urls: data.citedUrls,
     raw_response: {
       text: data.rawResponse,
-      data_source: "simulated",
+      data_source: "measured",
       data_source_detail: "llm_direct",
     },
   };

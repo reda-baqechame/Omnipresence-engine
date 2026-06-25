@@ -15,6 +15,8 @@ import { sendWeeklyReport } from "@/lib/email/reports";
 import { sendSlackWebhook, buildWeeklyReportSlackMessage } from "@/lib/notifications/slack";
 import { verifyGuaranteeContract } from "@/lib/engines/guarantee";
 import { runAllRankChecks } from "@/lib/engines/rank-tracker-service";
+import { snapshotProjectBacklinks } from "@/lib/engines/backlink-monitor";
+import { processScheduledContent } from "@/lib/engines/content-publish-scheduler";
 import type { Project } from "@/types/database";
 
 export const runFullScan = inngest.createFunction(
@@ -442,6 +444,39 @@ export const weeklyRankCheck = inngest.createFunction(
   }
 );
 
+export const weeklyBacklinkMonitor = inngest.createFunction(
+  { id: "weekly-backlink-monitor", retries: 1, triggers: [{ cron: "0 6 * * 3" }] },
+  async ({ step }) => {
+    const supabase = await createServiceClient();
+
+    const projects = await step.run("fetch-active-projects", async () => {
+      const { data } = await supabase
+        .from("projects")
+        .select("id, domain")
+        .eq("status", "active");
+      return data || [];
+    });
+
+    let snapshotted = 0;
+    for (const project of projects) {
+      await step.run(`backlinks-${project.id}`, async () => {
+        await snapshotProjectBacklinks(supabase, project.id, project.domain);
+      });
+      snapshotted++;
+    }
+
+    return { snapshotted };
+  }
+);
+
+export const scheduledContentPublish = inngest.createFunction(
+  { id: "scheduled-content-publish", retries: 1, triggers: [{ cron: "0 * * * *" }] },
+  async ({ step }) => {
+    const supabase = await createServiceClient();
+    return step.run("process-scheduled", () => processScheduledContent(supabase));
+  }
+);
+
 export const functions = [
   runFullScan,
   runFullScanLegacy,
@@ -455,4 +490,6 @@ export const functions = [
   citationDiffAlert,
   guaranteeVerificationCron,
   weeklyRankCheck,
+  weeklyBacklinkMonitor,
+  scheduledContentPublish,
 ];

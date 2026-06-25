@@ -7,16 +7,16 @@ import { assertPublicDomain, DomainValidationError } from "@/lib/security/domain
 import { guardPublicEndpoint, isValidEmail } from "@/lib/security/public-guard";
 import { apiError } from "@/lib/security/api-response";
 import {
-  generateDemoPrompts,
-  generateDemoVisibilityResults,
-  generateDemoAuthorityOpportunities,
-} from "@/lib/demo/scan-data";
+  runPublicAuditIntelligence,
+  mergeIntelligenceIntoScore,
+} from "@/lib/engines/public-audit-scan";
+import { preferLiveData } from "@/lib/config/capabilities";
 
 export async function POST(request: NextRequest) {
   const limited = guardPublicEndpoint(request, "public-audit", 5, 60 * 60 * 1000);
   if (limited) return limited;
 
-  const { domain, brandName, industry, email } = await request.json();
+  const { domain, brandName, industry, email, location, competitors } = await request.json();
 
   if (!domain || !email) {
     return apiError("Domain and email required");
@@ -36,38 +36,64 @@ export async function POST(request: NextRequest) {
 
   const name = brandName ? String(brandName).slice(0, 120) : normalized.split(".")[0];
   const ind = industry ? String(industry).slice(0, 80) : "business";
+  const loc = location ? String(location).slice(0, 80) : "";
+  const compList = Array.isArray(competitors)
+    ? competitors.map((c: string) => String(c).slice(0, 80)).slice(0, 5)
+    : [];
 
-  const technicalFindings = await runTechnicalAudit(normalized);
+  const [technicalFindings, intelligence] = await Promise.all([
+    runTechnicalAudit(normalized),
+    runPublicAuditIntelligence({
+      domain: normalized,
+      brandName: name,
+      industry: ind,
+      location: loc,
+      competitors: compList,
+    }),
+  ]);
 
-  const demoPrompts = generateDemoPrompts("preview", name, ind, "", []);
-  const visibilityResults = generateDemoVisibilityResults(
-    "preview",
-    "preview-run",
-    name,
-    normalized,
-    [],
-    demoPrompts.map((p) => ({ text: p.text }))
-  );
-
-  const authorityOpportunities = generateDemoAuthorityOpportunities("preview", ind, []);
-
-  const score = calculateOmniPresenceScore({
-    visibilityResults: visibilityResults.map((r, i) => ({
+  const baseScore = calculateOmniPresenceScore({
+    visibilityResults: intelligence.visibilityResults.map((r, i) => ({
       ...r,
-      id: `preview-${i}`,
+      id: `public-${i}`,
+      run_id: "public",
+      project_id: "public",
+      prompt_id: undefined,
+      competitor_mentions: {},
+      competitor_citations: {},
+      cited_urls: [],
       created_at: new Date().toISOString(),
-    })) as import("@/types/database").VisibilityResult[],
+    })) as unknown as import("@/types/database").VisibilityResult[],
     technicalFindings: technicalFindings.map((f) => ({
       ...f,
-      project_id: "preview",
+      project_id: "public",
       is_resolved: false,
       id: "",
       created_at: "",
     })),
     coverageItems: [],
-    authorityOpportunities: authorityOpportunities as import("@/types/database").AuthorityOpportunity[],
+    authorityOpportunities: intelligence.authorityOpportunities.map((o, i) => ({
+      id: `pub-${i}`,
+      project_id: "public",
+      type: o.type as import("@/types/database").AuthorityType,
+      target_site: o.target_site,
+      pitch_angle: o.pitch_angle,
+      estimated_impact: o.estimated_impact,
+      difficulty_score: 50,
+      competitor_present: false,
+      status: "identified",
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+    })),
     hasConversionTracking: false,
     hasGbp: false,
+  });
+
+  const score = mergeIntelligenceIntoScore(technicalFindings, intelligence, {
+    omnipresence_score: baseScore.omnipresence_score,
+    ai_visibility: baseScore.ai_visibility,
+    search_visibility: baseScore.search_visibility,
+    technical_readiness: baseScore.technical_readiness,
   });
 
   const criticalCount = technicalFindings.filter(
@@ -80,6 +106,8 @@ export async function POST(request: NextRequest) {
     search_visibility: score.search_visibility,
     technical_readiness: score.technical_readiness,
     critical_issues: criticalCount,
+    data_mode: intelligence.dataMode,
+    measured_rate: intelligence.visibilityMetrics.measuredRate,
   };
 
   try {
@@ -90,7 +118,7 @@ export async function POST(request: NextRequest) {
       brand_name: name,
       industry: ind,
       score_snapshot: scoreSnapshot,
-      source: "public_audit",
+      source: preferLiveData() ? "public_audit_live" : "public_audit",
     });
   } catch {
     // Lead persistence is best-effort when DB isn't configured
@@ -106,7 +134,21 @@ export async function POST(request: NextRequest) {
     topIssues: technicalFindings
       .filter((f) => f.severity === "critical" || f.severity === "high")
       .slice(0, 5),
-    authorityOpportunities: authorityOpportunities.slice(0, 5),
-    message: "Sign up for the full audit with competitor analysis, 90-day roadmap, and white-label PDF.",
+    visibility: {
+      mentionRate: intelligence.visibilityMetrics.mentionRate,
+      citationRate: intelligence.visibilityMetrics.citationRate,
+      measuredRate: intelligence.visibilityMetrics.measuredRate,
+      sample: intelligence.visibilityResults.slice(0, 5),
+    },
+    authorityOpportunities: intelligence.authorityOpportunities.slice(0, 5),
+    coverageGaps: intelligence.coverageGaps,
+    backlinkCount: intelligence.backlinkCount,
+    serpPresence: intelligence.serpPresence,
+    liveData: intelligence.liveData,
+    dataMode: intelligence.dataMode,
+    providersConfigured: intelligence.providers.configuredCount,
+    message: intelligence.liveData
+      ? "Live audit with real SERP/AI visibility data. Sign up for full competitor tracking and 90-day execution roadmap."
+      : "Technical audit is live. Add API keys (Serper + OpenAI minimum) for full AI visibility measurement.",
   });
 }

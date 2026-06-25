@@ -1,21 +1,21 @@
 {
-  "version": "2.0.0",
+  "version": "2.1.0",
   "project": "OmniPresence Super Engine — Phase 2",
   "tasks": [
     { "id": "build-loop", "title": "Guarded autonomous build-loop", "status": "done", "dependsOn": [], "files": [".cursor/skills/omnipresence-loop/SKILL.md"], "acceptance": "verify:all exists" },
     { "id": "phase2-spec", "title": "Phase 2 spec + wiring guide", "status": "done", "dependsOn": ["build-loop"], "files": ["docs/OMNIPRESENCE_PHASE2_SPEC.md", "docs/WIRING_GUIDE.md"], "acceptance": "Spec documents wave plan and manual wiring" },
-    { "id": "pseo-engine", "title": "Programmatic SEO campaigns", "status": "done", "dependsOn": ["phase2-spec"], "files": ["src/lib/engines/programmatic-seo.ts", "src/app/api/pseo/route.ts", "supabase/migrations/0012_phase2.sql"], "acceptance": "Matrix expansion generates content asset topics; API CRUD" },
-    { "id": "rank-tracker-ui", "title": "Rank tracker wired to OmniData", "status": "done", "dependsOn": ["phase2-spec"], "files": ["src/lib/engines/rank-tracker-service.ts", "src/app/api/ranks/route.ts"], "acceptance": "Check keyword position; history in DB" },
-    { "id": "internal-linking", "title": "Internal linking opportunities", "status": "done", "dependsOn": ["phase2-spec"], "files": ["src/lib/engines/internal-linking.ts", "src/app/api/internal-links/route.ts"], "acceptance": "Crawl produces scored link opportunities" },
+    { "id": "pseo-engine", "title": "Programmatic SEO campaigns", "status": "done", "dependsOn": ["phase2-spec"], "files": ["src/lib/engines/programmatic-seo.ts"], "acceptance": "Matrix expansion generates content asset topics" },
+    { "id": "rank-tracker-ui", "title": "Rank tracker wired to OmniData", "status": "done", "dependsOn": ["phase2-spec"], "files": ["src/lib/engines/rank-tracker-service.ts"], "acceptance": "Check keyword position; history in DB" },
+    { "id": "internal-linking", "title": "Internal linking opportunities", "status": "done", "dependsOn": ["phase2-spec"], "files": ["src/lib/engines/internal-linking.ts"], "acceptance": "Crawl produces scored link opportunities" },
     { "id": "omnidata-redis-store", "title": "OmniData Redis persistence", "status": "done", "dependsOn": ["phase2-spec"], "files": ["services/omnidata/src/store-redis.ts"], "acceptance": "Tasks survive restart when REDIS_URL set" },
     { "id": "guarantee-cron", "title": "Automated guarantee verification", "status": "done", "dependsOn": ["phase2-spec"], "files": ["src/lib/inngest/functions.ts"], "acceptance": "Cron verifies contracts at window end" },
     { "id": "llms-txt-pro", "title": "Sitemap-driven llms.txt", "status": "done", "dependsOn": ["phase2-spec"], "files": ["src/app/api/tools/llms/route.ts"], "acceptance": "llms.txt lists real sitemap URLs" },
     { "id": "phase2-ui", "title": "Rank + pSEO + internal link UI tabs", "status": "done", "dependsOn": ["pseo-engine", "rank-tracker-ui", "internal-linking"], "files": ["src/components/project-tabs.tsx"], "acceptance": "New tabs render in project layout" },
-    { "id": "public-audit-live", "title": "Live visibility in public audit when keys set", "status": "pending", "dependsOn": ["rank-tracker-ui"], "files": ["src/app/api/public/audit/route.ts"], "acceptance": "Uses real scan when providers configured" },
-    { "id": "on-page-queue", "title": "On-page fix queue", "status": "pending", "dependsOn": ["internal-linking"], "files": ["src/lib/engines/on-page-queue.ts"], "acceptance": "Technical findings → actionable ops queue items" },
-    { "id": "omnidata-keywords-volume", "title": "Keyword volume estimates v2", "status": "pending", "dependsOn": ["omnidata-redis-store"], "files": ["services/omnidata/src/engines/keywords.ts"], "acceptance": "Volume from SERP signals not random" },
-    { "id": "trend-discovery", "title": "Trend discovery engine", "status": "pending", "dependsOn": ["pseo-engine"], "files": ["src/lib/engines/trend-discovery.ts"], "acceptance": "Google Trends RSS + content queue" },
-    { "id": "backlink-monitor", "title": "Backlink new/lost monitoring", "status": "pending", "dependsOn": ["omnidata-redis-store"], "files": ["src/lib/engines/backlink-monitor.ts"], "acceptance": "Weekly diff stored per project" },
-    { "id": "publish-scheduler", "title": "Content publish scheduler", "status": "pending", "dependsOn": ["pseo-engine"], "files": ["src/lib/inngest/functions.ts"], "acceptance": "Scheduled publish via distribution API" }
+    { "id": "public-audit-live", "title": "Live visibility in public audit when keys set", "status": "done", "dependsOn": ["rank-tracker-ui"], "files": ["src/lib/engines/public-audit-scan.ts", "src/app/api/public/audit/route.ts"], "acceptance": "Uses real scan when providers configured" },
+    { "id": "on-page-queue", "title": "On-page fix queue", "status": "done", "dependsOn": ["internal-linking"], "files": ["src/lib/engines/on-page-queue.ts"], "acceptance": "Technical findings → actionable ops queue items" },
+    { "id": "omnidata-keywords-volume", "title": "Keyword volume estimates v2", "status": "done", "dependsOn": ["omnidata-redis-store"], "files": ["services/omnidata/src/engines/keywords.ts"], "acceptance": "Volume from SERP signals not random" },
+    { "id": "trend-discovery", "title": "Trend discovery engine", "status": "done", "dependsOn": ["pseo-engine"], "files": ["src/lib/engines/trend-discovery.ts", "src/app/api/trends/route.ts"], "acceptance": "Google Trends RSS + content queue" },
+    { "id": "backlink-monitor", "title": "Backlink new/lost monitoring", "status": "done", "dependsOn": ["omnidata-redis-store"], "files": ["src/lib/engines/backlink-monitor.ts", "src/app/api/backlinks/route.ts"], "acceptance": "Weekly diff stored per project" },
+    { "id": "publish-scheduler", "title": "Content publish scheduler", "status": "done", "dependsOn": ["pseo-engine"], "files": ["src/lib/engines/content-publish-scheduler.ts"], "acceptance": "Scheduled publish via distribution API" }
   ]
 }

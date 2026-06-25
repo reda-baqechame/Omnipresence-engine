@@ -68,10 +68,11 @@ Make prompts natural and realistic. Include location-specific prompts. Include c
   }
 
   // Fallback: template-based generation
-  return generateFromTemplates(projectId, brandName, industry, location, competitors, services);
+  return generateTemplatePrompts(projectId, brandName, industry, location, competitors, services);
 }
 
-function generateFromTemplates(
+/** Template-only prompts (no LLM) — used for public audit and offline fallback. */
+export function generateTemplatePrompts(
   projectId: string,
   brandName: string,
   industry: string,

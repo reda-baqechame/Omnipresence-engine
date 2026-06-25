@@ -14,6 +14,7 @@ import { generateRoadmap } from "@/lib/engines/roadmap-generator";
 import { calculateOmniPresenceScore } from "@/lib/scoring/omnipresence";
 import { recordScanBaseline } from "@/lib/engines/results-ledger";
 import { lockGuaranteeBaseline } from "@/lib/engines/guarantee";
+import { syncTechnicalFindingsToOpsQueue } from "@/lib/engines/on-page-queue";
 import {
   isDemoMode,
   generateDemoPrompts,
@@ -29,6 +30,21 @@ export async function stepTechnicalAudit(supabase: SupabaseClient, projectId: st
   const rows = findings.map((f) => ({ ...f, project_id: projectId }));
   await supabase.from("technical_findings").delete().eq("project_id", projectId);
   if (rows.length) await supabase.from("technical_findings").insert(rows);
+
+  const { data: project } = await supabase
+    .from("projects")
+    .select("organization_id")
+    .eq("id", projectId)
+    .single();
+  if (project?.organization_id) {
+    await syncTechnicalFindingsToOpsQueue(
+      supabase,
+      projectId,
+      project.organization_id,
+      findings
+    );
+  }
+
   return findings;
 }
 
