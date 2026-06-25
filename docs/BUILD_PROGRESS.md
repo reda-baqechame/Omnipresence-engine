@@ -180,5 +180,13 @@
 | 2026-06-25 | verify-prod | done | 100% ready, phase8 + phase9 schema ok |
 | 2026-06-25 | wiring-audit | done | Whitelabel embed, podcast TTS, audit:full, WIRING_GUIDE Phase 9 |
 
-**Full stack audit:** `npm run audit:full` — Phase 8 + Phase 9 + verify:prod against production.
+**Full stack audit:** `npm run production:ready` — local CI + e2e + live audit:full + wire:diy.
+
+## Production hardening (complete)
+
+| Date | Task | Status | Notes |
+|------|------|--------|-------|
+| 2026-06-25 | production-ready-gate | done | `npm run production:ready` unified gate |
+| 2026-06-25 | combined-migration-0017 | done | `db:combine` includes visitor_sessions |
+| 2026-06-25 | capabilities-v0.4.0 | done | Clearbit provider + phase9 production checks |
 

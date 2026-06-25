@@ -120,6 +120,20 @@ export function getProductionReadiness(): {
   });
 
   checks.push({
+    id: "phase9_identity",
+    label: "Phase 9 visitor identity",
+    status: hasEnv("NEXT_PUBLIC_SUPABASE_URL") ? "ok" : "skipped",
+    message: "visitor_sessions — run 0017 migration",
+  });
+
+  checks.push({
+    id: "clearbit",
+    label: "Clearbit visitor enrichment",
+    status: hasEnv("CLEARBIT_REVEAL_KEY") ? "ok" : "skipped",
+    message: "Optional — enriches beacon sessions with company data",
+  });
+
+  checks.push({
     id: "indexnow",
     label: "IndexNow URL discovery",
     status: hasEnv("INDEXNOW_KEY") ? "ok" : "skipped",

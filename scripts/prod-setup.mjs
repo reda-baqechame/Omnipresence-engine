@@ -54,9 +54,9 @@ if (!hasKey) {
 }
 
 console.log("Next steps:");
-console.log("  1. npm run db:migrate:prod     # through 0016_phase8.sql");
+console.log("  1. npm run db:migrate:prod     # through 0017_phase9.sql");
 console.log("  2. Set OMNIDATA_BASE_URL on Vercel (optional but recommended)");
-console.log("  3. npm run verify:prod         # against live URL");
+console.log("  3. npm run production:ready    # full audit against live URL");
 console.log("");
 
 if (deploy) {

@@ -51,7 +51,7 @@ Or use Cursor `/loop 30m` with prompt:
 
 ## Completion
 
-When all tasks are `done`, run full `npm run verify:all` + `npm run wire:diy` + `npm run verify:prod` and report summary.
+When all tasks are `done`, run `npm run production:ready` (or `verify:all` + `audit:full` + `verify:prod`) and report summary.
 
 ## Phase priority
 

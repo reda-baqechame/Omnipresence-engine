@@ -22,7 +22,8 @@ export type ProviderId =
   | "bing_oauth"
   | "supabase"
   | "posthog"
-  | "stripe";
+  | "stripe"
+  | "clearbit";
 
 export interface ProviderStatus {
   id: ProviderId;
@@ -32,7 +33,7 @@ export interface ProviderStatus {
   category: "ai" | "data" | "infra" | "social" | "oauth";
 }
 
-export const V2_VERSION = "0.3.0";
+export const V2_VERSION = "0.4.0";
 
 /** All execution engines are enabled — paywalls deferred. */
 export const ENGINES_ENABLED = {
@@ -80,6 +81,7 @@ export function getProviderStatuses(): ProviderStatus[] {
       required: false,
       category: "infra",
     },
+    { id: "clearbit", name: "Clearbit Reveal", configured: hasEnv("CLEARBIT_REVEAL_KEY"), required: false, category: "data" },
   ];
 }
 

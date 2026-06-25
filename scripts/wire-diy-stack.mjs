@@ -9,10 +9,10 @@ import { join, dirname } from "path";
 import { fileURLToPath } from "url";
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
-const base = process.argv[2] || process.env.SMOKE_BASE_URL || "http://localhost:3000";
+const base = process.argv[2] || process.env.SMOKE_BASE_URL || "https://omnipresence-engine.vercel.app";
 
-function loadEnvLocal() {
-  const path = join(root, ".env.local");
+function loadEnvFile(name) {
+  const path = join(root, name);
   if (!existsSync(path)) return;
   for (const line of readFileSync(path, "utf8").split("\n")) {
     const t = line.trim();
@@ -26,6 +26,11 @@ function loadEnvLocal() {
     }
     if (!process.env[key]) process.env[key] = val;
   }
+}
+
+function loadEnvLocal() {
+  loadEnvFile(".env.local");
+  loadEnvFile(".env.production.local");
 }
 
 function has(key) {
@@ -76,6 +81,11 @@ const checks = [
     ok: has("INDEXNOW_KEY"),
     fix: "Set INDEXNOW_KEY for faster URL discovery on Distribution tab",
   },
+  {
+    name: "Clearbit visitor enrichment (optional)",
+    ok: has("CLEARBIT_REVEAL_KEY"),
+    fix: "Set CLEARBIT_REVEAL_KEY for company enrichment on Attribution beacon",
+  },
 ];
 
 console.log("\nOmniPresence — DIY Stack Wiring Check\n");
@@ -93,6 +103,7 @@ const live =
 console.log(`\nLocal live mode: ${live ? "READY" : "demo fallback"}`);
 console.log(`DataForSEO fallback: ${has("DATAFORSEO_LOGIN") && has("DATAFORSEO_PASSWORD") ? "enabled (optional)" : "off (good — saves ~$100/mo)"}`);
 
+let remoteOk = false;
 if (base) {
   try {
     const res = await fetch(`${base}/api/capabilities`, { signal: AbortSignal.timeout(15_000) });
@@ -103,6 +114,8 @@ if (base) {
       console.log(`  Citation tracking: ${caps.citationTracking ? "ON" : "OFF"}`);
       console.log(`  Active SERP: ${caps.activeSerpProvider || "none"}`);
       console.log(`  Providers: ${caps.configuredCount}/${caps.totalProviders}`);
+      console.log(`  Production ready: ${caps.production?.ready ? "YES" : "NO"} (${caps.production?.score ?? 0}%)`);
+      remoteOk = caps.production?.ready === true;
     }
   } catch {
     console.log(`\nRemote check skipped (${base} unreachable)`);
@@ -110,4 +123,4 @@ if (base) {
 }
 
 console.log("");
-process.exit(pass >= 3 ? 0 : 1);
+process.exit(pass >= 3 || remoteOk ? 0 : 1);

@@ -153,5 +153,5 @@ Run `npm run db:migrate:prod` through `0017_phase9.sql` for `visitor_sessions`.
 | `monthly-attribution-sync` | 2nd of month 07:00 UTC |
 | `scheduled-content-publish` | Hourly |
 
-Verify: `npm run audit:full` against production URL.
+Verify: `npm run production:ready` against production URL (local CI + e2e + live audits).
 

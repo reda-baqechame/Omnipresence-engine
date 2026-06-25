@@ -35,10 +35,20 @@ const REQUIRED_FILES = [
 
 const INNGEST_CRONS = [
   "daily-on-page-automation",
-  "weekly-internal-link-scan",
-  "monthly-link-building",
+  "daily-freshness-check",
+  "guarantee-verification-cron",
   "weekly-intelligence-sync",
+  "weekly-internal-link-scan",
+  "weekly-rank-check",
+  "weekly-attribution-sync",
+  "citation-diff-alert",
   "weekly-report-email",
+  "weekly-backlink-monitor",
+  "weekly-rescan",
+  "monthly-rescan",
+  "monthly-link-building",
+  "monthly-attribution-sync",
+  "scheduled-content-publish",
 ];
 
 let failed = 0;

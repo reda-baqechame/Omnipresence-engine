@@ -18,8 +18,13 @@ const required = [
   "supabase/migrations/0011_guarantee.sql",
   ".cursor/skills/omnipresence-loop/SKILL.md",
   "supabase/migrations/0016_phase8.sql",
+  "supabase/migrations/0017_phase9.sql",
   "src/app/api/on-page/route.ts",
   "src/components/link-building-panel.tsx",
+  "src/app/app/projects/[id]/prompts/page.tsx",
+  "src/app/api/visitors/route.ts",
+  "scripts/audit-full.mjs",
+  "scripts/production-ready.mjs",
 ];
 
 let missing = 0;
