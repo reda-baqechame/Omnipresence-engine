@@ -18,26 +18,13 @@ export async function sendWeeklyReport(
   if (!resend) return false;
 
   const html = generateReportHTML(reportData, whiteLabel);
-  const brand = whiteLabel?.name || "PresenceOS";
 
   try {
     await resend.emails.send({
       from: process.env.RESEND_FROM_EMAIL || "reports@presenceos.app",
       to: toEmail,
       subject: `Weekly OmniPresence Report — ${reportData.project.name} (Score: ${Math.round(reportData.score.omnipresence_score)}/100)`,
-      html: `
-        <div style="font-family: sans-serif; max-width: 600px; margin: 0 auto;">
-          <h1 style="color: #6366f1;">${brand} Weekly Report</h1>
-          <p>Your OmniPresence Score for <strong>${reportData.project.name}</strong> is <strong>${Math.round(reportData.score.omnipresence_score)}/100</strong>.</p>
-          <table style="width: 100%; margin: 20px 0;">
-            <tr><td>AI Visibility</td><td style="text-align: right;">${Math.round(reportData.score.ai_visibility)}/100</td></tr>
-            <tr><td>Search Visibility</td><td style="text-align: right;">${Math.round(reportData.score.search_visibility)}/100</td></tr>
-            <tr><td>Technical Readiness</td><td style="text-align: right;">${Math.round(reportData.score.technical_readiness)}/100</td></tr>
-          </table>
-          <p>View your full report in the dashboard or export a PDF.</p>
-          <a href="${process.env.NEXT_PUBLIC_APP_URL}/app/projects/${reportData.project.id}" style="display: inline-block; background: #6366f1; color: white; padding: 12px 24px; border-radius: 8px; text-decoration: none;">View Dashboard</a>
-        </div>
-      `,
+      html,
     });
     return true;
   } catch {

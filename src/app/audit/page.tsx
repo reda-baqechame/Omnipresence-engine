@@ -5,6 +5,7 @@ import Link from "next/link";
 import { Globe, ArrowRight, CheckCircle } from "lucide-react";
 import { ScoreGauge } from "@/components/score-gauge";
 import { SubScoreBar } from "@/components/score-gauge";
+import { CoverageMap } from "@/components/coverage-map";
 
 export default function PublicAuditPage() {
   const [form, setForm] = useState({ domain: "", brandName: "", industry: "", email: "" });
@@ -13,6 +14,9 @@ export default function PublicAuditPage() {
     score: { omnipresence: number; ai_visibility: number; search_visibility: number; technical_readiness: number };
     criticalIssues: number;
     topIssues: Array<{ title: string; description: string; severity: string; fix_recommendation?: string }>;
+    coverageItems?: Array<{ platform_name: string; is_present: boolean; competitor_present: boolean; surface: string }>;
+    competitorGaps?: number;
+    authorityOpportunities?: Array<{ target_site: string; pitch_angle: string }>;
   } | null>(null);
 
   async function handleSubmit(e: React.FormEvent) {
@@ -113,6 +117,45 @@ export default function PublicAuditPage() {
                     </div>
                   ))}
                 </div>
+              </div>
+            )}
+
+            {result.coverageItems && result.coverageItems.length > 0 && (
+              <div>
+                <h2 className="font-semibold mb-3">Platform coverage</h2>
+                {result.competitorGaps ? (
+                  <p className="text-sm text-muted-foreground mb-3">
+                    Competitors are present on {result.competitorGaps} platforms where you are missing.
+                  </p>
+                ) : null}
+                <CoverageMap
+                  items={result.coverageItems.map((c, i) => ({
+                    id: `pub-${i}`,
+                    project_id: "public",
+                    platform_name: c.platform_name,
+                    surface: c.surface as import("@/types/database").CoverageSurface,
+                    is_present: c.is_present,
+                    competitor_present: c.competitor_present,
+                    is_optimized: false,
+                    profile_url: undefined,
+                    created_at: "",
+                    updated_at: "",
+                  }))}
+                />
+              </div>
+            )}
+
+            {result.authorityOpportunities && result.authorityOpportunities.length > 0 && (
+              <div>
+                <h2 className="font-semibold mb-3">Top authority gaps</h2>
+                <ul className="space-y-2 text-sm">
+                  {result.authorityOpportunities.slice(0, 5).map((o, i) => (
+                    <li key={i} className="bg-card border border-border rounded-lg p-3">
+                      <span className="font-medium">{o.target_site}</span>
+                      <p className="text-muted-foreground">{o.pitch_angle}</p>
+                    </li>
+                  ))}
+                </ul>
               </div>
             )}
 

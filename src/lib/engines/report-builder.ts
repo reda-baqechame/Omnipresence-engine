@@ -1,6 +1,7 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { generateReportHTML, type ReportData } from "@/lib/engines/report-generator";
 import { generateReportPDF } from "@/lib/engines/report-pdf";
+import { calculateAdsEquivalent } from "@/lib/engines/ads-equivalent";
 import type { RoadmapItem, VisibilityResult } from "@/types/database";
 
 export interface WhiteLabelBranding {
@@ -42,6 +43,7 @@ export async function gatherReportData(
     { data: authority },
     { data: roadmap },
     { data: visibility },
+    { data: attribution },
   ] = await Promise.all([
     supabase.from("scores").select("*").eq("project_id", projectId).order("created_at", { ascending: false }).limit(2),
     supabase.from("technical_findings").select("*").eq("project_id", projectId),
@@ -49,11 +51,27 @@ export async function gatherReportData(
     supabase.from("authority_opportunities").select("*").eq("project_id", projectId).limit(10),
     supabase.from("roadmaps").select("*").eq("project_id", projectId).order("created_at", { ascending: false }).limit(1).single(),
     supabase.from("visibility_results").select("*").eq("project_id", projectId),
+    supabase
+      .from("attribution_metrics")
+      .select("organic_traffic, ai_referral_traffic, paid_ads_equivalent")
+      .eq("project_id", projectId)
+      .order("created_at", { ascending: false })
+      .limit(1)
+      .maybeSingle(),
   ]);
 
   if (!scores?.[0]) return null;
 
   const whiteLabel = await getOrgWhiteLabel(supabase, project.organization_id);
+
+  const adsEquivalent = attribution
+    ? calculateAdsEquivalent({
+        organicSessions: attribution.organic_traffic ?? 0,
+        aiReferralSessions: attribution.ai_referral_traffic ?? 0,
+        monthlyAdSpend: project.monthly_ad_spend ?? 0,
+        industry: project.industry,
+      })
+    : undefined;
 
   const reportData: ReportData = {
     project,
@@ -65,6 +83,13 @@ export async function gatherReportData(
     roadmapItems: (roadmap?.items || []) as RoadmapItem[],
     visibilityResults: (visibility || []) as VisibilityResult[],
     generatedAt: new Date().toISOString(),
+    adsEquivalent: adsEquivalent
+      ? {
+          totalOrganicValue: adsEquivalent.totalOrganicValue,
+          replacementRatio: adsEquivalent.replacementRatio,
+          statedAdSpend: adsEquivalent.statedAdSpend,
+        }
+      : undefined,
   };
 
   return { reportData, whiteLabel };

@@ -27,7 +27,8 @@ export function buildWeeklyReportSlackMessage(
   score: number,
   previousScore: number | undefined,
   dashboardUrl: string,
-  brandName?: string
+  brandName?: string,
+  adsEquivalent?: { totalOrganicValue: number; replacementRatio: number }
 ): SlackMessage {
   const delta =
     previousScore !== undefined ? score - previousScore : null;
@@ -35,9 +36,12 @@ export function buildWeeklyReportSlackMessage(
     delta !== null
       ? ` (${delta >= 0 ? "+" : ""}${Math.round(delta)} MoM)`
       : "";
+  const adsText = adsEquivalent
+    ? ` Organic value: $${adsEquivalent.totalOrganicValue.toLocaleString()} (${Math.round(adsEquivalent.replacementRatio * 100)}% of ad spend).`
+    : "";
 
   return {
-    text: `${brandName || "PresenceOS"} weekly report: ${projectName} scored ${Math.round(score)}/100${deltaText}`,
+    text: `${brandName || "PresenceOS"} weekly report: ${projectName} scored ${Math.round(score)}/100${deltaText}.${adsText}`,
     blocks: [
       {
         type: "header",
@@ -52,6 +56,15 @@ export function buildWeeklyReportSlackMessage(
           { type: "mrkdwn", text: `*Brand:*\n${brandName || "PresenceOS"}` },
         ],
       },
+      ...(adsEquivalent
+        ? [{
+            type: "section",
+            text: {
+              type: "mrkdwn",
+              text: `*Paid ads equivalent:* $${adsEquivalent.totalOrganicValue.toLocaleString()} (${Math.round(adsEquivalent.replacementRatio * 100)}% replacement)`,
+            },
+          }]
+        : []),
       {
         type: "actions",
         elements: [

@@ -4,6 +4,7 @@ import { useState } from "react";
 import { formatCurrency } from "@/lib/utils";
 import type { AttributionMetric } from "@/types/database";
 import { Ga4PropertyPicker } from "@/components/ga4-property-picker";
+import { AdsEquivalentPanel } from "@/components/ads-equivalent";
 
 interface AttributionPanelProps {
   projectId: string;
@@ -152,6 +153,12 @@ export function AttributionPanel({
       )}
 
       {hasGa4Connection && <Ga4PropertyPicker projectId={projectId} currentPropertyId={ga4PropertyId} />}
+
+      <AdsEquivalentPanel
+        organicSessions={current?.organic_traffic}
+        aiReferralSessions={current?.ai_referral_traffic}
+        industry={industry}
+      />
 
       {current ? (
         <>

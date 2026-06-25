@@ -15,6 +15,7 @@ export async function GET() {
     omnidata: "skipped",
     integration_encryption: hasIntegrationEncryptionKey() ? "ok" : production.blockers.includes("integration_encryption") ? "error" : "warning",
     intelligence_schema: "skipped" as const,
+    phase8_schema: "skipped" as const,
     intelligence_api: hasIntelligenceApi() ? "ok" : caps.liveData ? "warning" : "skipped",
     live_data: caps.liveData ? "ok" : "skipped",
     citation_tracking: caps.citationTracking ? "ok" : "skipped",
@@ -36,6 +37,14 @@ export async function GET() {
         intelErr?.message?.includes("does not exist") || intelErr?.code === "42P01"
           ? "error"
           : intelErr
+            ? "warning"
+            : "ok";
+
+      const { error: phase8Err } = await supabase.from("url_indexing_log").select("id").limit(1);
+      checks.phase8_schema =
+        phase8Err?.message?.includes("does not exist") || phase8Err?.code === "42P01"
+          ? "error"
+          : phase8Err
             ? "warning"
             : "ok";
     } catch {
@@ -64,6 +73,7 @@ export async function GET() {
   const healthy =
     checks.supabase !== "error" &&
     checks.intelligence_schema !== "error" &&
+    checks.phase8_schema !== "error" &&
     production.ready;
 
   return NextResponse.json(

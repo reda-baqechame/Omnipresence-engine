@@ -97,3 +97,23 @@ Minimum for **real intelligence** (not demo):
 - `SERPER_API_KEY` on OmniData VPS (or Vercel for app-only SERP)
 - At least one LLM key for AEO visibility probes
 - `npm run db:migrate` through `0015_intelligence.sql`
+
+## Phase 8 — Execution engines (on-page, distribution, authority)
+
+| Feature | Cron / trigger | Manual setup |
+|---------|----------------|--------------|
+| On-page automation | Daily 02:00 UTC (`daily-on-page-automation`) | `OMNIDATA_BASE_URL` for instant page audit; WordPress app password for apply |
+| Internal links | Tuesday 05:00 UTC (`weekly-internal-link-scan`) | Approve in Internal Links tab; WordPress for auto-inject |
+| Link building orders | 10th of month 06:00 UTC (`monthly-link-building`) | Backlink snapshots + keyword opportunities feed campaigns |
+| Bulk indexing | Manual on Distribution tab | IndexNow key optional; Bing Webmaster OAuth helps |
+| Maps/local SERP | OmniData `POST /v3/serp/google/maps/live` | `SERPER_API_KEY` on OmniData VPS |
+| Rank history API | OmniData `GET /v3/rank_tracker/history/:key` | Redis on OmniData VPS recommended |
+| Community mentions | CSV import on Authority tab | Export from Reddit/Quora monitoring tools |
+| Free tools hub | `/tools` — canonical, sitemap, citation, ROI | No auth required (rate limited) |
+
+Open-source report alignment (what we adopted vs skipped):
+- **Adopted patterns:** SEOnaut/python-seo-analyzer (in-app on-page agents), Serper places (maps), pSEO matrix (existing), Common Crawl (backlinks), SerpBear-style rank history (Redis)
+- **Skipped (stack mismatch):** Scrapy/Crawlee/scrapy-playwright (OmniData crawler), advertools (Python), Apache Superset (use built-in reports), SerpBear/OpenSERP deploy (Serper + OmniData suffice)
+
+Run `npm run db:migrate` through `0016_phase8.sql` for indexing log, link orders, and community mentions tables.
+

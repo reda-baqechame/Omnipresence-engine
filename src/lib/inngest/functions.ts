@@ -22,6 +22,9 @@ import {
   persistKeywordOpportunities,
   analyzeContentGaps,
 } from "@/lib/engines/keyword-intelligence";
+import { runDailyOnPageAutomation } from "@/lib/engines/on-page-queue";
+import { analyzeInternalLinks } from "@/lib/engines/internal-linking";
+import { buildMonthlyCampaign } from "@/lib/engines/link-building";
 import type { Project } from "@/types/database";
 
 export const runFullScan = inngest.createFunction(
@@ -232,19 +235,10 @@ export const weeklyReportEmail = inngest.createFunction(
     let sent = 0;
     for (const project of projects) {
       const reportData = await step.run(`report-${project.id}`, async () => {
-        const { data: scores } = await supabase
-          .from("scores")
-          .select("*")
-          .eq("project_id", project.id)
-          .order("created_at", { ascending: false })
-          .limit(1);
-        if (!scores?.[0]) return null;
+        const gathered = await gatherReportData(supabase, project.id);
+        if (!gathered) return null;
 
-        const { data: findings } = await supabase.from("technical_findings").select("*").eq("project_id", project.id);
-        const { data: coverage } = await supabase.from("coverage_items").select("*").eq("project_id", project.id);
-        const { data: authority } = await supabase.from("authority_opportunities").select("*").eq("project_id", project.id).limit(10);
-        const { data: roadmap } = await supabase.from("roadmaps").select("*").eq("project_id", project.id).order("created_at", { ascending: false }).limit(1).single();
-        const { data: visibility } = await supabase.from("visibility_results").select("*").eq("project_id", project.id);
+        const { reportData: payload, whiteLabel } = gathered;
 
         const { data: org } = await supabase
           .from("organizations")
@@ -262,25 +256,14 @@ export const weeklyReportEmail = inngest.createFunction(
           .order("created_at", { ascending: false })
           .limit(2);
 
-        const reportPayload = {
-          project: project as import("@/types/database").Project,
-          score: scores[0],
-          technicalFindings: findings || [],
-          coverageItems: coverage || [],
-          authorityOpportunities: authority || [],
-          roadmapItems: roadmap?.items || [],
-          visibilityResults: visibility || [],
-          generatedAt: new Date().toISOString(),
-        };
-
         let emailSent = false;
         if (email) {
           emailSent = await sendWeeklyReport(
             email,
-            reportPayload,
-            org?.white_label_name
+            payload,
+            whiteLabel || (org?.white_label_name
               ? { name: org.white_label_name, color: org.white_label_primary_color || "#6366f1" }
-              : undefined
+              : undefined)
           );
         }
 
@@ -290,10 +273,11 @@ export const weeklyReportEmail = inngest.createFunction(
             buildWeeklyReportSlackMessage(
               project.name,
               project.domain,
-              scores[0].omnipresence_score,
+              payload.score.omnipresence_score,
               previousScores?.[1]?.omnipresence_score,
               `${process.env.NEXT_PUBLIC_APP_URL}/app/projects/${project.id}`,
-              org.white_label_name || undefined
+              org.white_label_name || undefined,
+              payload.adsEquivalent
             )
           );
         }
@@ -568,6 +552,123 @@ export const weeklyIntelligenceSync = inngest.createFunction(
   }
 );
 
+export const dailyOnPageAutomation = inngest.createFunction(
+  { id: "daily-on-page-automation", retries: 1, triggers: [{ cron: "0 2 * * *" }] },
+  async ({ step }) => {
+    const supabase = await createServiceClient();
+    const projects = await step.run("fetch-projects", async () => {
+      const { data } = await supabase
+        .from("projects")
+        .select("id, domain, name")
+        .eq("status", "active");
+      return data || [];
+    });
+
+    let total = 0;
+    for (const project of projects) {
+      const n = await step.run(`on-page-${project.id}`, () =>
+        runDailyOnPageAutomation(supabase, project.id, project.domain, project.name)
+      );
+      total += n;
+    }
+    return { projects: projects.length, proposed: total };
+  }
+);
+
+export const weeklyInternalLinkScan = inngest.createFunction(
+  { id: "weekly-internal-link-scan", retries: 1, triggers: [{ cron: "0 5 * * 2" }] },
+  async ({ step }) => {
+    const supabase = await createServiceClient();
+    const projects = await step.run("fetch-projects", async () => {
+      const { data } = await supabase.from("projects").select("id, domain").eq("status", "active");
+      return data || [];
+    });
+
+    let found = 0;
+    for (const project of projects) {
+      const result = await step.run(`internal-links-${project.id}`, async () => {
+        const { opportunities } = await analyzeInternalLinks(project.domain, 30);
+        const rows = opportunities.map((o) => ({
+          project_id: project.id,
+          source_url: o.sourceUrl,
+          target_url: o.targetUrl,
+          anchor_suggestion: o.anchorSuggestion,
+          relevance_score: o.relevanceScore,
+          context_snippet: o.contextSnippet,
+          status: "identified",
+        }));
+        if (rows.length) {
+          await supabase.from("internal_link_opportunities").upsert(rows, {
+            onConflict: "project_id,source_url,target_url",
+          });
+        }
+        return opportunities.length;
+      });
+      found += result;
+    }
+    return { projects: projects.length, opportunities: found };
+  }
+);
+
+export const monthlyLinkBuilding = inngest.createFunction(
+  { id: "monthly-link-building", retries: 1, triggers: [{ cron: "0 6 10 * *" }] },
+  async ({ step }) => {
+    const supabase = await createServiceClient();
+    const projects = await step.run("fetch-projects", async () => {
+      const { data } = await supabase
+        .from("projects")
+        .select("id, name, domain, industry")
+        .eq("status", "active");
+      return data || [];
+    });
+
+    let orders = 0;
+    for (const project of projects) {
+      const count = await step.run(`links-${project.id}`, async () => {
+        const { data: kws } = await supabase
+          .from("keyword_opportunities")
+          .select("keyword")
+          .eq("project_id", project.id)
+          .order("opportunity_score", { ascending: false })
+          .limit(5);
+        const { data: snapshot } = await supabase
+          .from("backlink_snapshots")
+          .select("backlinks")
+          .eq("project_id", project.id)
+          .order("created_at", { ascending: false })
+          .limit(1)
+          .maybeSingle();
+        const backlinkList = (snapshot?.backlinks || []) as Array<{ domain?: string; rank?: number }>;
+        const gapDomains = backlinkList.slice(0, 20).map((b) => ({
+          domain: (b.domain || "").replace(/^www\./, ""),
+          dr_estimate: b.rank ?? 35,
+        }));
+        const campaign = buildMonthlyCampaign(
+          project.name,
+          project.domain,
+          (kws || []).map((k) => k.keyword),
+          gapDomains
+        );
+        if (!campaign.length) return 0;
+        await supabase.from("link_building_orders").insert(
+          campaign.map((o) => ({
+            project_id: project.id,
+            target_url: o.target_url,
+            anchor_text: o.anchor_text,
+            anchor_type: o.anchor_type,
+            vendor_tier: o.vendor_tier,
+            estimated_dr: o.estimated_dr,
+            status: o.status,
+          }))
+        );
+        return campaign.length;
+      });
+      orders += count;
+    }
+    return { projects: projects.length, orders };
+  }
+);
+
 export const functions = [
   runFullScan,
   runFullScanLegacy,
@@ -585,4 +686,7 @@ export const functions = [
   weeklyBacklinkMonitor,
   scheduledContentPublish,
   weeklyIntelligenceSync,
+  dailyOnPageAutomation,
+  weeklyInternalLinkScan,
+  monthlyLinkBuilding,
 ];

@@ -72,6 +72,7 @@ export async function runInstantPage(url: string): Promise<{
   schema_types: string[];
   word_count: number;
   internal_links: number;
+  images_without_alt: number;
 }> {
   const crawl = await crawlSite(url, { maxPages: 1 });
   const page = crawl.pages[0];
@@ -82,12 +83,15 @@ export async function runInstantPage(url: string): Promise<{
       schema_types: [],
       word_count: 0,
       internal_links: 0,
+      images_without_alt: 0,
     };
   }
 
   let meta = "";
   let h1 = "";
   let schemaTypes: string[] = [];
+  let imagesWithoutAlt = 0;
+  let wordCount = 0;
   try {
     const res = await fetch(page.url, {
       headers: { "User-Agent": "OmniData-Instant/1.0" },
@@ -98,6 +102,10 @@ export async function runInstantPage(url: string): Promise<{
     h1 = html.match(/<h1[^>]*>([^<]*)<\/h1>/i)?.[1]?.trim() || "";
     const ldMatches = html.matchAll(/"@type"\s*:\s*"([^"]+)"/g);
     schemaTypes = [...new Set([...ldMatches].map((m) => m[1]))];
+    const imgTags = [...html.matchAll(/<img\b[^>]*>/gi)];
+    const imagesWithoutAlt = imgTags.filter((m) => !/\balt\s*=\s*["'][^"']+["']/i.test(m[0])).length;
+    const text = html.replace(/<script[\s\S]*?<\/script>/gi, "").replace(/<[^>]+>/g, " ");
+    const wordCount = text.split(/\s+/).filter(Boolean).length;
   } catch {
     // partial data from crawl title only
   }
@@ -109,7 +117,8 @@ export async function runInstantPage(url: string): Promise<{
     meta_description: meta,
     h1,
     schema_types: schemaTypes,
-    word_count: 0,
+    word_count: wordCount,
     internal_links: page.links?.length ?? 0,
+    images_without_alt: imagesWithoutAlt,
   };
 }

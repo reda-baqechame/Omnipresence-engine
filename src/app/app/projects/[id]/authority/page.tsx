@@ -1,6 +1,7 @@
 import { notFound } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { AuthorityCRM } from "@/components/authority-crm";
+import { CommunityMentionsPanel } from "@/components/community-mentions-panel";
 import type { AuthorityOpportunity } from "@/types/database";
 import { getProject } from "@/lib/projects";
 
@@ -29,6 +30,7 @@ export default async function AuthorityPage({
         </p>
       </div>
       <AuthorityCRM projectId={id} opportunities={(authority || []) as AuthorityOpportunity[]} />
+      <CommunityMentionsPanel projectId={id} />
     </div>
   );
 }

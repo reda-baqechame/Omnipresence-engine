@@ -1,6 +1,7 @@
 import { notFound } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { FindingCard } from "@/components/finding-card";
+import { OnPagePanel } from "@/components/on-page-panel";
 import { getProject } from "@/lib/projects";
 import { AI_BOTS } from "@/lib/providers/ai-gateway";
 
@@ -61,6 +62,8 @@ export default async function TechnicalPage({
           <div className="text-sm text-muted-foreground">AI Bot Issues</div>
         </div>
       </div>
+
+      <OnPagePanel projectId={id} />
 
       <div>
         <h3 className="font-semibold mb-3">AI Crawler Access Checklist</h3>

@@ -17,7 +17,9 @@ const required = [
   "src/app/app/projects/[id]/guarantee/page.tsx",
   "supabase/migrations/0011_guarantee.sql",
   ".cursor/skills/omnipresence-loop/SKILL.md",
-  "docs/BUILD_MANIFEST.json",
+  "supabase/migrations/0016_phase8.sql",
+  "src/app/api/on-page/route.ts",
+  "src/components/link-building-panel.tsx",
 ];
 
 let missing = 0;

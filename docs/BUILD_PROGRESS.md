@@ -120,3 +120,35 @@
 | 2026-06-25 | incremental-migrations | done | run-migration.mjs applies pending files |
 
 **Phase 7 complete — verify:prod PASS (89%). Run db:migrate with DATABASE_URL for 0015.**
+
+## Phase 8 — Beat AEO Engine (Waves A–E)
+
+| Date | Task | Status | Notes |
+|------|------|--------|-------|
+| 2026-06-25 | on-page-automation | done | 6 agents + daily cron 02:00 UTC + WordPress CMS apply |
+| 2026-06-25 | internal-link-cms | done | Weekly Tuesday scan + approve/apply via WordPress |
+| 2026-06-25 | bulk-indexing-ui | done | IndexNow + Bing bulk submit on Distribution tab |
+| 2026-06-25 | distribution-kanban | done | Kanban board by content asset status |
+| 2026-06-25 | free-tools-expansion | done | Canonical, sitemap, citation planner, ROI calc |
+| 2026-06-25 | public-audit-v2 | done | Coverage grid + authority gaps on /audit |
+| 2026-06-25 | link-building-campaigns | done | Monthly cron 10th + 55/25/20 anchor mix |
+| 2026-06-25 | reddit-quora-tracker | done | CSV import on Authority tab |
+| 2026-06-25 | omnidata-maps-serp | done | `/v3/serp/google/maps/live` via Serper places |
+| 2026-06-25 | serp-history-redis | done | `GET /v3/rank_tracker/history/:key` |
+| 2026-06-25 | content-repurpose-chain | done | `POST /api/content` action `repurpose_chain` |
+| 2026-06-25 | coverage-map-ui | done | New Coverage project tab |
+| 2026-06-25 | friday-report-v2 | done | 8 sub-scores + ads equivalent in PDF report |
+| 2026-06-25 | phase8-migration | done | `0016_phase8.sql` indexing, link orders, community mentions |
+
+**Phase 8 manifest complete — `npm run verify:all` PASS. `0016_phase8.sql` applied to production DB.**
+
+## Phase 8 wiring pass (complete)
+
+| Date | Task | Status | Notes |
+|------|------|--------|-------|
+| 2026-06-25 | ui-wiring | done | Link building, repurpose chain, indexing log, internal link CMS apply, rank history |
+| 2026-06-25 | health-phase8 | done | `phase8_schema` check in /api/health + setup checklist |
+| 2026-06-25 | migrate-prod-0016 | done | Fixed migrate-production.mjs for Windows paths; 0016 applied |
+| 2026-06-25 | wire-diy-expanded | done | OmniData, encryption, IndexNow, Phase 8 crons in wire:diy |
+
+

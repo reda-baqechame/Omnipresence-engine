@@ -17,6 +17,7 @@ const TABS = [
   { href: "/backlinks", label: "Backlinks" },
   { href: "/trends", label: "Trends" },
   { href: "/internal-links", label: "Internal Links" },
+  { href: "/coverage", label: "Coverage" },
   { href: "/distribution", label: "Distribution" },
   { href: "/authority", label: "Authority" },
   { href: "/roadmap", label: "Roadmap" },

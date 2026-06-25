@@ -113,6 +113,13 @@ export function getProductionReadiness(): {
   });
 
   checks.push({
+    id: "phase8_execution",
+    label: "Phase 8 execution tables",
+    status: hasEnv("NEXT_PUBLIC_SUPABASE_URL") ? "ok" : "skipped",
+    message: "url_indexing_log, link_building_orders, community_mentions — run 0016 migration",
+  });
+
+  checks.push({
     id: "indexnow",
     label: "IndexNow URL discovery",
     status: hasEnv("INDEXNOW_KEY") ? "ok" : "skipped",

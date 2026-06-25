@@ -1,6 +1,8 @@
 import { notFound } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { DistributionPanel } from "@/components/distribution-panel";
+import { DistributionBoard } from "@/components/distribution-board";
+import { IndexingPanel } from "@/components/indexing-panel";
 import { IntegrationsPanel } from "@/components/integrations-panel";
 import { LocalListingDraftsPanel } from "@/components/local-listing-drafts-panel";
 import { DirectoryTracker } from "@/components/directory-tracker";
@@ -55,6 +57,8 @@ export default async function DistributionPage({
         </p>
         <DirectoryTracker projectId={id} items={directoryItems} />
       </div>
+      <DistributionBoard assets={(assets || []) as Array<Pick<ContentAsset, "id" | "title" | "type" | "status" | "published_url">>} />
+      <IndexingPanel projectId={id} domain={project.domain} />
       <DistributionPanel
         projectId={id}
         domain={project.domain}

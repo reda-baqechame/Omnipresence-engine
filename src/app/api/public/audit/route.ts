@@ -142,6 +142,8 @@ export async function POST(request: NextRequest) {
     },
     authorityOpportunities: intelligence.authorityOpportunities.slice(0, 5),
     coverageGaps: intelligence.coverageGaps,
+    coverageItems: intelligence.coverageItems,
+    competitorGaps: intelligence.coverageItems.filter((c) => !c.is_present && c.competitor_present).length,
     backlinkCount: intelligence.backlinkCount,
     serpPresence: intelligence.serpPresence,
     liveData: intelligence.liveData,

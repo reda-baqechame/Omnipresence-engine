@@ -43,7 +43,13 @@ export default function SetupPage() {
           id: "supabase",
           title: "Connect Supabase (login + dashboard)",
           done: p.supabase === true && health.checks?.supabase === "ok",
-          action: "Add NEXT_PUBLIC_SUPABASE_* + SUPABASE_SERVICE_ROLE_KEY. Run npm run db:migrate (through 0015).",
+          action: "Add NEXT_PUBLIC_SUPABASE_* + SUPABASE_SERVICE_ROLE_KEY. Run npm run db:migrate (through 0016).",
+        },
+        {
+          id: "phase8-db",
+          title: "Apply Phase 8 migration (0016)",
+          done: health.checks?.phase8_schema === "ok",
+          action: "npm run db:migrate:prod — indexing log, link building orders, community mentions.",
         },
         {
           id: "intelligence-db",
@@ -79,7 +85,13 @@ export default function SetupPage() {
           id: "inngest",
           title: "Connect Inngest (background scans + crons)",
           done: p.inngest === true && health.checks?.inngest === "ok",
-          action: "INNGEST_EVENT_KEY + INNGEST_SIGNING_KEY. Sync /api/inngest — includes weekly GSC sync.",
+          action: "INNGEST_EVENT_KEY + INNGEST_SIGNING_KEY. Includes on-page (daily), internal links (Tue), link building (10th), intelligence (Mon).",
+        },
+        {
+          id: "execution",
+          title: "Wire Phase 8 execution engines",
+          done: health.checks?.phase8_schema === "ok" && health.checks?.integration_encryption === "ok",
+          action: "Connect WordPress in Distribution → run on-page scan → approve fixes. Bulk indexing on Distribution tab.",
         },
         {
           id: "indexnow",

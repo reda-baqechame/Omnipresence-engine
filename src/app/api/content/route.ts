@@ -42,34 +42,77 @@ export async function POST(request: NextRequest) {
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) return apiUnauthorized();
 
-  const { projectId, type, topic, additionalContext, parentAssetId, repurposeFrom } = await request.json() as {
+  const { projectId, type, topic, additionalContext, parentAssetId, repurposeFrom, action } = await request.json() as {
     projectId: string;
-    type: ContentAssetType;
-    topic: string;
+    type?: ContentAssetType;
+    topic?: string;
     additionalContext?: string;
     parentAssetId?: string;
     repurposeFrom?: string;
+    action?: "repurpose_chain";
   };
 
-  if (!projectId || !type || !topic?.trim()) {
-    return apiError("projectId, type, and topic required");
-  }
-
-  if (!VALID_TYPES.has(type)) return apiError("Invalid content type");
+  if (!projectId) return apiError("projectId required");
 
   const access = await verifyProjectAccess(supabase, projectId, user.id, "member");
   if (!access) return apiForbidden();
-
-  const spamCheck = await assertContentGenerationAllowed(supabase, projectId, type);
-  if (!spamCheck.allowed) return apiError(spamCheck.reason, 429);
-
-  await trackApiUsage(supabase, access.organizationId, "openai", "content_generate", 5);
 
   const { data: brandProfile } = await supabase
     .from("brand_profiles")
     .select("*")
     .eq("project_id", projectId)
     .single();
+
+  if (action === "repurpose_chain" && repurposeFrom) {
+    const { data: parent } = await supabase.from("content_assets").select("*").eq("id", repurposeFrom).single();
+    if (!parent) return apiNotFound();
+
+    const { HUB_SPOKE_TYPES, repurposeHubAsset } = await import("@/lib/engines/content-generator");
+    const spokes = HUB_SPOKE_TYPES[parent.type as ContentAssetType] || [
+      "faq_page",
+      "linkedin_post",
+      "x_thread",
+      "newsletter",
+    ];
+    const created = [];
+    for (const spokeType of spokes.slice(0, 8)) {
+      const spamCheck = await assertContentGenerationAllowed(supabase, projectId, spokeType);
+      if (!spamCheck.allowed) break;
+      const content = await repurposeHubAsset(
+        parent.type as ContentAssetType,
+        parent.title,
+        parent.content || "",
+        brandProfile || { brand_name: "Brand" },
+        spokeType
+      );
+      const { data: asset } = await supabase
+        .from("content_assets")
+        .insert({
+          project_id: projectId,
+          type: spokeType,
+          title: content.title,
+          content: content.content,
+          metadata: { ...content.metadata, repurpose_chain: true },
+          status: "drafted",
+          parent_asset_id: repurposeFrom,
+        })
+        .select()
+        .single();
+      if (asset) created.push(asset);
+    }
+    return NextResponse.json({ assets: created, count: created.length });
+  }
+
+  if (!type || !topic?.trim()) {
+    return apiError("type and topic required");
+  }
+
+  if (!VALID_TYPES.has(type)) return apiError("Invalid content type");
+
+  const spamCheck = await assertContentGenerationAllowed(supabase, projectId, type);
+  if (!spamCheck.allowed) return apiError(spamCheck.reason, 429);
+
+  await trackApiUsage(supabase, access.organizationId, "openai", "content_generate", 5);
 
   let generated;
   if (repurposeFrom) {

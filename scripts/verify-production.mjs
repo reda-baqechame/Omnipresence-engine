@@ -27,6 +27,7 @@ try {
   console.log(`OmniData:    ${health.checks?.omnidata || "not configured"}`);
   console.log(`Integration encryption: ${health.checks?.integration_encryption || "unknown"}`);
   console.log(`Intelligence schema: ${health.checks?.intelligence_schema || "unknown"}`);
+  console.log(`Phase 8 schema:    ${health.checks?.phase8_schema || "unknown"}`);
   console.log(`Intelligence API:    ${health.checks?.intelligence_api || "unknown"}`);
   console.log(`Providers:   ${caps.configuredCount}/${caps.totalProviders} configured\n`);
 
@@ -71,6 +72,11 @@ try {
 
   if (health.checks?.intelligence_schema === "error") {
     console.log("Fix: run npm run db:migrate:prod (or npm run db:migrate with DATABASE_URL).\n");
+    process.exit(1);
+  }
+
+  if (health.checks?.phase8_schema === "error") {
+    console.log("Fix: run npm run db:migrate:prod for 0016_phase8.sql (indexing, link orders, community mentions).\n");
     process.exit(1);
   }
 

@@ -4,23 +4,30 @@ import { useState } from "react";
 import Link from "next/link";
 import { Globe, ArrowLeft } from "lucide-react";
 
-type ToolId = "audit" | "robots" | "schema" | "llms";
+type ToolId = "audit" | "robots" | "schema" | "llms" | "canonical" | "sitemap" | "citation" | "roi";
 
 const TOOLS: Array<{ id: ToolId; name: string; desc: string }> = [
-  { id: "audit", name: "AI Readiness Checker", desc: "Full technical + AI bot access audit" },
-  { id: "robots", name: "Robots.txt Checker", desc: "Verify AI crawlers can access your site" },
-  { id: "schema", name: "Schema Validator", desc: "Check structured data on your homepage" },
-  { id: "llms", name: "llms.txt Generator", desc: "Generate an llms.txt file for AI crawlers" },
+    { id: "audit", name: "AI Readiness Checker", desc: "Full technical + AI bot access audit" },
+    { id: "robots", name: "Robots.txt Checker", desc: "Verify AI crawlers can access your site" },
+    { id: "schema", name: "Schema Validator", desc: "Check structured data on your homepage" },
+    { id: "llms", name: "llms.txt Generator", desc: "Generate an llms.txt file for AI crawlers" },
+    { id: "canonical", name: "Canonical Checker", desc: "Detect missing or mismatched canonical tags" },
+    { id: "sitemap", name: "Sitemap Validator", desc: "Validate sitemap.xml reachability and URL count" },
+    { id: "citation", name: "Citation Planner", desc: "AI citation prompts and surface priorities" },
+    { id: "roi", name: "Organic ROI Calculator", desc: "Organic traffic value vs paid ad spend" },
 ];
 
 export default function FreeToolsPage() {
   const [activeTool, setActiveTool] = useState<ToolId>("audit");
   const [domain, setDomain] = useState("");
+  const [brand, setBrand] = useState("");
+  const [industry, setIndustry] = useState("");
+  const [adSpend, setAdSpend] = useState("2000");
+  const [sessions, setSessions] = useState("500");
   const [loading, setLoading] = useState(false);
   const [result, setResult] = useState<Record<string, unknown> | null>(null);
 
   async function runTool() {
-    if (!domain) return;
     setLoading(true);
     setResult(null);
 
@@ -29,13 +36,35 @@ export default function FreeToolsPage() {
       robots: "/api/tools/robots",
       schema: "/api/tools/schema",
       llms: "/api/tools/llms",
+      canonical: "/api/tools/canonical",
+      sitemap: "/api/tools/sitemap",
+      citation: "/api/tools/citation-planner",
+      roi: "/api/tools/roi",
     };
+
+    let body: Record<string, unknown> = { domain };
+    if (activeTool === "citation") {
+      if (!brand || !industry) {
+        setLoading(false);
+        return;
+      }
+      body = { brand, industry, location: domain || "United States" };
+    } else if (activeTool === "roi") {
+      body = {
+        organicSessions: Number(sessions) || 0,
+        monthlyAdSpend: Number(adSpend) || 0,
+        industry: industry || undefined,
+      };
+    } else if (!domain) {
+      setLoading(false);
+      return;
+    }
 
     try {
       const res = await fetch(endpoints[activeTool], {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ domain }),
+        body: JSON.stringify(body),
       });
       setResult(await res.json());
     } catch {
@@ -43,6 +72,13 @@ export default function FreeToolsPage() {
     }
     setLoading(false);
   }
+
+  const canRun =
+    activeTool === "citation"
+      ? Boolean(brand && industry)
+      : activeTool === "roi"
+        ? Boolean(sessions || adSpend)
+        : Boolean(domain);
 
   return (
     <div className="min-h-screen">
@@ -83,22 +119,34 @@ export default function FreeToolsPage() {
           ))}
         </div>
 
-        <div className="bg-card border border-border rounded-xl p-6 mb-8">
-          <div className="flex gap-3">
+        <div className="bg-card border border-border rounded-xl p-6 mb-8 space-y-3">
+          {activeTool === "citation" ? (
+            <div className="grid md:grid-cols-3 gap-3">
+              <input value={brand} onChange={(e) => setBrand(e.target.value)} placeholder="Brand name" className="bg-background border border-input rounded-lg px-3 py-2 text-sm" />
+              <input value={industry} onChange={(e) => setIndustry(e.target.value)} placeholder="Industry" className="bg-background border border-input rounded-lg px-3 py-2 text-sm" />
+              <input value={domain} onChange={(e) => setDomain(e.target.value)} placeholder="Location (optional)" className="bg-background border border-input rounded-lg px-3 py-2 text-sm" />
+            </div>
+          ) : activeTool === "roi" ? (
+            <div className="grid md:grid-cols-3 gap-3">
+              <input value={sessions} onChange={(e) => setSessions(e.target.value)} placeholder="Monthly organic sessions" className="bg-background border border-input rounded-lg px-3 py-2 text-sm" />
+              <input value={adSpend} onChange={(e) => setAdSpend(e.target.value)} placeholder="Monthly ad spend ($)" className="bg-background border border-input rounded-lg px-3 py-2 text-sm" />
+              <input value={industry} onChange={(e) => setIndustry(e.target.value)} placeholder="Industry (optional)" className="bg-background border border-input rounded-lg px-3 py-2 text-sm" />
+            </div>
+          ) : (
             <input
               value={domain}
               onChange={(e) => setDomain(e.target.value)}
               placeholder="Enter your domain (e.g. example.com)"
-              className="flex-1 bg-background border border-input rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
+              className="w-full bg-background border border-input rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
             />
-            <button
-              onClick={runTool}
-              disabled={loading || !domain}
-              className="bg-primary text-primary-foreground px-6 py-2 rounded-lg font-medium disabled:opacity-50"
-            >
-              {loading ? "Running..." : "Run"}
-            </button>
-          </div>
+          )}
+          <button
+            onClick={runTool}
+            disabled={loading || !canRun}
+            className="bg-primary text-primary-foreground px-6 py-2 rounded-lg font-medium disabled:opacity-50"
+          >
+            {loading ? "Running..." : "Run"}
+          </button>
         </div>
 
         {result !== null && <ToolResult tool={activeTool} data={result} />}
@@ -174,6 +222,48 @@ function ToolResult({ tool, data }: { tool: ToolId; data: Record<string, unknown
         <h2 className="text-lg font-semibold">Generated llms.txt</h2>
         <pre className="bg-secondary rounded-xl p-4 text-sm overflow-x-auto whitespace-pre-wrap">{d.content as string}</pre>
         <p className="text-sm text-muted-foreground">Save this as /llms.txt on your domain root.</p>
+        <UpsellCTA />
+      </div>
+    );
+  }
+
+  if (tool === "canonical") {
+    return (
+      <div className="space-y-2 text-sm">
+        <p>Canonical: <strong>{String(d.canonical || "none")}</strong></p>
+        <p>Status: {String(d.issue)}</p>
+        <UpsellCTA />
+      </div>
+    );
+  }
+
+  if (tool === "sitemap") {
+    return (
+      <div className="space-y-2 text-sm">
+        <p>Sitemap found: {d.found ? "yes" : "no"}</p>
+        <p>URL count: {String(d.urlCount)}</p>
+        <UpsellCTA />
+      </div>
+    );
+  }
+
+  if (tool === "citation" && Array.isArray(d.prompts)) {
+    return (
+      <div className="space-y-3">
+        <h2 className="text-lg font-semibold">Citation prompts</h2>
+        <ul className="list-disc pl-5 text-sm space-y-1">
+          {(d.prompts as string[]).map((p) => <li key={p}>{p}</li>)}
+        </ul>
+        <UpsellCTA />
+      </div>
+    );
+  }
+
+  if (tool === "roi" && d.totalOrganicValue !== undefined) {
+    return (
+      <div className="space-y-2 text-sm">
+        <p>Total organic value: <strong>${Number(d.totalOrganicValue).toLocaleString()}</strong></p>
+        <p>Replacement ratio: {Math.round(Number(d.replacementRatio) * 100)}%</p>
         <UpsellCTA />
       </div>
     );

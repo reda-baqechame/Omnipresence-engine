@@ -21,11 +21,11 @@ function run(cmd, args) {
 
 console.log("\n=== Production DB migrate ===\n");
 
-if (!run("vercel", ["env", "pull", envFile, "--environment=production", "--yes"])) {
+if (!run("vercel", ["env", "pull", ".env.vercel.tmp", "--environment=production", "-y"])) {
   process.exit(1);
 }
 
-const migrated = run("node", [`--env-file=${envFile}`, "scripts/run-migration.mjs"]);
+const migrated = run("node", ["--env-file=.env.vercel.tmp", "scripts/run-migration.mjs"]);
 
 if (existsSync(envFile)) {
   try {

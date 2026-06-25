@@ -57,9 +57,24 @@ const checks = [
     fix: "Set Supabase env vars and run combined.sql migration",
   },
   {
-    name: "Inngest (background scans)",
+    name: "Inngest (background scans + Phase 8 crons)",
     ok: has("INNGEST_EVENT_KEY"),
     fix: "Connect Inngest via Vercel marketplace or set INNGEST_EVENT_KEY",
+  },
+  {
+    name: "OmniData engine (recommended)",
+    ok: has("OMNIDATA_BASE_URL") && has("OMNIDATA_API_KEY"),
+    fix: "Deploy services/omnidata — set OMNIDATA_BASE_URL + API key on Vercel",
+  },
+  {
+    name: "Integration encryption (CMS credentials)",
+    ok: has("INTEGRATION_ENCRYPTION_KEY"),
+    fix: "Set INTEGRATION_ENCRYPTION_KEY (32+ chars) — npm run prod:keygen",
+  },
+  {
+    name: "IndexNow bulk indexing",
+    ok: has("INDEXNOW_KEY"),
+    fix: "Set INDEXNOW_KEY for faster URL discovery on Distribution tab",
   },
 ];
 

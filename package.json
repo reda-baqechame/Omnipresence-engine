@@ -15,6 +15,7 @@
     "prod:setup": "node scripts/prod-setup.mjs",
     "prod:deploy": "node scripts/prod-setup.mjs --deploy",
     "wire:diy": "node scripts/wire-diy-stack.mjs",
+    "audit:phase8": "node scripts/audit-phase8.mjs",
     "verify:all": "node scripts/verify-all.mjs",
     "e2e:happy-path": "node scripts/e2e-happy-path.mjs",
     "omnidata:test": "npm run test --prefix services/omnidata",

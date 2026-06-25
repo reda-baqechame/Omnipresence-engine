@@ -1,5 +1,6 @@
 import { notFound } from "next/navigation";
 import { BacklinksPanel } from "@/components/backlinks-panel";
+import { LinkBuildingPanel } from "@/components/link-building-panel";
 import { getProject } from "@/lib/projects";
 
 export default async function BacklinksPage({
@@ -20,6 +21,7 @@ export default async function BacklinksPage({
         </p>
       </div>
       <BacklinksPanel projectId={id} />
+      <LinkBuildingPanel projectId={id} />
     </div>
   );
 }

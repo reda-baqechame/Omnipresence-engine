@@ -37,6 +37,12 @@ export interface PublicAuditIntelligence {
     estimated_impact: number;
   }>;
   coverageGaps: string[];
+  coverageItems: Array<{
+    platform_name: string;
+    is_present: boolean;
+    competitor_present: boolean;
+    surface: string;
+  }>;
   backlinkCount: number;
   serpPresence: boolean;
 }
@@ -83,6 +89,7 @@ export async function runPublicAuditIntelligence(input: {
         estimated_impact: o.estimated_impact,
       })),
       coverageGaps: [],
+      coverageItems: [],
       backlinkCount: 0,
       serpPresence: false,
     };
@@ -166,6 +173,12 @@ export async function runPublicAuditIntelligence(input: {
       estimated_impact: o.estimated_impact ?? 50,
     })),
     coverageGaps,
+    coverageItems: coverage.map((c) => ({
+      platform_name: c.platform_name,
+      is_present: c.is_present,
+      competitor_present: c.competitor_present,
+      surface: c.surface,
+    })),
     backlinkCount: backlinks.success ? (backlinks.data?.length ?? 0) : 0,
     serpPresence,
   };

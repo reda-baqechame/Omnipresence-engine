@@ -11,6 +11,8 @@ import { runDomainAnalytics, runInstantPage } from "../engines/domain-analytics.
 import { estimateKeywordDifficulty, scoreKeywordsForDomain } from "../engines/keyword-difficulty.js";
 import { findContentGaps } from "../engines/content-gaps.js";
 import { findBacklinkGaps } from "../engines/backlink-gaps.js";
+import { runMapsLive } from "../engines/maps-serp.js";
+import { getRankHistoryHydrated } from "../store.js";
 
 const router = Router();
 
@@ -187,8 +189,23 @@ router.post("/v3/labs/keyword_opportunities/live", async (req, res) => {
   res.json(dfsResponse([{ result: [{ opportunities: scored }] }]));
 });
 
+router.post("/v3/serp/google/maps/live", async (req, res) => {
+  const item = (req.body as Array<{ keyword?: string; location_name?: string }>)?.[0];
+  if (!item?.keyword) {
+    res.status(400).json(dfsResponse([], 40000));
+    return;
+  }
+  const result = await runMapsLive(item.keyword, item.location_name || "United States");
+  res.json(dfsResponse([{ result: [result] }]));
+});
+
+router.get("/v3/rank_tracker/history/:key", async (req, res) => {
+  const history = await getRankHistoryHydrated(decodeURIComponent(req.params.key));
+  res.json(dfsResponse([{ result: [{ history }] }]));
+});
+
 router.get("/health", (_req, res) => {
-  res.json({ ok: true, service: "omnidata", version: "0.3.0" });
+  res.json({ ok: true, service: "omnidata", version: "0.4.0" });
 });
 
 router.post("/v3/domain_analytics/overview/live", async (req, res) => {

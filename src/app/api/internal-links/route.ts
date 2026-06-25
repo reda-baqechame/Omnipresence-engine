@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { analyzeInternalLinks } from "@/lib/engines/internal-linking";
+import { loadProjectIntegration, type CmsCredentials } from "@/lib/integrations/store";
 import { verifyProjectAccess } from "@/lib/security/project-access";
 import { apiError, apiForbidden, apiUnauthorized } from "@/lib/security/api-response";
 
@@ -68,18 +69,30 @@ export async function PATCH(request: NextRequest) {
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) return apiUnauthorized();
 
-  const { id, status } = await request.json() as { id: string; status: string };
+  const { id, status, apply } = await request.json() as { id: string; status: string; apply?: boolean };
   if (!id || !status) return apiError("id and status required");
 
   const { data: row } = await supabase
     .from("internal_link_opportunities")
-    .select("project_id")
+    .select("*")
     .eq("id", id)
     .single();
   if (!row) return apiError("Not found", 404);
 
   const access = await verifyProjectAccess(supabase, row.project_id, user.id, "member");
   if (!access) return apiForbidden();
+
+  if (apply && status === "approved") {
+    const creds = await loadProjectIntegration<CmsCredentials>(supabase, row.project_id, "wordpress");
+    if (creds) {
+      const { injectInternalLinkToWordPress } = await import("@/lib/integrations/cms-patcher");
+      await injectInternalLinkToWordPress(creds, {
+        sourceUrl: row.source_url,
+        targetUrl: row.target_url,
+        anchor: row.anchor_suggestion,
+      });
+    }
+  }
 
   await supabase.from("internal_link_opportunities").update({ status }).eq("id", id);
   return NextResponse.json({ ok: true });
