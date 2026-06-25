@@ -16,6 +16,7 @@ export async function GET() {
     integration_encryption: hasIntegrationEncryptionKey() ? "ok" : production.blockers.includes("integration_encryption") ? "error" : "warning",
     intelligence_schema: "skipped" as const,
     phase8_schema: "skipped" as const,
+    phase9_schema: "skipped" as const,
     intelligence_api: hasIntelligenceApi() ? "ok" : caps.liveData ? "warning" : "skipped",
     live_data: caps.liveData ? "ok" : "skipped",
     citation_tracking: caps.citationTracking ? "ok" : "skipped",
@@ -47,6 +48,14 @@ export async function GET() {
           : phase8Err
             ? "warning"
             : "ok";
+
+      const { error: phase9Err } = await supabase.from("visitor_sessions").select("id").limit(1);
+      checks.phase9_schema =
+        phase9Err?.message?.includes("does not exist") || phase9Err?.code === "42P01"
+          ? "error"
+          : phase9Err
+            ? "warning"
+            : "ok";
     } catch {
       checks.supabase = "error";
     }
@@ -74,6 +83,7 @@ export async function GET() {
     checks.supabase !== "error" &&
     checks.intelligence_schema !== "error" &&
     checks.phase8_schema !== "error" &&
+    checks.phase9_schema !== "error" &&
     production.ready;
 
   return NextResponse.json(

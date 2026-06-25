@@ -43,7 +43,13 @@ export default function SetupPage() {
           id: "supabase",
           title: "Connect Supabase (login + dashboard)",
           done: p.supabase === true && health.checks?.supabase === "ok",
-          action: "Add NEXT_PUBLIC_SUPABASE_* + SUPABASE_SERVICE_ROLE_KEY. Run npm run db:migrate (through 0016).",
+          action: "Add NEXT_PUBLIC_SUPABASE_* + SUPABASE_SERVICE_ROLE_KEY. Run npm run db:migrate (through 0017).",
+        },
+        {
+          id: "phase9-db",
+          title: "Apply Phase 9 migration (0017)",
+          done: health.checks?.phase9_schema === "ok",
+          action: "npm run db:migrate:prod — visitor_sessions for identity tracking.",
         },
         {
           id: "phase8-db",
