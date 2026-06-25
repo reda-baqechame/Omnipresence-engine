@@ -42,11 +42,21 @@ export function hasPageSpeedCapability(): boolean {
   return true;
 }
 
+// In-process TTL cache so a single scan (technical-audit + scoring) reuses one
+// keyless call instead of hitting the rate-limited endpoint twice.
+const PS_CACHE_TTL_MS = 10 * 60 * 1000;
+const psCache = new Map<string, { at: number; result: ProviderResult<PageSpeedResult> }>();
+
 export async function getPageSpeed(
   url: string,
   strategy: "mobile" | "desktop" = "mobile"
 ): Promise<ProviderResult<PageSpeedResult>> {
   const fullUrl = url.startsWith("http") ? url : `https://${url}`;
+  const cacheKey = `${strategy}:${fullUrl}`;
+  const cached = psCache.get(cacheKey);
+  if (cached && Date.now() - cached.at < PS_CACHE_TTL_MS) {
+    return cached.result;
+  }
   const key = process.env.PAGESPEED_API_KEY;
   const params = new URLSearchParams({
     url: fullUrl,
@@ -55,6 +65,16 @@ export async function getPageSpeed(
   });
   if (key && !key.startsWith("your-")) params.set("key", key);
 
+  const result = await fetchPageSpeed(fullUrl, strategy, params);
+  psCache.set(cacheKey, { at: Date.now(), result });
+  return result;
+}
+
+async function fetchPageSpeed(
+  fullUrl: string,
+  strategy: "mobile" | "desktop",
+  params: URLSearchParams
+): Promise<ProviderResult<PageSpeedResult>> {
   try {
     const res = await fetch(
       `https://www.googleapis.com/pagespeedonline/v5/runPagespeed?${params}`,

@@ -3,6 +3,7 @@ import { createClient } from "@/lib/supabase/server";
 import { getProject } from "@/lib/projects";
 import { calculateAeoReadiness, type AeoLever, type AeoReadiness } from "@/lib/engines/aeo-readiness";
 import { calculateAeoMetrics } from "@/lib/engines/aeo-metrics";
+import { PassageRewriterPanel } from "@/components/passage-rewriter-panel";
 import type { VisibilityResult, TechnicalFinding } from "@/types/database";
 
 function barColor(status: AeoLever["status"]): string {
@@ -95,6 +96,8 @@ export default async function AeoReadinessPage({
 
       <LeverGroup title="Deterministic levers (guaranteed deliverables)" levers={deterministic} />
       <LeverGroup title="Probabilistic levers (measured lift)" levers={probabilistic} />
+
+      <PassageRewriterPanel projectId={id} />
 
       <div className="grid md:grid-cols-2 gap-4">
         <div className="bg-card border border-border rounded-xl p-6">

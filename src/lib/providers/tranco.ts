@@ -34,12 +34,29 @@ export function trancoRankToScore(rank: number): number {
   return Math.max(0, Math.min(100, Math.round(score)));
 }
 
+// In-process TTL cache — authority changes slowly, so reuse within a process.
+const DA_CACHE_TTL_MS = 60 * 60 * 1000;
+const daCache = new Map<string, { at: number; result: ProviderResult<DomainAuthority> }>();
+
 export async function getDomainAuthority(
   domain: string
 ): Promise<ProviderResult<DomainAuthority>> {
   const clean = cleanDomain(domain);
   if (!clean) return { success: false, error: "Invalid domain" };
 
+  const cached = daCache.get(clean);
+  if (cached && Date.now() - cached.at < DA_CACHE_TTL_MS) {
+    return cached.result;
+  }
+
+  const result = await fetchDomainAuthority(clean);
+  daCache.set(clean, { at: Date.now(), result });
+  return result;
+}
+
+async function fetchDomainAuthority(
+  clean: string
+): Promise<ProviderResult<DomainAuthority>> {
   try {
     const res = await fetch(
       `https://tranco-list.eu/api/ranks/domain/${encodeURIComponent(clean)}`,

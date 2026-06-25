@@ -50,7 +50,7 @@ export interface AeoReadiness {
 
 export interface AeoReadinessInputs {
   technicalFindings: Array<Pick<TechnicalFinding, "category" | "severity" | "title" | "fix_recommendation">>;
-  visibilityResults: Array<Pick<VisibilityResult, "engine" | "brand_mentioned" | "brand_cited" | "competitor_mentions" | "raw_response">>;
+  visibilityResults: Array<Pick<VisibilityResult, "engine" | "brand_mentioned" | "brand_cited" | "competitor_mentions" | "raw_response" | "source_domains" | "prompt_text">>;
   entityScore?: number;
   coverageItems?: Array<Pick<CoverageItem, "surface" | "is_present">>;
   authorityOpportunities?: Array<Pick<AuthorityOpportunity, "status">>;
@@ -242,17 +242,20 @@ function leverPriority(l: AeoLever): number {
 }
 
 function computeAuthority(inputs: AeoReadinessInputs): number {
-  const da = inputs.domainAuthority ?? 0;
+  const da = inputs.domainAuthority;
   const opps = inputs.authorityOpportunities || [];
   const published = opps.filter((o) => o.status === "published").length;
   const publishedScore = opps.length > 0 ? Math.min((published / opps.length) * 100, 100) : 0;
   const sourceDomains = new Set(
-    inputs.visibilityResults.flatMap((r) => {
-      const raw = r.raw_response as { source_domains?: string[] } | undefined;
-      return raw?.source_domains || [];
-    })
+    inputs.visibilityResults.flatMap((r) => r.source_domains || [])
   );
   const sourceScore = Math.min(sourceDomains.size * 10, 100);
+
+  // When Tranco authority is unknown (unlisted/unreachable), don't let a 0
+  // unfairly drag the lever — lean on earned placements + citing sources.
+  if (typeof da !== "number" || da <= 0) {
+    return clamp(Math.round(publishedScore * 0.5 + sourceScore * 0.5));
+  }
   // Domain authority dominates; earned placements + citing sources supplement.
   return clamp(Math.round(da * 0.6 + publishedScore * 0.2 + sourceScore * 0.2));
 }
@@ -260,11 +263,7 @@ function computeAuthority(inputs: AeoReadinessInputs): number {
 function computeComparisonWins(
   results: AeoReadinessInputs["visibilityResults"]
 ): number {
-  const comparison = results.filter((r) => {
-    const raw = r.raw_response as { prompt_text?: string } | undefined;
-    const text = raw?.prompt_text || "";
-    return COMPARISON_RE.test(text);
-  });
+  const comparison = results.filter((r) => COMPARISON_RE.test(r.prompt_text || ""));
   const pool = comparison.length >= 3 ? comparison : results;
   if (pool.length === 0) return 0;
   const metrics = calculateVisibilityMetrics(
