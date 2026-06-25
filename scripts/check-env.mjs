@@ -46,12 +46,16 @@ const GROUPS = [
     ],
   },
   {
-    title: "Live AI citation tracking (v2)",
+    title: "Live AI citation tracking (DIY stack — no DataForSEO required)",
     vars: [
+      { key: "SERPER_API_KEY", required: false },
+      { key: "BRAVE_SEARCH_API_KEY", required: false },
+      { key: "OPENAI_API_KEY", required: false },
+      { key: "ANTHROPIC_API_KEY", required: false },
+      { key: "GOOGLE_GENERATIVE_AI_API_KEY", required: false },
+      { key: "PERPLEXITY_API_KEY", required: false },
       { key: "DATAFORSEO_LOGIN", required: false },
       { key: "DATAFORSEO_PASSWORD", required: false },
-      { key: "OPENAI_API_KEY", required: false },
-      { key: "PERPLEXITY_API_KEY", required: false },
       { key: "FIRECRAWL_API_KEY", required: false },
     ],
   },
@@ -98,9 +102,17 @@ for (const group of GROUPS) {
   console.log("");
 }
 
-const liveData = has("OPENAI_API_KEY") || has("DATAFORSEO_LOGIN") || has("PERPLEXITY_API_KEY");
+const liveData =
+  has("OPENAI_API_KEY") ||
+  has("ANTHROPIC_API_KEY") ||
+  has("GOOGLE_GENERATIVE_AI_API_KEY") ||
+  has("PERPLEXITY_API_KEY") ||
+  has("SERPER_API_KEY") ||
+  has("BRAVE_SEARCH_API_KEY") ||
+  has("DATAFORSEO_LOGIN");
 console.log(`Live data mode: ${liveData ? "ENABLED" : "demo fallback"}`);
-console.log(`LLM Mentions: ${has("DATAFORSEO_LOGIN") && has("DATAFORSEO_PASSWORD") ? "ENABLED" : "disabled"}\n`);
+console.log(`Citation tracking (DIY): ${liveData ? "ENABLED" : "disabled"}`);
+console.log(`DataForSEO fallback: ${has("DATAFORSEO_LOGIN") && has("DATAFORSEO_PASSWORD") ? "ENABLED" : "disabled"}\n`);
 
 if (missingRequired > 0) {
   console.log(`Missing ${missingRequired} required variable(s). Copy .env.example → .env.local and fill values.\n`);

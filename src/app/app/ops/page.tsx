@@ -16,7 +16,7 @@ export default function OpsConsolePage() {
   const [items, setItems] = useState<OpsItem[]>([]);
   const [loading, setLoading] = useState(true);
 
-  async function load() {
+  async function reload() {
     const res = await fetch("/api/ops");
     const data = await res.json();
     setItems(data.items || []);
@@ -24,7 +24,18 @@ export default function OpsConsolePage() {
   }
 
   useEffect(() => {
-    load();
+    let cancelled = false;
+    (async () => {
+      const res = await fetch("/api/ops");
+      const data = await res.json();
+      if (!cancelled) {
+        setItems(data.items || []);
+        setLoading(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
   async function updateItem(id: string, status: string, execute = false) {
@@ -33,7 +44,7 @@ export default function OpsConsolePage() {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ id, status, execute }),
     });
-    load();
+    await reload();
   }
 
   if (loading) return <div className="p-8">Loading ops queue...</div>;

@@ -1,4 +1,5 @@
 import type { CoverageItem, CoverageSurface } from "@/types/database";
+import { searchGoogleOrganicRouter } from "@/lib/providers/serp-router";
 
 interface PlatformCheck {
   surface: CoverageSurface;
@@ -78,6 +79,26 @@ async function checkPresence(
   brandSlug: string,
   domainName: string
 ): Promise<boolean> {
+  // Maps / GBP: verify via SERP local pack when available
+  if (["google_business", "bing_places", "apple_business"].includes(platform.surface)) {
+    const query = `${brandName} ${domainName}`;
+    try {
+      const serp = await searchGoogleOrganicRouter(query, "United States", domainName, []);
+      if (serp.success && serp.data) {
+        const inOrganic = serp.data.brandInResults;
+        const inLocal = serp.data.organicResults.some(
+          (r) =>
+            r.url.includes("google.com/maps") ||
+            r.url.includes("g.page") ||
+            r.title.toLowerCase().includes(brandName.toLowerCase())
+        );
+        if (inOrganic || inLocal) return true;
+      }
+    } catch {
+      // fall through to heuristics
+    }
+  }
+
   // Social platforms: try common URL patterns
   const socialPlatforms = ["linkedin", "x_twitter", "facebook", "instagram", "tiktok"];
   if (socialPlatforms.includes(platform.surface)) {

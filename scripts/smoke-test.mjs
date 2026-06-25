@@ -42,6 +42,12 @@ const checks = [
     body: { projectId: "00000000-0000-0000-0000-000000000000", referrer: "https://chatgpt.com/", path: "/" },
     expectStatus: [200, 400],
   },
+  {
+    name: "Guarantee API (auth required)",
+    path: "/api/guarantee?projectId=00000000-0000-0000-0000-000000000000",
+    method: "GET",
+    expectStatus: [401, 403],
+  },
 ];
 
 let passed = 0;

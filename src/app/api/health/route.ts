@@ -9,7 +9,9 @@ export async function GET() {
     stripe: "skipped",
     inngest: "skipped",
     live_data: caps.liveData ? "ok" : "skipped",
-    llm_mentions: caps.llmMentions ? "ok" : "skipped",
+    citation_tracking: caps.citationTracking ? "ok" : "skipped",
+    serp: caps.serpCapability ? "ok" : "skipped",
+    llm_mentions: caps.dataForSeoFallback ? "ok" : "skipped",
   };
 
   if (process.env.NEXT_PUBLIC_SUPABASE_URL && process.env.SUPABASE_SERVICE_ROLE_KEY) {
@@ -38,6 +40,8 @@ export async function GET() {
       version: caps.version,
       engines: caps.engines,
       providersConfigured: caps.configuredCount,
+      activeSerpProvider: caps.activeSerpProvider,
+      diyStack: caps.diyStack,
       checks,
       timestamp: new Date().toISOString(),
     },

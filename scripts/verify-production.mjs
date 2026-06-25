@@ -21,12 +21,14 @@ try {
   console.log(`Version:     ${health.version}`);
   console.log(`Status:      ${health.status}`);
   console.log(`Live data:   ${caps.liveData ? "ON" : "OFF (demo fallback)"}`);
-  console.log(`LLM Mentions: ${caps.llmMentions ? "ON" : "OFF"}`);
+  console.log(`Citation tracking: ${caps.citationTracking ? "ON" : "OFF"}`);
+  console.log(`SERP providers: ${caps.serpCapability ? "ON" : "OFF"}`);
+  console.log(`DataForSEO fallback: ${caps.dataForSeoFallback ? "ON" : "OFF"}`);
   console.log(`Providers:   ${caps.configuredCount}/${caps.totalProviders} configured\n`);
 
   const required = caps.providers.filter((p) => p.required && !p.configured);
   const recommended = caps.providers.filter(
-    (p) => !p.required && !p.configured && ["dataforseo", "openai", "inngest", "supabase"].includes(p.id)
+    (p) => !p.required && !p.configured && ["serper", "brave", "openai", "perplexity", "inngest", "supabase"].includes(p.id)
   );
 
   if (required.length) {
@@ -46,7 +48,7 @@ try {
   }
 
   if (!caps.liveData) {
-    console.log("Next step: Add DATAFORSEO + OPENAI keys for measured AI citations.\n");
+    console.log("Next step: Add SERPER or BRAVE_SEARCH + OPENAI/PERPLEXITY keys for live citation tracking.\n");
   }
 
   process.exit(required.length ? 1 : 0);

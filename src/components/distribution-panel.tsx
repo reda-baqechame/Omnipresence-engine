@@ -17,6 +17,13 @@ export function DistributionPanel({ projectId, domain, assets }: DistributionPan
   const [credentials, setCredentials] = useState({ url: "", apiKey: "", collectionId: "" });
   const [socialApiKey, setSocialApiKey] = useState("");
   const [socialBufferToken, setSocialBufferToken] = useState("");
+  const [socialBufferProfileIds, setSocialBufferProfileIds] = useState("");
+  const [gbpToken, setGbpToken] = useState("");
+  const [gbpAccountId, setGbpAccountId] = useState("");
+  const [gbpLocationId, setGbpLocationId] = useState("");
+  const [gbpPostText, setGbpPostText] = useState("");
+  const [gbpPublishing, setGbpPublishing] = useState(false);
+  const [gbpResult, setGbpResult] = useState<string | null>(null);
   const [publishing, setPublishing] = useState<string | null>(null);
   const [socialText, setSocialText] = useState("");
   const [socialPlatform, setSocialPlatform] = useState<"ayrshare" | "buffer">("ayrshare");
@@ -70,7 +77,10 @@ export function DistributionPanel({ projectId, domain, assets }: DistributionPan
         platforms: socialPlatforms.split(",").map((p) => p.trim()).filter(Boolean),
         credentials: socialPlatform === "ayrshare"
           ? { apiKey: socialApiKey }
-          : { accessToken: socialBufferToken },
+          : {
+              accessToken: socialBufferToken,
+              profileIds: socialBufferProfileIds.split(",").map((p) => p.trim()).filter(Boolean),
+            },
       }),
     });
     const data = await res.json();
@@ -181,13 +191,21 @@ export function DistributionPanel({ projectId, domain, assets }: DistributionPan
             </>
           )}
           {socialPlatform === "buffer" && (
-            <input
-              value={socialBufferToken}
-              onChange={(e) => setSocialBufferToken(e.target.value)}
-              placeholder="Buffer Access Token"
-              type="password"
-              className="flex-1 bg-background border border-input rounded-lg px-3 py-2 text-sm"
-            />
+            <>
+              <input
+                value={socialBufferToken}
+                onChange={(e) => setSocialBufferToken(e.target.value)}
+                placeholder="Buffer Access Token"
+                type="password"
+                className="flex-1 bg-background border border-input rounded-lg px-3 py-2 text-sm"
+              />
+              <input
+                value={socialBufferProfileIds}
+                onChange={(e) => setSocialBufferProfileIds(e.target.value)}
+                placeholder="Buffer profile IDs (comma-separated)"
+                className="flex-1 bg-background border border-input rounded-lg px-3 py-2 text-sm"
+              />
+            </>
           )}
         </div>
         <textarea
@@ -212,7 +230,75 @@ export function DistributionPanel({ projectId, domain, assets }: DistributionPan
       </div>
 
       <div className="bg-card border border-border rounded-xl p-6">
-        <h3 className="font-semibold mb-4">Bulk Indexing (IndexNow)</h3>
+        <h3 className="font-semibold mb-4">Google Business Profile</h3>
+        <p className="text-sm text-muted-foreground mb-3">
+          Publish local posts directly to GBP (requires OAuth token, account ID, location ID).
+        </p>
+        <div className="grid md:grid-cols-3 gap-3 mb-3">
+          <input
+            value={gbpToken}
+            onChange={(e) => setGbpToken(e.target.value)}
+            placeholder="GBP OAuth token"
+            type="password"
+            className="bg-background border border-input rounded-lg px-3 py-2 text-sm"
+          />
+          <input
+            value={gbpAccountId}
+            onChange={(e) => setGbpAccountId(e.target.value)}
+            placeholder="Account ID"
+            className="bg-background border border-input rounded-lg px-3 py-2 text-sm"
+          />
+          <input
+            value={gbpLocationId}
+            onChange={(e) => setGbpLocationId(e.target.value)}
+            placeholder="Location ID"
+            className="bg-background border border-input rounded-lg px-3 py-2 text-sm"
+          />
+        </div>
+        <textarea
+          value={gbpPostText}
+          onChange={(e) => setGbpPostText(e.target.value)}
+          placeholder="GBP post summary..."
+          rows={3}
+          className="w-full bg-background border border-input rounded-lg px-3 py-2 text-sm mb-3"
+        />
+        <button
+          onClick={async () => {
+            if (!gbpPostText.trim()) return;
+            setGbpPublishing(true);
+            setGbpResult(null);
+            const res = await fetch("/api/distribution", {
+              method: "PATCH",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({
+                platform: "gbp",
+                projectId,
+                text: gbpPostText,
+                credentials: {
+                  gbpToken,
+                  accountId: gbpAccountId,
+                  locationId: gbpLocationId,
+                },
+              }),
+            });
+            const data = await res.json();
+            setGbpResult(data.success ? "GBP post published" : data.error || "GBP publish failed");
+            setGbpPublishing(false);
+          }}
+          disabled={gbpPublishing || !gbpPostText.trim()}
+          className="bg-primary text-primary-foreground px-4 py-2 rounded-lg text-sm font-medium disabled:opacity-50"
+        >
+          {gbpPublishing ? "Publishing..." : "Publish GBP Post"}
+        </button>
+        {gbpResult && (
+          <p className={`text-sm mt-2 ${gbpResult.includes("published") ? "text-green-400" : "text-red-400"}`}>
+            {gbpResult}
+          </p>
+        )}
+      </div>
+
+      <div className="bg-card border border-border rounded-xl p-6">
+        <h3 className="font-semibold mb-4">Bulk Indexing (IndexNow + Bing)</h3>
         <p className="text-sm text-muted-foreground mb-3">
           Submit URLs to Bing and other IndexNow-compatible engines for faster discovery.
         </p>

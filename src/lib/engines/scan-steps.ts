@@ -7,11 +7,13 @@ import { analyzePassageReadiness } from "@/lib/engines/passage-readiness";
 import { extractBrandProfile } from "@/lib/engines/brand-extraction";
 import { generatePromptUniverse } from "@/lib/engines/prompt-generator";
 import { runVisibilityScan, extractCitationSources } from "@/lib/engines/visibility-scanner";
+import { SCAN_ENGINES } from "@/lib/config/scan-engines";
 import { checkPlatformCoverage } from "@/lib/engines/coverage-checker";
 import { findAuthorityOpportunities } from "@/lib/engines/authority-finder";
 import { generateRoadmap } from "@/lib/engines/roadmap-generator";
 import { calculateOmniPresenceScore } from "@/lib/scoring/omnipresence";
 import { recordScanBaseline } from "@/lib/engines/results-ledger";
+import { lockGuaranteeBaseline } from "@/lib/engines/guarantee";
 import {
   isDemoMode,
   generateDemoPrompts,
@@ -72,7 +74,7 @@ export async function stepVisibilityScan(supabase: SupabaseClient, project: Proj
     .insert({
       project_id: project.id,
       status: "running",
-      engines: ["chatgpt", "perplexity", "gemini", "google_organic", "google_ai_overview"],
+      engines: SCAN_ENGINES,
       prompt_count: prompts.length,
       started_at: new Date().toISOString(),
     })
@@ -106,7 +108,8 @@ export async function stepVisibilityScan(supabase: SupabaseClient, project: Proj
   if (!demo) {
     const citationRows = extractCitationSources(
       visibilityResults as import("@/lib/engines/visibility-scanner").VisibilityScanResult[],
-      project.competitors || []
+      project.competitors || [],
+      project.domain
     ).map((row) => ({ ...row, project_id: project.id, run_id: run!.id }));
     await supabase.from("citation_sources").delete().eq("project_id", project.id);
     if (citationRows.length) await supabase.from("citation_sources").insert(citationRows);
@@ -187,8 +190,23 @@ export async function stepScoreAndRoadmap(
   await recordScanBaseline(supabase, project.id, {
     omnipresence_score: score.omnipresence_score,
     ai_visibility: score.ai_visibility,
+    citation_count: (visibilityResults || []).filter((r) => r.brand_cited).length,
     measured_at: new Date().toISOString(),
   });
+
+  const { data: existingContract } = await supabase
+    .from("guarantee_contracts")
+    .select("id")
+    .eq("project_id", project.id)
+    .maybeSingle();
+
+  if (!existingContract) {
+    await lockGuaranteeBaseline(supabase, project.id, {
+      omnipresence_score: score.omnipresence_score,
+      citation_rate: score.ai_visibility ?? 0,
+      visibility_mention_rate: score.ai_visibility ?? 0,
+    });
+  }
 
   return { score, coverageItems, authorityOpportunities };
 }

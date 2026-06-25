@@ -1,21 +1,18 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { useRouter } from "next/navigation";
 
 export function OrgSetupBanner() {
   const router = useRouter();
   const [settingUp, setSettingUp] = useState(false);
-  const [orgName, setOrgName] = useState("");
-  const [error, setError] = useState("");
-
-  useEffect(() => {
+  const [orgName, setOrgName] = useState(() => {
+    if (typeof window === "undefined") return "";
     const pending = sessionStorage.getItem("pending_org_name");
-    if (pending) {
-      setOrgName(pending);
-      sessionStorage.removeItem("pending_org_name");
-    }
-  }, []);
+    if (pending) sessionStorage.removeItem("pending_org_name");
+    return pending || "";
+  });
+  const [error, setError] = useState("");
 
   async function createOrg(e: React.FormEvent) {
     e.preventDefault();

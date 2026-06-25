@@ -1,5 +1,6 @@
 import type { PromptCategory, VisibilityEngine } from "@/types/database";
 import { preferLiveData } from "@/lib/config/capabilities";
+import { SCAN_ENGINES } from "@/lib/config/scan-engines";
 
 /** Demo mode is last-resort fallback when no live providers are configured. */
 export function isDemoMode(): boolean {
@@ -45,7 +46,7 @@ export function generateDemoVisibilityResults(
   competitors: string[],
   prompts: Array<{ text: string }>
 ) {
-  const engines: VisibilityEngine[] = ["chatgpt", "perplexity", "gemini", "google_organic"];
+  const engines: VisibilityEngine[] = SCAN_ENGINES;
   const results = [];
 
   for (const prompt of prompts.slice(0, 10)) {

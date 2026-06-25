@@ -1,28 +1,58 @@
+import { createHmac } from "crypto";
 import type { ProviderResult, SERPResult } from "./types";
 
-const BASE_URL = "https://api.dataforseo.com/v3";
+const OMNIDATA_URL = process.env.OMNIDATA_BASE_URL?.replace(/\/$/, "");
+const USE_OMNIDATA = Boolean(OMNIDATA_URL);
 
-function getAuthHeader(): string {
+function getBaseUrl(): string {
+  if (USE_OMNIDATA) return `${OMNIDATA_URL}/v3`;
+  return "https://api.dataforseo.com/v3";
+}
+
+function getAuthHeaders(body: unknown): Record<string, string> {
+  if (USE_OMNIDATA) {
+    const key = process.env.OMNIDATA_API_KEY || "dev-local-key";
+    const headers: Record<string, string> = {
+      Authorization: `Bearer ${key}`,
+      "Content-Type": "application/json",
+    };
+    const secret = process.env.OMNIDATA_SIGNING_SECRET;
+    if (secret) {
+      const timestamp = String(Date.now());
+      const payload = JSON.stringify(body);
+      const signature = createHmac("sha256", secret)
+        .update(`${timestamp}.${payload}`)
+        .digest("hex");
+      headers["x-omnidata-timestamp"] = timestamp;
+      headers["x-omnidata-signature"] = signature;
+    }
+    return headers;
+  }
+
   const login = process.env.DATAFORSEO_LOGIN;
   const password = process.env.DATAFORSEO_PASSWORD;
   if (!login || !password) {
     throw new Error("DataForSEO credentials not configured");
   }
-  return `Basic ${Buffer.from(`${login}:${password}`).toString("base64")}`;
+  return {
+    Authorization: `Basic ${Buffer.from(`${login}:${password}`).toString("base64")}`,
+    "Content-Type": "application/json",
+  };
+}
+
+export function isOmniDataActive(): boolean {
+  return USE_OMNIDATA;
 }
 
 async function dataForSEORequest<T>(endpoint: string, body: unknown[]): Promise<T> {
-  const response = await fetch(`${BASE_URL}${endpoint}`, {
+  const response = await fetch(`${getBaseUrl()}${endpoint}`, {
     method: "POST",
-    headers: {
-      Authorization: getAuthHeader(),
-      "Content-Type": "application/json",
-    },
+    headers: getAuthHeaders(body),
     body: JSON.stringify(body),
   });
 
   if (!response.ok) {
-    throw new Error(`DataForSEO API error: ${response.status}`);
+    throw new Error(`${USE_OMNIDATA ? "OmniData" : "DataForSEO"} API error: ${response.status}`);
   }
 
   return response.json() as Promise<T>;
@@ -102,12 +132,12 @@ export async function searchGoogleOrganic(
     return {
       success: true,
       data: { organicResults, aiOverview, brandInResults, competitorInResults },
-      creditsUsed: 1,
+      creditsUsed: USE_OMNIDATA ? 0 : 1,
     };
   } catch (error) {
     return {
       success: false,
-      error: error instanceof Error ? error.message : "DataForSEO request failed",
+      error: error instanceof Error ? error.message : "SERP request failed",
     };
   }
 }
@@ -123,11 +153,12 @@ export async function searchGoogleAIMode(
           items: Array<{
             type: string;
             text?: string;
+            description?: string;
             items?: Array<{ url?: string }>;
           }>;
         }>;
       }>;
-    }>("/serp/google/ai_mode/live/advanced", [
+    }>("/serp/google/organic/live/advanced", [
       {
         keyword,
         location_name: location,
@@ -152,11 +183,11 @@ export async function searchGoogleAIMode(
     return {
       success: true,
       data: {
-        text: aiItem?.text || "",
+        text: aiItem?.text || aiItem?.description || "",
         citedUrls,
         citedDomains,
       },
-      creditsUsed: 1,
+      creditsUsed: USE_OMNIDATA ? 0 : 1,
     };
   } catch (error) {
     return {
@@ -171,6 +202,31 @@ export async function getBacklinks(
   limit = 50
 ): Promise<ProviderResult<Array<{ url: string; domain: string; rank: number }>>> {
   try {
+    if (USE_OMNIDATA) {
+      const data = await dataForSEORequest<{
+        tasks: Array<{
+          result: Array<{
+            items: Array<{
+              source_url: string;
+              source_domain: string;
+              domain_rank?: number;
+            }>;
+          }>;
+        }>;
+      }>("/backlinks/summary/live", [{ target: domain, limit }]);
+
+      const items = data.tasks?.[0]?.result?.[0]?.items || [];
+      return {
+        success: true,
+        data: items.slice(0, limit).map((i) => ({
+          url: i.source_url,
+          domain: i.source_domain,
+          rank: i.domain_rank ?? 0,
+        })),
+        creditsUsed: 0,
+      };
+    }
+
     const data = await dataForSEORequest<{
       tasks: Array<{
         result: Array<{
@@ -207,8 +263,6 @@ export async function getBacklinks(
   }
 }
 
-// --- LLM Mentions API (v2 real citation tracking) ---
-
 export type LLMPlatform = "google" | "chat_gpt";
 
 export interface LLMMentionSource {
@@ -230,6 +284,9 @@ export async function getLLMMentionsAggregated(
   platform: LLMPlatform = "google",
   location = "United States"
 ): Promise<ProviderResult<{ mentions: number; citations: number; impressions: number }>> {
+  if (USE_OMNIDATA) {
+    return { success: false, error: "LLM Mentions not available on OmniData — use Perplexity/SERP stack" };
+  }
   try {
     const cleanDomain = domain.replace(/^https?:\/\//, "").replace(/^www\./, "").split("/")[0];
     const data = await dataForSEORequest<{
@@ -274,6 +331,9 @@ export async function searchLLMMentions(
   platform: LLMPlatform = "google",
   location = "United States"
 ): Promise<ProviderResult<LLMMentionItem[]>> {
+  if (USE_OMNIDATA) {
+    return { success: false, error: "LLM Mentions not available on OmniData" };
+  }
   try {
     const data = await dataForSEORequest<{
       tasks: Array<{
@@ -325,6 +385,9 @@ export async function crossAggregatedLLMMetrics(
   domains: string[],
   platform: LLMPlatform = "google"
 ): Promise<ProviderResult<Record<string, { mentions: number; citations: number }>>> {
+  if (USE_OMNIDATA) {
+    return { success: false, error: "LLM Mentions not available on OmniData" };
+  }
   try {
     const targets = domains.map((d) => ({
       domain: d.replace(/^https?:\/\//, "").replace(/^www\./, "").split("/")[0],
@@ -368,6 +431,9 @@ export async function getLLMTopDomains(
   keyword: string,
   platform: LLMPlatform = "google"
 ): Promise<ProviderResult<Array<{ domain: string; mentions: number }>>> {
+  if (USE_OMNIDATA) {
+    return { success: false, error: "LLM Mentions not available on OmniData" };
+  }
   try {
     const data = await dataForSEORequest<{
       tasks: Array<{
@@ -399,7 +465,6 @@ export async function getLLMTopDomains(
   }
 }
 
-/** Resolve competitor name to likely domain via SERP */
 export async function resolveCompetitorDomain(
   competitorName: string,
   industry?: string

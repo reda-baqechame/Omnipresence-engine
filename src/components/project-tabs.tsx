@@ -14,6 +14,7 @@ const TABS = [
   { href: "/authority", label: "Authority" },
   { href: "/roadmap", label: "Roadmap" },
   { href: "/attribution", label: "Attribution" },
+  { href: "/guarantee", label: "Guarantee" },
 ];
 
 export function ProjectTabs({ projectId }: { projectId: string }) {

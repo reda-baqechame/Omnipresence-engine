@@ -183,6 +183,7 @@ export async function syncBingWebmaster(
 
 const AI_REFERRAL_SOURCES = [
   "chatgpt",
+  "chat.openai",
   "openai",
   "perplexity",
   "gemini",
@@ -192,7 +193,19 @@ const AI_REFERRAL_SOURCES = [
   "anthropic",
   "copilot",
   "bing.com/chat",
+  "you.com",
+  "phind",
+  "poe.com",
+  "meta.ai",
+  "groq",
 ];
+
+const AI_REFERRAL_REGEX = /chatgpt|openai|perplexity|gemini|bard|claude|anthropic|copilot|you\.com|phind|poe\.com|meta\.ai/i;
+
+export function isAiReferralSource(source: string): boolean {
+  const s = source.toLowerCase();
+  return AI_REFERRAL_SOURCES.some((ref) => s.includes(ref)) || AI_REFERRAL_REGEX.test(s);
+}
 
 export async function discoverGa4Property(
   accessToken: string,
@@ -277,7 +290,7 @@ export async function syncGoogleAnalytics(
       leads += rowConversions;
       revenue += rowRevenue;
 
-      if (AI_REFERRAL_SOURCES.some((s) => source.includes(s))) {
+      if (isAiReferralSource(source)) {
         aiReferrals += rowSessions;
       }
     }
@@ -359,7 +372,7 @@ export async function syncPlausible(
       };
       for (const row of breakdown.results || []) {
         const source = row.source.toLowerCase();
-        if (AI_REFERRAL_SOURCES.some((s) => source.includes(s))) {
+        if (isAiReferralSource(source)) {
           aiReferrals += row.visitors;
         }
       }

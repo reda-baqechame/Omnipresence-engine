@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { apiUnauthorized } from "@/lib/security/api-response";
-import { getLedgerForProject, buildGuaranteeReport } from "@/lib/engines/results-ledger";
+import { getLedgerForProject, buildGuaranteeReport, calculatePeriodCitationDelta } from "@/lib/engines/results-ledger";
 
 export async function GET(request: NextRequest) {
   const supabase = await createClient();
@@ -33,6 +33,21 @@ export async function GET(request: NextRequest) {
     .eq("project_id", projectId)
     .eq("cites_brand", true);
 
+  const { data: baselines } = await supabase
+    .from("results_ledger")
+    .select("baseline_snapshot")
+    .eq("project_id", projectId)
+    .eq("action_type", "scan_baseline")
+    .order("executed_at", { ascending: false })
+    .limit(2);
+
+  const prevCitations = Number(
+    (baselines?.[1]?.baseline_snapshot as { citation_count?: number } | null)?.citation_count ??
+    (baselines?.[0]?.baseline_snapshot as { citation_count?: number } | null)?.citation_count ??
+    0
+  );
+  const citationDelta = calculatePeriodCitationDelta(citationCount ?? 0, prevCitations);
+
   const report = buildGuaranteeReport(
     entries,
     {
@@ -44,10 +59,10 @@ export async function GET(request: NextRequest) {
       after: metrics?.[0]?.organic_traffic ?? 0,
     },
     {
-      before: 0,
-      after: citationCount ?? 0,
+      before: citationDelta.before,
+      after: citationDelta.after,
     }
   );
 
-  return NextResponse.json({ entries, guaranteeReport: report });
+  return NextResponse.json({ entries, guaranteeReport: report, citationDelta });
 }

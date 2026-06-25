@@ -46,7 +46,7 @@ The Organic Visibility Engine that helps businesses get discovered, cited, menti
 - **Jobs:** Inngest (durable background processing)
 - **Payments:** Stripe
 - **AI:** Vercel AI SDK + OpenAI / Gemini / Claude
-- **Data:** DataForSEO, Perplexity API, Firecrawl
+- **Data:** Serper / Brave Search (SERP), Perplexity, direct LLM APIs, Firecrawl. DataForSEO optional fallback.
 - **Analytics:** PostHog
 - **Deploy:** Vercel
 
@@ -89,8 +89,13 @@ See `.env.example` for the full list. Production-critical vars:
 | `STRIPE_*` | Billing + webhooks |
 | `INNGEST_*` | Background scans + reports |
 | `RESEND_*` | Email reports + lead nurture |
+| `SERPER_API_KEY` or `BRAVE_SEARCH_API_KEY` | Google SERP + rankings (DIY stack) |
+| `PERPLEXITY_API_KEY` | AI citations with real URLs |
+| `OPENAI_API_KEY` / `ANTHROPIC_API_KEY` | Direct LLM visibility |
 
-Demo mode activates automatically when `OPENAI_API_KEY`, `DATAFORSEO_LOGIN`, and `PERPLEXITY_API_KEY` are all unset — technical audits still run against real domains.
+Demo mode activates when no live providers are configured — technical audits still run against real domains.
+
+Validate your DIY stack: `npm run wire:diy`
 
 ## Security
 

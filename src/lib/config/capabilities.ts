@@ -8,12 +8,15 @@ export type ProviderId =
   | "anthropic"
   | "google_genai"
   | "dataforseo"
+  | "serper"
+  | "brave"
   | "perplexity"
   | "firecrawl"
   | "inngest"
   | "resend"
   | "ayrshare"
   | "buffer"
+  | "omnidata"
   | "indexnow"
   | "google_oauth"
   | "bing_oauth"
@@ -55,7 +58,10 @@ export function getProviderStatuses(): ProviderStatus[] {
     { id: "openai", name: "OpenAI", configured: hasEnv("OPENAI_API_KEY"), required: false, category: "ai" },
     { id: "anthropic", name: "Anthropic", configured: hasEnv("ANTHROPIC_API_KEY"), required: false, category: "ai" },
     { id: "google_genai", name: "Google GenAI", configured: hasEnv("GOOGLE_GENERATIVE_AI_API_KEY"), required: false, category: "ai" },
-    { id: "dataforseo", name: "DataForSEO", configured: hasEnv("DATAFORSEO_LOGIN") && hasEnv("DATAFORSEO_PASSWORD"), required: false, category: "data" },
+    { id: "dataforseo", name: "DataForSEO (optional)", configured: hasEnv("DATAFORSEO_LOGIN") && hasEnv("DATAFORSEO_PASSWORD"), required: false, category: "data" },
+    { id: "serper", name: "Serper", configured: hasEnv("SERPER_API_KEY"), required: false, category: "data" },
+    { id: "brave", name: "Brave Search (free tier)", configured: hasEnv("BRAVE_SEARCH_API_KEY"), required: false, category: "data" },
+    { id: "omnidata", name: "OmniData Engine (self-hosted)", configured: hasEnv("OMNIDATA_BASE_URL") && hasEnv("OMNIDATA_API_KEY"), required: false, category: "data" },
     { id: "perplexity", name: "Perplexity", configured: hasEnv("PERPLEXITY_API_KEY"), required: false, category: "data" },
     { id: "firecrawl", name: "Firecrawl", configured: hasEnv("FIRECRAWL_API_KEY"), required: false, category: "data" },
     { id: "inngest", name: "Inngest", configured: hasEnv("INNGEST_EVENT_KEY"), required: false, category: "infra" },
@@ -70,8 +76,26 @@ export function getProviderStatuses(): ProviderStatus[] {
 }
 
 export function hasAnyLiveDataProvider(): boolean {
-  return getProviderStatuses().some(
-    (p) => p.configured && ["openai", "dataforseo", "perplexity"].includes(p.id)
+  return hasCitationTrackingCapability();
+}
+
+export function hasSerpCapability(): boolean {
+  return (
+    hasEnv("SERPER_API_KEY") ||
+    hasEnv("BRAVE_SEARCH_API_KEY") ||
+    (hasEnv("OMNIDATA_BASE_URL") && hasEnv("OMNIDATA_API_KEY")) ||
+    (hasEnv("DATAFORSEO_LOGIN") && hasEnv("DATAFORSEO_PASSWORD"))
+  );
+}
+
+/** DIY citation stack — replaces DataForSEO LLM Mentions as the default path. */
+export function hasCitationTrackingCapability(): boolean {
+  return (
+    hasEnv("OPENAI_API_KEY") ||
+    hasEnv("ANTHROPIC_API_KEY") ||
+    hasEnv("GOOGLE_GENERATIVE_AI_API_KEY") ||
+    hasEnv("PERPLEXITY_API_KEY") ||
+    hasSerpCapability()
   );
 }
 
@@ -87,6 +111,13 @@ export function preferLiveData(): boolean {
 export function getCapabilitiesSummary() {
   const providers = getProviderStatuses();
   const configured = providers.filter((p) => p.configured).length;
+  const activeSerp =
+    hasEnv("OMNIDATA_BASE_URL") && hasEnv("OMNIDATA_API_KEY") ? "omnidata" :
+    hasEnv("SERPER_API_KEY") ? "serper" :
+    hasEnv("BRAVE_SEARCH_API_KEY") ? "brave" :
+    hasLLMMentionsCapability() ? "dataforseo" :
+    null;
+
   return {
     version: V2_VERSION,
     engines: ENGINES_ENABLED,
@@ -94,6 +125,18 @@ export function getCapabilitiesSummary() {
     providers,
     configuredCount: configured,
     totalProviders: providers.length,
-    llmMentions: hasLLMMentionsCapability(),
+    llmMentions: hasCitationTrackingCapability(),
+    citationTracking: hasCitationTrackingCapability(),
+    dataForSeoFallback: hasLLMMentionsCapability(),
+    serpCapability: hasSerpCapability(),
+    activeSerpProvider: activeSerp,
+    diyStack: {
+      serp: activeSerp,
+      llmDirect: hasEnv("OPENAI_API_KEY") || hasEnv("ANTHROPIC_API_KEY") || hasEnv("GOOGLE_GENERATIVE_AI_API_KEY"),
+      perplexity: hasEnv("PERPLEXITY_API_KEY"),
+      firecrawl: hasEnv("FIRECRAWL_API_KEY"),
+      omnidata: hasEnv("OMNIDATA_BASE_URL"),
+      dataForSeoOptional: hasLLMMentionsCapability(),
+    },
   };
 }

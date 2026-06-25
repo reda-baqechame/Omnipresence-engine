@@ -1,11 +1,19 @@
 import {
   getBacklinks,
   resolveCompetitorDomain,
-  searchLLMMentions,
-  getLLMTopDomains,
 } from "@/lib/providers/dataforseo";
+import { getBacklinksFree } from "@/lib/providers/backlinks-free";
+import { resolveCompetitorDomainFree } from "@/lib/providers/competitor-resolve";
+import { hasLLMMentionsCapability, hasCitationTrackingCapability } from "@/lib/config/capabilities";
+import {
+  collectLiveCitationSources,
+  collectDataForSEOCitationSources,
+  getStoredCitationSources,
+  aggregateTopCitedDomains,
+  getTopCitedDomainsFromStored,
+  getDataForSEOTopDomains,
+} from "@/lib/engines/citation-intelligence";
 import { generateStructured } from "@/lib/providers/ai-gateway";
-import { hasLLMMentionsCapability } from "@/lib/config/capabilities";
 import { z } from "zod";
 import type { AuthorityOpportunity, AuthorityType } from "@/types/database";
 
@@ -36,6 +44,7 @@ export async function findAuthorityOpportunities(
 ): Promise<Omit<AuthorityOpportunity, "id" | "created_at" | "updated_at">[]> {
   const opportunities: Omit<AuthorityOpportunity, "id" | "created_at" | "updated_at">[] = [];
   const domainLower = domain.replace(/^www\./, "").toLowerCase();
+  const brandToken = domainLower.split(".")[0];
   const seen = new Set<string>();
 
   const addOpp = (opp: Omit<AuthorityOpportunity, "id" | "created_at" | "updated_at">) => {
@@ -45,75 +54,109 @@ export async function findAuthorityOpportunities(
     opportunities.push(opp);
   };
 
-  // Measured citation-source gaps from LLM Mentions
-  if (hasLLMMentionsCapability() && buyerPrompts.length > 0) {
+  // Citation-source gaps: stored scan data + live DIY stack (Perplexity + SERP)
+  if (hasCitationTrackingCapability() && buyerPrompts.length > 0) {
+    const storedSources = await getStoredCitationSources(projectId);
+    const allLiveSources = [...storedSources];
+
     for (const prompt of buyerPrompts.slice(0, 15)) {
-      for (const platform of ["google", "chat_gpt"] as const) {
-        const mentions = await searchLLMMentions(prompt, platform);
-        if (!mentions.success || !mentions.data) continue;
+      const liveSources = await collectLiveCitationSources(
+        prompt,
+        brandName,
+        domain,
+        competitors
+      );
+      allLiveSources.push(...liveSources);
 
-        for (const item of mentions.data) {
-          for (const source of item.sources) {
-            const sourceDomain = source.domain || "";
-            if (!sourceDomain) continue;
-            const citesBrand =
-              sourceDomain.includes(domainLower) ||
-              (source.url || "").toLowerCase().includes(domainLower);
+      if (hasLLMMentionsCapability()) {
+        for (const platform of ["google", "chat_gpt"] as const) {
+          allLiveSources.push(...await collectDataForSEOCitationSources(prompt, platform));
+        }
+      }
 
-            if (citesBrand) continue;
+      for (const source of liveSources) {
+        const sourceDomain = source.domain;
+        if (!sourceDomain) continue;
 
-            let citesCompetitor = false;
-            for (const comp of competitors) {
-              if (sourceDomain.includes(comp.toLowerCase().replace(/\s+/g, ""))) {
-                citesCompetitor = true;
-              }
-            }
+        const citesBrand =
+          sourceDomain.includes(domainLower) ||
+          sourceDomain.includes(brandToken) ||
+          (source.url || "").toLowerCase().includes(domainLower);
 
-            if (citesCompetitor) {
-              addOpp({
-                project_id: projectId,
-                type: "listicle",
-                target_site: sourceDomain,
-                target_url: source.url,
-                pitch_angle: `AI cites ${sourceDomain} for "${prompt}" but not ${brandName}. Pitch inclusion.`,
-                status: "identified",
-                estimated_impact: 85,
-                difficulty_score: 55,
-                competitor_present: true,
-                measured: true,
-              });
-            }
+        if (citesBrand) continue;
+
+        let citesCompetitor = false;
+        for (const comp of competitors) {
+          if (sourceDomain.includes(comp.toLowerCase().replace(/\s+/g, ""))) {
+            citesCompetitor = true;
           }
         }
 
-        const topDomains = await getLLMTopDomains(prompt, platform);
-        if (topDomains.success && topDomains.data) {
-          for (const td of topDomains.data.slice(0, 5)) {
-            if (td.domain.includes(domainLower.split(".")[0])) continue;
-            addOpp({
-              project_id: projectId,
-              type: "listicle",
-              target_site: td.domain,
-              target_url: `https://${td.domain}`,
-              pitch_angle: `Top-cited domain (${td.mentions} mentions) for "${prompt}". Target for ${brandName} inclusion.`,
-              status: "identified",
-              estimated_impact: Math.min(td.mentions * 2, 100),
-              difficulty_score: 50,
-              competitor_present: competitors.some((c) =>
-                td.domain.includes(c.toLowerCase().replace(/\s+/g, ""))
-              ),
-              measured: true,
-            });
+        if (citesCompetitor) {
+          addOpp({
+            project_id: projectId,
+            type: "listicle",
+            target_site: sourceDomain,
+            target_url: source.url,
+            pitch_angle: `AI/SERP cites ${sourceDomain} for "${prompt}" but not ${brandName}. Pitch inclusion.`,
+            status: "identified",
+            estimated_impact: 85,
+            difficulty_score: 55,
+            competitor_present: true,
+            measured: true,
+          });
+        }
+      }
+
+      const topFromLive = aggregateTopCitedDomains(
+        allLiveSources.filter((s) => s.promptText === prompt),
+        5
+      );
+      const topFromStored = getTopCitedDomainsFromStored(storedSources, prompt, 5);
+
+      const topDomainsMap = new Map<string, number>();
+      for (const td of [...topFromLive, ...topFromStored]) {
+        topDomainsMap.set(td.domain, Math.max(topDomainsMap.get(td.domain) || 0, td.mentions));
+      }
+
+      if (hasLLMMentionsCapability()) {
+        for (const platform of ["google", "chat_gpt"] as const) {
+          const dfsTop = await getDataForSEOTopDomains(prompt, platform);
+          for (const td of dfsTop.slice(0, 5)) {
+            topDomainsMap.set(td.domain, Math.max(topDomainsMap.get(td.domain) || 0, td.mentions));
           }
         }
+      }
+
+      for (const [tdDomain, mentions] of topDomainsMap.entries()) {
+        if (tdDomain.includes(brandToken)) continue;
+        addOpp({
+          project_id: projectId,
+          type: "listicle",
+          target_site: tdDomain,
+          target_url: `https://${tdDomain}`,
+          pitch_angle: `Top-cited domain (${mentions} mentions) for "${prompt}". Target for ${brandName} inclusion.`,
+          status: "identified",
+          estimated_impact: Math.min(mentions * 2, 100),
+          difficulty_score: 50,
+          competitor_present: competitors.some((c) =>
+            tdDomain.includes(c.toLowerCase().replace(/\s+/g, ""))
+          ),
+          measured: true,
+        });
       }
     }
   }
 
-  // Real competitor backlink gaps with resolved domains
+  // Competitor backlink gaps via free link: SERP (DataForSEO optional boost)
   const resolvedCompetitors: Array<{ name: string; domain: string }> = [];
   for (const competitor of competitors.slice(0, 3)) {
-    const resolved = await resolveCompetitorDomain(competitor, industry);
+    const resolved =
+      (await resolveCompetitorDomainFree(competitor, industry)) ||
+      (hasLLMMentionsCapability()
+        ? await resolveCompetitorDomain(competitor, industry)
+        : null);
+
     resolvedCompetitors.push({
       name: competitor,
       domain: resolved || competitor.toLowerCase().replace(/\s+/g, "") + ".com",
@@ -121,10 +164,16 @@ export async function findAuthorityOpportunities(
   }
 
   for (const { name, domain: compDomain } of resolvedCompetitors) {
-    const backlinksResult = await getBacklinks(compDomain, 20);
+    let backlinksResult = await getBacklinksFree(compDomain, 20);
+    if ((!backlinksResult.success || !backlinksResult.data?.length) && hasLLMMentionsCapability()) {
+      backlinksResult = await getBacklinks(compDomain, 20);
+    }
 
     if (backlinksResult.success && backlinksResult.data) {
-      const brandBacklinks = await getBacklinks(domain, 20);
+      let brandBacklinks = await getBacklinksFree(domain, 20);
+      if ((!brandBacklinks.success || !brandBacklinks.data?.length) && hasLLMMentionsCapability()) {
+        brandBacklinks = await getBacklinks(domain, 20);
+      }
       const brandDomains = new Set((brandBacklinks.data || []).map((b) => b.domain));
 
       for (const link of backlinksResult.data) {

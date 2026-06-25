@@ -1,6 +1,7 @@
 "use client";
 
 import type { VisibilityResult } from "@/types/database";
+import { getResultDataSourceLabel } from "@/lib/engines/visibility-scanner";
 
 interface VisibilityTableProps {
   results: VisibilityResult[];
@@ -20,12 +21,13 @@ export function VisibilityTable({ results, brandName, competitors }: VisibilityT
           <tr className="border-b border-border text-muted-foreground">
             <th className="text-left p-3">Prompt</th>
             <th className="text-left p-3">Engine</th>
+            <th className="text-left p-3">Source</th>
             <th className="text-center p-3">Brand</th>
             <th className="text-center p-3">Cited</th>
             {competitors.slice(0, 3).map((c) => (
               <th key={c} className="text-center p-3">{c}</th>
             ))}
-            <th className="text-left p-3">Sources</th>
+            <th className="text-left p-3">Domains</th>
           </tr>
         </thead>
         <tbody>
@@ -33,6 +35,9 @@ export function VisibilityTable({ results, brandName, competitors }: VisibilityT
             <tr key={r.id} className="border-b border-border/50 hover:bg-secondary/30">
               <td className="p-3 max-w-xs truncate" title={r.prompt_text}>{r.prompt_text}</td>
               <td className="p-3 text-muted-foreground capitalize">{r.engine.replace(/_/g, " ")}</td>
+              <td className="p-3 text-xs text-muted-foreground">
+                {getResultDataSourceLabel(r)}
+              </td>
               <td className="p-3 text-center">{r.brand_mentioned ? "✓" : "—"}</td>
               <td className="p-3 text-center">{r.brand_cited ? "✓" : "—"}</td>
               {competitors.slice(0, 3).map((c) => (

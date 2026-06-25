@@ -1,6 +1,7 @@
 import { notFound } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { calculateVisibilityMetrics } from "@/lib/engines/visibility-scanner";
+import { preferLiveData } from "@/lib/config/capabilities";
 import { compareVisibilityRuns } from "@/lib/engines/visibility-delta";
 import type { VisibilityResult } from "@/types/database";
 import { getProject } from "@/lib/projects";
@@ -26,6 +27,7 @@ export default async function VisibilityPage({
 
   const results = (visibility || []) as VisibilityResult[];
   const metrics = calculateVisibilityMetrics(results);
+  const liveMode = preferLiveData();
 
   const completedRuns = (runs || []).filter((r) => r.status === "completed");
   let runDelta = null;
@@ -58,6 +60,15 @@ export default async function VisibilityPage({
 
   return (
     <div className="space-y-8">
+      <div className="flex items-center gap-3 text-sm">
+        <span className={`px-2 py-1 rounded-full text-xs font-medium ${liveMode ? "bg-green-500/10 text-green-400 border border-green-500/30" : "bg-yellow-500/10 text-yellow-400 border border-yellow-500/30"}`}>
+          {liveMode ? "Live DIY stack" : "Demo mode"}
+        </span>
+        <span className="text-muted-foreground">
+          {Math.round(metrics.measuredRate * 100)}% measured citations
+        </span>
+      </div>
+
       <div className="grid md:grid-cols-4 gap-4">
         {[
           { label: "Mention Rate", value: `${Math.round(metrics.mentionRate * 100)}%` },

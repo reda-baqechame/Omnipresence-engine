@@ -12,9 +12,17 @@
 # Free access mode (default: all features unlocked, no billing)
 # FREE_ACCESS_MODE=true
 
-# Optional — enables live scans instead of demo data:
+# DIY stack — enables live scans (no DataForSEO required):
+# SERPER_API_KEY=          (cheap SERP — serper.dev)
+# BRAVE_SEARCH_API_KEY=    (free tier — brave.com/search/api)
 # OPENAI_API_KEY=
+# ANTHROPIC_API_KEY=
+# GOOGLE_GENERATIVE_AI_API_KEY=
+# PERPLEXITY_API_KEY=      (recommended — real citations)
+# FIRECRAWL_API_KEY=
+
+# Optional paid boost only:
 # DATAFORSEO_LOGIN=
 # DATAFORSEO_PASSWORD=
-# PERPLEXITY_API_KEY=
-# FIRECRAWL_API_KEY=
+
+# Validate: npm run wire:diy

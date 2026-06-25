@@ -1,5 +1,8 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { ResultsLedgerEntry } from "@/types/database";
+import { buildGuaranteeReportFromLedger } from "@/lib/engines/guarantee";
+
+export { buildGuaranteeReportFromLedger as buildGuaranteeReport };
 
 export async function recordLedgerAction(
   supabase: SupabaseClient,
@@ -33,36 +36,15 @@ export async function getLedgerForProject(
   return (data || []) as ResultsLedgerEntry[];
 }
 
-export function buildGuaranteeReport(
-  entries: ResultsLedgerEntry[],
-  scoreDelta: { before: number; after: number },
-  trafficDelta: { before: number; after: number },
-  citationDelta: { before: number; after: number }
-): {
-  summary: string;
-  actionsCompleted: number;
-  scoreChange: number;
-  trafficChange: number;
-  citationChange: number;
-  reimbursementEligible: boolean;
-  evidence: ResultsLedgerEntry[];
-} {
-  const completed = entries.filter((e) => e.status === "completed" || e.status === "verified");
-  const scoreChange = scoreDelta.after - scoreDelta.before;
-  const trafficChange = trafficDelta.after - trafficDelta.before;
-  const citationChange = citationDelta.after - citationDelta.before;
-
-  const reimbursementEligible =
-    completed.length >= 5 && (scoreChange > 0 || trafficChange > 0 || citationChange > 0);
-
+export function calculatePeriodCitationDelta(
+  currentCount: number,
+  previousCount: number
+): { before: number; after: number; change: number; changePercent: number } {
   return {
-    summary: `${completed.length} actions executed. Score ${scoreChange >= 0 ? "+" : ""}${scoreChange.toFixed(1)}, traffic ${trafficChange >= 0 ? "+" : ""}${trafficChange}, citations ${citationChange >= 0 ? "+" : ""}${citationChange}.`,
-    actionsCompleted: completed.length,
-    scoreChange,
-    trafficChange,
-    citationChange,
-    reimbursementEligible,
-    evidence: completed,
+    before: previousCount,
+    after: currentCount,
+    change: currentCount - previousCount,
+    changePercent: previousCount > 0 ? ((currentCount - previousCount) / previousCount) * 100 : currentCount > 0 ? 100 : 0,
   };
 }
 

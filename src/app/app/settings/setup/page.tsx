@@ -39,8 +39,15 @@ export default function SetupPage() {
         {
           id: "live",
           title: "Enable live AI citation tracking",
-          done: caps.llmMentions === true && caps.liveData === true,
-          action: "Set DATAFORSEO_LOGIN/PASSWORD + OPENAI_API_KEY (+ PERPLEXITY optional).",
+          done: caps.citationTracking === true && caps.liveData === true,
+          action:
+            "Set at least one: SERPER_API_KEY or BRAVE_SEARCH_API_KEY (free tier) + OPENAI/ANTHROPIC/GOOGLE key. PERPLEXITY recommended. DATAFORSEO optional.",
+        },
+        {
+          id: "serp",
+          title: "Google SERP + AI Overview data",
+          done: caps.serpCapability === true,
+          action: "Serper (cheap) or Brave Search API (2,000 free queries/mo at brave.com/search/api).",
         },
         {
           id: "inngest",

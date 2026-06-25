@@ -1,16 +1,95 @@
 import type { BrandProfile, Project } from "@/types/database";
 import type { EntityProfile } from "@/types/database";
+import { assertPublicDomain } from "@/lib/security/domain";
 
 export interface EntityBuildResult {
   profile: Omit<EntityProfile, "id" | "created_at" | "updated_at">;
   wikidataDraft: string;
   napIssues: Array<{ platform: string; issue: string }>;
+  reconciledSources: string[];
 }
 
-export function buildEntityProfile(
+export async function reconcileEntitySources(
   project: Project,
   brand: Partial<BrandProfile>
-): EntityBuildResult {
+): Promise<{
+  wikidataQid?: string;
+  crunchbaseUrl?: string;
+  g2Url?: string;
+  wikipediaUrl?: string;
+  sameAsExtras: Record<string, string>;
+}> {
+  const name = encodeURIComponent(brand.brand_name || project.name);
+  const extras: Record<string, string> = {};
+
+  let wikidataQid: string | undefined;
+  let wikipediaUrl: string | undefined;
+  let crunchbaseUrl: string | undefined;
+  let g2Url: string | undefined;
+
+  try {
+    const wdRes = await fetch(
+      `https://www.wikidata.org/w/api.php?action=wbsearchentities&search=${name}&language=en&format=json&origin=*`,
+      { signal: AbortSignal.timeout(8000) }
+    );
+    if (wdRes.ok) {
+      const wd = (await wdRes.json()) as { search?: Array<{ id: string; label: string }> };
+      const hit = wd.search?.[0];
+      if (hit) {
+        wikidataQid = hit.id;
+        extras.wikidata = `https://www.wikidata.org/wiki/${hit.id}`;
+      }
+    }
+  } catch {
+    // optional
+  }
+
+  try {
+    const wikiRes = await fetch(
+      `https://en.wikipedia.org/w/api.php?action=opensearch&search=${name}&limit=1&format=json&origin=*`,
+      { signal: AbortSignal.timeout(8000) }
+    );
+    if (wikiRes.ok) {
+      const wiki = (await wikiRes.json()) as [string, string[], string[], string[]];
+      if (wiki[3]?.[0]) {
+        wikipediaUrl = wiki[3][0];
+        extras.wikipedia = wikipediaUrl;
+      }
+    }
+  } catch {
+    // optional
+  }
+
+  try {
+    assertPublicDomain(project.domain);
+    const g2Query = encodeURIComponent(`${brand.brand_name || project.name} site:g2.com`);
+    const g2Res = await fetch(
+      `https://html.duckduckgo.com/html/?q=${g2Query}`,
+      { signal: AbortSignal.timeout(8000), headers: { "User-Agent": "PresenceOS-Entity/1.0" } }
+    );
+    if (g2Res.ok) {
+      const html = await g2Res.text();
+      const match = html.match(/https:\/\/www\.g2\.com\/products\/[a-z0-9-]+/i);
+      if (match) {
+        g2Url = match[0];
+        extras.g2 = g2Url;
+      }
+    }
+  } catch {
+    // optional
+  }
+
+  crunchbaseUrl = `https://www.crunchbase.com/organization/${(brand.brand_name || project.name).toLowerCase().replace(/[^a-z0-9]+/g, "-")}`;
+  extras.crunchbase = crunchbaseUrl;
+
+  return { wikidataQid, crunchbaseUrl, g2Url, wikipediaUrl, sameAsExtras: extras };
+}
+
+export async function buildEntityProfile(
+  project: Project,
+  brand: Partial<BrandProfile>
+): Promise<EntityBuildResult> {
+  const reconciled = await reconcileEntitySources(project, brand);
   const social = brand.social_profiles || {};
   const sameAsMap: Record<string, string> = {};
 
@@ -19,6 +98,7 @@ export function buildEntityProfile(
   if (social.facebook) sameAsMap.facebook = social.facebook;
   if (social.youtube) sameAsMap.youtube = social.youtube;
   if (social.instagram) sameAsMap.instagram = social.instagram;
+  Object.assign(sameAsMap, reconciled.sameAsExtras);
 
   sameAsMap.website = `https://${project.domain}`;
 
@@ -50,7 +130,7 @@ export function buildEntityProfile(
   return {
     profile: {
       project_id: project.id,
-      wikidata_qid: undefined,
+      wikidata_qid: reconciled.wikidataQid,
       same_as_map: sameAsMap,
       nap_records: napRecords,
       knowledge_panel_ready: entityScore >= 70,
@@ -59,6 +139,7 @@ export function buildEntityProfile(
     },
     wikidataDraft,
     napIssues,
+    reconciledSources: Object.keys(reconciled.sameAsExtras),
   };
 }
 

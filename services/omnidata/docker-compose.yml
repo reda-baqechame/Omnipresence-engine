@@ -1,0 +1,39 @@
+version: "3.9"
+
+services:
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    volumes:
+      - omnidata-redis:/data
+
+  omnidata:
+    build: .
+    ports:
+      - "8787:8787"
+    environment:
+      PORT: "8787"
+      REDIS_URL: redis://redis:6379
+      OMNIDATA_API_KEY: ${OMNIDATA_API_KEY:-dev-local-key}
+      BING_SEARCH_API_KEY: ${BING_SEARCH_API_KEY:-}
+      SERPER_API_KEY: ${SERPER_API_KEY:-}
+      BRAVE_SEARCH_API_KEY: ${BRAVE_SEARCH_API_KEY:-}
+    depends_on:
+      - redis
+
+  omnidata-worker:
+    build: .
+    command: ["node", "dist/worker.js"]
+    environment:
+      REDIS_URL: redis://redis:6379
+      OMNIDATA_API_KEY: ${OMNIDATA_API_KEY:-dev-local-key}
+      BING_SEARCH_API_KEY: ${BING_SEARCH_API_KEY:-}
+      SERPER_API_KEY: ${SERPER_API_KEY:-}
+      BRAVE_SEARCH_API_KEY: ${BRAVE_SEARCH_API_KEY:-}
+    depends_on:
+      - redis
+      - omnidata
+
+volumes:
+  omnidata-redis:

@@ -13,7 +13,7 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 22
           cache: npm
       - run: npm ci
       - run: npm run typecheck
@@ -23,8 +23,12 @@ jobs:
           NEXT_PUBLIC_SUPABASE_URL: https://placeholder.supabase.co
           NEXT_PUBLIC_SUPABASE_ANON_KEY: placeholder
           SUPABASE_SERVICE_ROLE_KEY: placeholder
+      - name: OmniData tests
+        run: |
+          npm ci --prefix services/omnidata
+          npm test --prefix services/omnidata
       - run: npm run start &
-      - run: npx wait-on http://localhost:3000 -t 60000
+      - run: npx wait-on http://localhost:3000 -t 120000
       - run: npm run smoke
         env:
           SMOKE_BASE_URL: http://localhost:3000

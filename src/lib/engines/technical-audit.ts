@@ -1,6 +1,7 @@
 import robotsParser from "robots-parser";
 import { scrapePage } from "@/lib/providers/firecrawl";
 import { AI_BOTS } from "@/lib/providers/ai-gateway";
+import { runSiteCrawl, crawlFindingsToTechnical } from "@/lib/engines/site-crawler";
 import type { FindingSeverity } from "@/types/database";
 
 export interface TechnicalAuditFinding {
@@ -52,6 +53,14 @@ export async function runTechnicalAudit(
 
   // AI bot access check
   findings.push(...await checkAIBotAccess(baseUrl));
+
+  // Multi-page crawl (PageRank + SimHash dedupe)
+  try {
+    const crawl = await runSiteCrawl(domain, 25);
+    findings.push(...crawlFindingsToTechnical(crawl));
+  } catch {
+    // Crawl optional when domain blocked or unreachable
+  }
 
   return findings;
 }

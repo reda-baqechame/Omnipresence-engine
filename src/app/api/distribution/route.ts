@@ -245,6 +245,7 @@ export async function PATCH(request: NextRequest) {
       accountId?: string;
       locationId?: string;
       gbpToken?: string;
+      profileIds?: string[];
     };
     text: string;
     platforms?: string[];
@@ -295,6 +296,16 @@ export async function PATCH(request: NextRequest) {
       platforms: platforms || ["linkedin", "x"],
       scheduleDate,
     });
+    if (result.success) {
+      await recordLedgerAction(supabase, {
+        project_id: projectId,
+        action_type: "social_scheduled",
+        action_surface: "ayrshare",
+        description: `Scheduled social post via Ayrshare`,
+        status: "completed",
+        outcome_snapshot: { platforms },
+      });
+    }
     return NextResponse.json(result, { status: result.success ? 200 : 502 });
   }
 
@@ -303,11 +314,22 @@ export async function PATCH(request: NextRequest) {
     if (!accessToken) {
       return NextResponse.json({ error: "Buffer access token required" }, { status: 400 });
     }
+    const ids = profileIds || credentials.profileIds || [];
     const result = await scheduleViaBuffer(accessToken, {
       text,
-      profileIds: profileIds || [],
+      profileIds: ids,
       scheduledAt: scheduleDate,
     });
+    if (result.success) {
+      await recordLedgerAction(supabase, {
+        project_id: projectId,
+        action_type: "social_scheduled",
+        action_surface: "buffer",
+        description: `Scheduled social post via Buffer (${ids.length} profiles)`,
+        status: "completed",
+        outcome_snapshot: { profileIds: ids, updateId: result.updateId },
+      });
+    }
     return NextResponse.json(result, { status: result.success ? 200 : 502 });
   }
 

@@ -36,7 +36,7 @@ export async function POST(request: NextRequest) {
 
   const { data: brand } = await supabase.from("brand_profiles").select("*").eq("project_id", projectId).single();
 
-  const built = buildEntityProfile(project as Project, (brand || {}) as BrandProfile);
+  const built = await buildEntityProfile(project as Project, (brand || {}) as BrandProfile);
 
   await supabase.from("entity_profiles").upsert(
     { ...built.profile, updated_at: new Date().toISOString() },

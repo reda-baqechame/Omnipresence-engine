@@ -66,18 +66,23 @@ Copy from `.env.example`. Minimum for a working deploy:
 | `SUPABASE_SERVICE_ROLE_KEY` | Server only — never expose to client |
 | `OAUTH_STATE_SECRET` | Random 32+ character string |
 
-For full functionality, also set: `INNGEST_*`, `RESEND_*`, AI provider keys, `DATAFORSEO_*`, `PERPLEXITY_API_KEY`, `FIRECRAWL_API_KEY`.
+For full functionality, also set: `INNGEST_*`, `RESEND_*`, AI provider keys, `SERPER_API_KEY` or `BRAVE_SEARCH_API_KEY`, `PERPLEXITY_API_KEY`, `FIRECRAWL_API_KEY`.
 
-**v2 live data (real AI citations)** — set at minimum:
-- `DATAFORSEO_LOGIN` + `DATAFORSEO_PASSWORD` (enables LLM Mentions API)
-- `OPENAI_API_KEY` and/or `PERPLEXITY_API_KEY`
+**v2 live data (DIY stack — no DataForSEO required)** — set at minimum:
+- `SERPER_API_KEY` (cheap) **or** `BRAVE_SEARCH_API_KEY` (2,000 free queries/mo)
+- `OPENAI_API_KEY` and/or `ANTHROPIC_API_KEY` and/or `GOOGLE_GENERATIVE_AI_API_KEY`
+- `PERPLEXITY_API_KEY` (recommended — real citations)
 - `INNGEST_EVENT_KEY` + `INNGEST_SIGNING_KEY` (step-based scans + daily/weekly agents)
+
+Optional paid boost: `DATAFORSEO_LOGIN` + `DATAFORSEO_PASSWORD` (global backlink index + AI search volume only).
+
+Validate locally: `npm run wire:diy` — checks env + remote `/api/capabilities`.
 
 Verify after deploy: `GET /api/health` should show `version: "0.2.0"` and `GET /api/capabilities` lists configured providers.
 
 **Free access mode** (default): `FREE_ACCESS_MODE=true` unlocks all features with no billing. Stripe keys are optional.
 
-**Demo mode** activates when `OPENAI_API_KEY`, `DATAFORSEO_LOGIN`, and `PERPLEXITY_API_KEY` are all unset — useful for staging without API costs.
+**Demo mode** activates when no live providers are configured (no LLM keys, no SERP keys, no Perplexity) — useful for staging without API costs.
 
 ## 3. Stripe
 

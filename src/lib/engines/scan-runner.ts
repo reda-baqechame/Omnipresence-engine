@@ -4,6 +4,7 @@ import { analyzePassageReadiness } from "@/lib/engines/passage-readiness";
 import { extractBrandProfile } from "@/lib/engines/brand-extraction";
 import { generatePromptUniverse } from "@/lib/engines/prompt-generator";
 import { runVisibilityScan, extractCitationSources } from "@/lib/engines/visibility-scanner";
+import { SCAN_ENGINES } from "@/lib/config/scan-engines";
 import { checkPlatformCoverage } from "@/lib/engines/coverage-checker";
 import { findAuthorityOpportunities } from "@/lib/engines/authority-finder";
 import { generateRoadmap } from "@/lib/engines/roadmap-generator";
@@ -96,7 +97,7 @@ export async function runProjectScan(
     .insert({
       project_id: projectId,
       status: "running",
-      engines: ["chatgpt", "perplexity", "gemini", "google_organic"],
+      engines: SCAN_ENGINES,
       prompt_count: prompts.length,
       started_at: new Date().toISOString(),
     })
@@ -130,7 +131,8 @@ export async function runProjectScan(
   if (!demo) {
     const citationRows = extractCitationSources(
       visibilityResults as import("@/lib/engines/visibility-scanner").VisibilityScanResult[],
-      p.competitors || []
+      p.competitors || [],
+      p.domain
     ).map((row) => ({ ...row, project_id: projectId, run_id: run!.id }));
     await supabase.from("citation_sources").delete().eq("project_id", projectId);
     if (citationRows.length > 0) {
@@ -222,6 +224,16 @@ export async function runProjectScan(
   }
 
   if (!demo && p.organization_id) {
+    const providerCredits: Record<string, number> = {};
+    for (const r of visibilityResults) {
+      const detail =
+        (r as { raw_response?: { data_source_detail?: string } }).raw_response?.data_source_detail ||
+        "unknown";
+      providerCredits[detail] = (providerCredits[detail] || 0) + 1;
+    }
+    for (const [provider, count] of Object.entries(providerCredits)) {
+      await trackApiUsage(supabase, p.organization_id, provider, "visibility_scan", count);
+    }
     const credits = Math.max(visibilityResults.length, prompts.length, 10);
     await trackApiUsage(supabase, p.organization_id, "presenceos", "full_scan", credits);
   }
