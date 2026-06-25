@@ -147,4 +147,4 @@ try {
 }
 
 console.log(failed === 0 ? "\nPhase 8 audit PASSED.\n" : `\nPhase 8 audit: ${failed} issue(s).\n`);
-process.exit(failed > 0 ? 1 : 0);
+process.exitCode = failed > 0 ? 1 : 0;

@@ -10,7 +10,10 @@ let failed = 0;
 console.log("\n=== Live Results Audit ===\n");
 
 try {
-  const caps = await fetch(`${base}/api/capabilities`, { signal: AbortSignal.timeout(15_000) }).then((r) => r.json());
+  const caps = await fetch(`${base}/api/capabilities`, {
+    headers: { connection: "close" },
+    signal: AbortSignal.timeout(15_000),
+  }).then((r) => r.json());
   console.log(`Live data: ${caps.liveData ? "ON" : "OFF"}`);
   console.log(`Citation tracking: ${caps.citationTracking ? "ON" : "OFF"}`);
   console.log(`SERP: ${caps.activeSerpProvider || "none"}`);
@@ -28,7 +31,7 @@ try {
 try {
   const audit = await fetch(`${base}/api/public/audit`, {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: { "Content-Type": "application/json", connection: "close" },
     body: JSON.stringify({
       domain: "stripe.com",
       brandName: "Stripe",
@@ -55,4 +58,6 @@ try {
 }
 
 console.log(`\n${failed === 0 ? "PASS" : "FAIL"} — ${failed} issue(s)\n`);
-process.exit(failed > 0 ? 1 : 0);
+// Let the loop drain instead of process.exit() to avoid a Windows undici
+// keep-alive socket teardown race (UV_HANDLE_CLOSING assertion).
+process.exitCode = failed > 0 ? 1 : 0;

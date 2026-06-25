@@ -90,7 +90,7 @@ try {
     console.log("Tip: DataForSEO, SERPER, or OMNIDATA_BASE_URL powers keyword intelligence.\n");
   }
 
-  process.exit(production?.ready === false ? 1 : 0);
+  process.exitCode = production?.ready === false ? 1 : 0;
 } catch (error) {
   console.error("Verification failed:", error instanceof Error ? error.message : error);
   process.exit(1);

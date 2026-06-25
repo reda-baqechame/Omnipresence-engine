@@ -106,7 +106,10 @@ console.log(`DataForSEO fallback: ${has("DATAFORSEO_LOGIN") && has("DATAFORSEO_P
 let remoteOk = false;
 if (base) {
   try {
-    const res = await fetch(`${base}/api/capabilities`, { signal: AbortSignal.timeout(15_000) });
+    const res = await fetch(`${base}/api/capabilities`, {
+      headers: { connection: "close" },
+      signal: AbortSignal.timeout(15_000),
+    });
     if (res.ok) {
       const caps = await res.json();
       console.log(`\nRemote (${base}):`);
@@ -123,4 +126,7 @@ if (base) {
 }
 
 console.log("");
-process.exit(pass >= 3 || remoteOk ? 0 : 1);
+// Avoid process.exit() here: on Windows it can race undici's keep-alive
+// socket teardown and crash with a libuv UV_HANDLE_CLOSING assertion.
+// Setting exitCode lets the event loop drain cleanly instead.
+process.exitCode = pass >= 3 || remoteOk ? 0 : 1;
