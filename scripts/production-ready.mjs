@@ -21,7 +21,11 @@ function run(label, cmd, args, cwd = root) {
   });
   if (result.stdout) process.stdout.write(result.stdout);
   if (result.stderr) process.stderr.write(result.stderr);
-  if (result.stdout?.includes("FULL AUDIT PASSED") || result.stdout?.includes("Prod ready:  YES")) {
+  if (
+    result.stdout?.includes("FULL AUDIT PASSED") ||
+    result.stdout?.includes("Prod ready:  YES") ||
+    result.stdout?.includes("Production ready: YES")
+  ) {
     return true;
   }
   if (result.stdout?.includes("FULL AUDIT FAILED") || result.stdout?.includes("NOT READY")) {
