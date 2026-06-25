@@ -83,7 +83,23 @@ if (tabsSrc.includes("/prompts")) {
   failed++;
 }
 
-console.log("\n7. Live API smoke (public)");
+console.log("\n7. UI wiring");
+const whitelabelSrc = readFileSync(join(root, "src/app/app/settings/whitelabel/page.tsx"), "utf8");
+const contentSrc = readFileSync(join(root, "src/components/content-board.tsx"), "utf8");
+if (whitelabelSrc.includes("/api/embed/audit-snippet")) {
+  console.log("  ✓ whitelabel page fetches embed snippet");
+} else {
+  console.log("  ✗ whitelabel embed not wired");
+  failed++;
+}
+if (contentSrc.includes("/api/podcast/generate")) {
+  console.log("  ✓ content board podcast TTS wired");
+} else {
+  console.log("  ✗ podcast TTS not wired in UI");
+  failed++;
+}
+
+console.log("\n8. Live API smoke (public)");
 try {
   const embedRes = await fetch(`${base}/api/embed/audit-snippet?brand=Test&color=6366f1`);
   const embedOk = embedRes.ok && (await embedRes.text()).includes("embed/audit");
@@ -92,6 +108,36 @@ try {
 } catch {
   console.log("  ✗ embed snippet unreachable");
   failed++;
+}
+
+try {
+  const podcastRes = await fetch(`${base}/api/podcast/generate`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ projectId: "00000000-0000-0000-0000-000000000000", assetId: "00000000-0000-0000-0000-000000000000" }),
+    signal: AbortSignal.timeout(15_000),
+  });
+  const podcastOk = podcastRes.status === 401 || podcastRes.status === 403 || podcastRes.status === 404;
+  console.log(`  ${podcastOk ? "✓" : "✗"} POST /api/podcast/generate → ${podcastRes.status}`);
+  if (!podcastOk) failed++;
+} catch {
+  console.log("  ✗ podcast API unreachable");
+  failed++;
+}
+
+try {
+  const healthRes = await fetch(`${base}/api/health`, { signal: AbortSignal.timeout(15_000) });
+  if (healthRes.ok) {
+    const health = await healthRes.json();
+    console.log("\n9. Production health (phase 9)");
+    const phase9 = health.checks?.phase9_schema;
+    const ok = phase9 === "ok" || phase9 === "skipped";
+    console.log(`  ${ok ? "✓" : "✗"} phase9_schema: ${phase9 || "unknown"}`);
+    if (phase9 === "error") failed++;
+    console.log(`  Production ready: ${health.production?.ready ? "YES" : "NO"} (${health.production?.score ?? 0}%)`);
+  }
+} catch {
+  console.log("\n9. Production health skipped");
 }
 
 console.log(`\n${failed === 0 ? "PASS" : "FAIL"} — ${failed} issue(s)\n`);

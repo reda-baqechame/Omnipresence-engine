@@ -18,6 +18,8 @@ export function ContentBoard({ projectId, assets }: ContentBoardProps) {
   const [items, setItems] = useState(assets);
   const [generating, setGenerating] = useState(false);
   const [repurposing, setRepurposing] = useState<string | null>(null);
+  const [generatingAudio, setGeneratingAudio] = useState<string | null>(null);
+  const [audioUrl, setAudioUrl] = useState<string | null>(null);
   const [topic, setTopic] = useState("");
   const [type, setType] = useState("blog_post");
   const [message, setMessage] = useState("");
@@ -50,6 +52,25 @@ export function ContentBoard({ projectId, assets }: ContentBoardProps) {
       setMessage(`Created ${data.count} repurposed assets from hub content`);
     }
     setRepurposing(null);
+  }
+
+  async function generatePodcastAudio(assetId: string) {
+    setGeneratingAudio(assetId);
+    setMessage("");
+    setAudioUrl(null);
+    const res = await fetch("/api/podcast/generate", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ projectId, assetId }),
+    });
+    const data = await res.json();
+    if (data.audioUrl) {
+      setAudioUrl(data.audioUrl);
+      setMessage(`Audio ready: ${data.title}`);
+    } else {
+      setMessage(data.message || data.error || "TTS not configured — set OPENAI_API_KEY");
+    }
+    setGeneratingAudio(null);
   }
 
   async function updateStatus(assetId: string, status: string) {
@@ -85,6 +106,11 @@ export function ContentBoard({ projectId, assets }: ContentBoardProps) {
           </button>
         </div>
         {message && <p className="text-sm text-muted-foreground mt-2">{message}</p>}
+        {audioUrl && (
+          <audio controls src={audioUrl} className="mt-2 w-full max-w-md">
+            <track kind="captions" />
+          </audio>
+        )}
       </div>
 
       <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4">
@@ -104,6 +130,16 @@ export function ContentBoard({ projectId, assets }: ContentBoardProps) {
                       className="mt-1 text-primary hover:underline"
                     >
                       {repurposing === asset.id ? "Repurposing..." : "→ 8 formats"}
+                    </button>
+                  )}
+                  {asset.type === "podcast_script" && (
+                    <button
+                      type="button"
+                      onClick={() => generatePodcastAudio(asset.id)}
+                      disabled={generatingAudio === asset.id}
+                      className="mt-1 text-primary hover:underline"
+                    >
+                      {generatingAudio === asset.id ? "Generating audio..." : "Generate audio (TTS)"}
                     </button>
                   )}
                   {status !== "needs_refresh" && (

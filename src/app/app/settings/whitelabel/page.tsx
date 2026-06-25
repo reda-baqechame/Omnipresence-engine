@@ -12,6 +12,8 @@ export default function WhiteLabelSettingsPage() {
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
   const [loading, setLoading] = useState(true);
+  const [embedSnippet, setEmbedSnippet] = useState("");
+  const [copied, setCopied] = useState(false);
 
   useEffect(() => {
     async function load() {
@@ -44,6 +46,20 @@ export default function WhiteLabelSettingsPage() {
     load();
   }, []);
 
+  useEffect(() => {
+    const params = new URLSearchParams();
+    if (form.white_label_name) params.set("brand", form.white_label_name);
+    if (form.white_label_primary_color) {
+      params.set("color", form.white_label_primary_color.replace("#", ""));
+    }
+    if (form.logo_url) params.set("logo", form.logo_url);
+    const qs = params.toString();
+    fetch(`/api/embed/audit-snippet${qs ? `?${qs}` : ""}`)
+      .then((r) => r.text())
+      .then(setEmbedSnippet)
+      .catch(() => setEmbedSnippet(""));
+  }, [form.white_label_name, form.white_label_primary_color, form.logo_url]);
+
   async function handleSave(e: React.FormEvent) {
     e.preventDefault();
     setSaving(true);
@@ -69,14 +85,22 @@ export default function WhiteLabelSettingsPage() {
     setSaving(false);
   }
 
+  async function copyEmbed() {
+    await navigator.clipboard.writeText(embedSnippet);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
+  }
+
   if (loading) return <p className="text-muted-foreground">Loading...</p>;
 
   return (
-    <div className="max-w-xl">
-      <h2 className="text-xl font-semibold mb-2">White-Label Branding</h2>
-      <p className="text-sm text-muted-foreground mb-6">
-        Customize reports and client-facing materials with your agency branding.
-      </p>
+    <div className="max-w-2xl space-y-8">
+      <div>
+        <h2 className="text-xl font-semibold mb-2">White-Label Branding</h2>
+        <p className="text-sm text-muted-foreground">
+          Customize reports and client-facing materials with your agency branding.
+        </p>
+      </div>
 
       <form onSubmit={handleSave} className="bg-card border border-border rounded-xl p-6 space-y-4">
         {saved && (
@@ -128,6 +152,24 @@ export default function WhiteLabelSettingsPage() {
           {saving ? "Saving..." : "Save Branding"}
         </button>
       </form>
+
+      <div className="bg-card border border-border rounded-xl p-6">
+        <h3 className="font-semibold mb-2">Embeddable Audit Widget (v2)</h3>
+        <p className="text-sm text-muted-foreground mb-4">
+          Paste this on client sites. Brand, color, and logo params are applied from your settings above.
+        </p>
+        <pre className="text-xs bg-secondary p-4 rounded-lg overflow-x-auto max-h-48 mb-3">
+          {embedSnippet || "Loading embed snippet..."}
+        </pre>
+        <button
+          type="button"
+          onClick={copyEmbed}
+          disabled={!embedSnippet}
+          className="border border-border px-4 py-2 rounded-lg text-sm disabled:opacity-50"
+        >
+          {copied ? "Copied!" : "Copy embed code"}
+        </button>
+      </div>
     </div>
   );
 }

@@ -17,6 +17,7 @@
     "wire:diy": "node scripts/wire-diy-stack.mjs",
     "audit:phase8": "node scripts/audit-phase8.mjs",
     "audit:phase9": "node scripts/audit-phase9.mjs",
+    "audit:full": "node scripts/audit-full.mjs",
     "verify:all": "node scripts/verify-all.mjs",
     "e2e:happy-path": "node scripts/e2e-happy-path.mjs",
     "omnidata:test": "npm run test --prefix services/omnidata",

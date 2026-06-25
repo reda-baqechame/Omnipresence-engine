@@ -91,7 +91,7 @@ export default function SetupPage() {
           id: "inngest",
           title: "Connect Inngest (background scans + crons)",
           done: p.inngest === true && health.checks?.inngest === "ok",
-          action: "INNGEST_EVENT_KEY + INNGEST_SIGNING_KEY. Includes on-page (daily), internal links (Tue), link building (10th), intelligence (Mon).",
+          action: "INNGEST_EVENT_KEY + INNGEST_SIGNING_KEY. Crons: on-page (daily), internal links (Tue), link building (10th), intelligence (Mon), attribution (Mon/monthly), rank check (Tue), backlinks (Wed), rescan (weekly/monthly), freshness (daily), citation diff (Mon), guarantee verify (daily), content publish (hourly), weekly report (Fri).",
         },
         {
           id: "execution",

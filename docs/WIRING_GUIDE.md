@@ -117,3 +117,41 @@ Open-source report alignment (what we adopted vs skipped):
 
 Run `npm run db:migrate` through `0016_phase8.sql` for indexing log, link orders, and community mentions tables.
 
+## Phase 9 — Prompt scale, identity & agency embeds
+
+| Feature | Where | Manual setup |
+|---------|-------|--------------|
+| Prompt campaign (500+ CSV) | Project → **Prompts** tab | Bulk import or GSC OAuth → Import top queries |
+| GSC → prompts | Prompts tab button | Connect Google Search Console OAuth |
+| 14-step blog pipeline | Project → **Content** tab | Generate `blog_post`, advance steps |
+| LLM referral chart | Project → **Attribution** | Install tracking beacon on client site |
+| Visitor identity | Attribution panel | Optional `CLEARBIT_REVEAL_KEY`; beacon stores sessions |
+| Embed widget v2 | Settings → **White Label** | Copy snippet with brand/color/logo params |
+| NAP checker | Project → **Entity** → Check NAP | Fetches homepage vs brand profile |
+| Podcast TTS | Content → podcast_script → Generate audio | `OPENAI_API_KEY` on Vercel |
+| Prompt heatmap | Project → **Visibility** | Run visibility scan after importing prompts |
+
+Run `npm run db:migrate:prod` through `0017_phase9.sql` for `visitor_sessions`.
+
+## Inngest background jobs (all registered at `/api/inngest`)
+
+| Cron ID | Schedule |
+|---------|----------|
+| `daily-on-page-automation` | Daily 02:00 UTC |
+| `daily-freshness-check` | Daily 03:00 UTC |
+| `guarantee-verification-cron` | Daily 04:00 UTC |
+| `weekly-intelligence-sync` | Monday 04:00 UTC |
+| `weekly-internal-link-scan` | Tuesday 05:00 UTC |
+| `weekly-rank-check` | Tuesday 05:00 UTC |
+| `weekly-attribution-sync` | Monday 07:00 UTC |
+| `citation-diff-alert` | Monday 08:00 UTC |
+| `weekly-report-email` | Friday 09:00 UTC |
+| `weekly-backlink-monitor` | Wednesday 06:00 UTC |
+| `weekly-rescan` | Monday 06:00 UTC |
+| `monthly-rescan` | 1st of month 00:00 UTC |
+| `monthly-link-building` | 10th of month 06:00 UTC |
+| `monthly-attribution-sync` | 2nd of month 07:00 UTC |
+| `scheduled-content-publish` | Hourly |
+
+Verify: `npm run audit:full` against production URL.
+

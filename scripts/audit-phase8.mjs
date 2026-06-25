@@ -106,6 +106,12 @@ await smoke("citation planner", "/api/tools/citation-planner", {
   headers: { "Content-Type": "application/json" },
   body: JSON.stringify({ brand: "Acme", industry: "dental" }),
 });
+await smoke("embed snippet", "/api/embed/audit-snippet?brand=Audit&color=6366f1");
+await smoke("podcast API", "/api/podcast/generate", {
+  method: "POST",
+  headers: { "Content-Type": "application/json" },
+  body: JSON.stringify({ projectId: "00000000-0000-0000-0000-000000000000", assetId: "00000000-0000-0000-0000-000000000000" }),
+});
 
 try {
   const healthRes = await fetch(`${base}/api/health`, { signal: AbortSignal.timeout(15_000) });
@@ -115,6 +121,7 @@ try {
       ["supabase", health.checks?.supabase],
       ["intelligence_schema", health.checks?.intelligence_schema],
       ["phase8_schema", health.checks?.phase8_schema],
+      ["phase9_schema", health.checks?.phase9_schema],
       ["integration_encryption", health.checks?.integration_encryption],
     ];
     console.log("\n6. Production health checks");
