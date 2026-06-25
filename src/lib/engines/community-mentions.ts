@@ -83,6 +83,32 @@ export async function searchRedditMentions(
   }
 }
 
+/** Keyless Reddit discovery via `site:reddit.com` SERP (OmniData/Serper/Brave). */
+export async function searchRedditViaSerp(query: string): Promise<CommunityMentionRow[]> {
+  try {
+    const res = await searchGoogleOrganicRouter(
+      `site:reddit.com ${query}`,
+      "United States",
+      "",
+      []
+    );
+    if (!res.success || !res.data) return [];
+    return res.data.organicResults
+      .filter((r) => r.url.includes("reddit.com/r/"))
+      .slice(0, 15)
+      .map((r) => ({
+        platform: "reddit" as const,
+        url: r.url,
+        title: r.title,
+        keyword: query,
+        mention_type: "brand" as const,
+        source: "live" as const,
+      }));
+  } catch {
+    return [];
+  }
+}
+
 /** Best-effort Quora mention discovery via `site:quora.com` SERP. */
 export async function searchQuoraMentions(query: string): Promise<CommunityMentionRow[]> {
   try {
@@ -117,8 +143,12 @@ export async function fetchLiveCommunityMentions(
   const queries = [brand, ...competitors.slice(0, 3)].filter(Boolean);
   const redditAvailable = hasRedditApi();
 
+  // Use the official Reddit API when registered; otherwise fall back to a
+  // keyless `site:reddit.com` SERP query (OmniData/Serper/Brave).
+  const redditSearch = redditAvailable ? searchRedditMentions : searchRedditViaSerp;
+
   const results = await Promise.all(
-    queries.flatMap((q) => [searchRedditMentions(q), searchQuoraMentions(q)])
+    queries.flatMap((q) => [redditSearch(q), searchQuoraMentions(q)])
   );
 
   const rows: CommunityMentionRow[] = [];

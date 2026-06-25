@@ -60,7 +60,7 @@ export async function POST(request: NextRequest) {
   const access = await verifyProjectAccess(supabase, projectId, user.id, "member");
   if (!access) return apiForbidden();
 
-  // Live fetch: real Reddit (API) + Quora (SERP) mentions, deduped against stored rows.
+  // Live fetch: Reddit (official API, or keyless SERP fallback) + Quora (SERP) mentions, deduped against stored rows.
   if (action === "fetch_live") {
     const { data: project } = await supabase
       .from("projects")
@@ -99,7 +99,7 @@ export async function POST(request: NextRequest) {
       redditAvailable,
       note: redditAvailable
         ? undefined
-        : "Reddit API not configured — only Quora (SERP) mentions returned. Set REDDIT_CLIENT_ID/SECRET for full coverage.",
+        : "Reddit API not configured — Reddit mentions discovered via keyless SERP. Set REDDIT_CLIENT_ID/SECRET for richer (full-text) coverage.",
     });
   }
 
