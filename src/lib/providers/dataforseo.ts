@@ -78,6 +78,38 @@ export function hasLabsApi(): boolean {
   );
 }
 
+export interface MapsPlace {
+  title: string;
+  address?: string;
+  rating?: number;
+  reviews?: number;
+  domain?: string;
+  position: number;
+}
+
+/**
+ * Google Maps/Places lookup through OmniData (keyless Playwright scrape or Serper)
+ * or DataForSEO. Returns null when no backend is configured.
+ */
+export async function getMapsPlaces(
+  keyword: string,
+  location = "United States"
+): Promise<MapsPlace[] | null> {
+  if (!hasLabsApi()) return null;
+  try {
+    const data = await dataForSEORequest<{
+      tasks: Array<{
+        result: Array<{
+          items?: MapsPlace[];
+        }>;
+      }>;
+    }>("/serp/google/maps/live", [{ keyword, location_name: location }]);
+    return data.tasks?.[0]?.result?.[0]?.items || [];
+  } catch {
+    return null;
+  }
+}
+
 export async function searchGoogleOrganic(
   keyword: string,
   location = "United States",

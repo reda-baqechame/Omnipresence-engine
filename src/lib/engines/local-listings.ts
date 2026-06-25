@@ -1,4 +1,5 @@
 import type { Project, BrandProfile } from "@/types/database";
+import { getMapsPlaces, isOmniDataActive } from "@/lib/providers/dataforseo";
 
 export interface LocalListingDraft {
   platform: "google_business" | "bing_places" | "apple_business";
@@ -95,11 +96,51 @@ export async function verifyLocalPresence(
         detail: "Places lookup timed out; verify manually.",
       });
     }
+  } else if (isOmniDataActive()) {
+    const places = await getMapsPlaces(project.name, location);
+    if (places && places.length > 0) {
+      const match = places.find((p) => {
+        const t = normalize(p.title || "");
+        const w = normalize((p.domain || ""));
+        return (
+          (brandNorm && (t.includes(brandNorm) || brandNorm.includes(t))) ||
+          (domainNorm && w.includes(domainNorm))
+        );
+      });
+      if (match) {
+        out.push({
+          platform: "google_business",
+          status: "verified",
+          detail: `Found on Google Maps as "${match.title}"${
+            match.rating ? ` (${match.rating}★, ${match.reviews ?? 0} reviews)` : ""
+          }.`,
+          matched: {
+            title: match.title || project.name,
+            rating: match.rating,
+            reviews: match.reviews,
+            address: match.address,
+          },
+        });
+      } else {
+        out.push({
+          platform: "google_business",
+          status: "not_found",
+          detail:
+            "No matching Google Business Profile found on the map. Claim/verify your profile to appear in local + AI local results.",
+        });
+      }
+    } else {
+      out.push({
+        platform: "google_business",
+        status: "unknown",
+        detail: "OmniData maps lookup returned no data; verify manually.",
+      });
+    }
   } else {
     out.push({
       platform: "google_business",
       status: "manual",
-      detail: "Set SERPER_API_KEY to auto-verify Google Business presence.",
+      detail: "Set SERPER_API_KEY or deploy OmniData to auto-verify Google Business presence.",
     });
   }
 

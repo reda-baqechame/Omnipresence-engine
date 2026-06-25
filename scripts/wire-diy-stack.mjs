@@ -42,9 +42,13 @@ loadEnvLocal();
 
 const checks = [
   {
-    name: "SERP provider (Serper or Brave)",
-    ok: has("SERPER_API_KEY") || has("BRAVE_SEARCH_API_KEY") || (has("DATAFORSEO_LOGIN") && has("DATAFORSEO_PASSWORD")),
-    fix: "Set SERPER_API_KEY (cheap) or BRAVE_SEARCH_API_KEY (free tier at brave.com/search/api)",
+    name: "SERP provider (Serper, Brave, or OmniData)",
+    ok:
+      has("SERPER_API_KEY") ||
+      has("BRAVE_SEARCH_API_KEY") ||
+      (has("OMNIDATA_BASE_URL") && has("OMNIDATA_API_KEY")) ||
+      (has("DATAFORSEO_LOGIN") && has("DATAFORSEO_PASSWORD")),
+    fix: "Set SERPER_API_KEY (cheap), BRAVE_SEARCH_API_KEY (free tier), or deploy OmniData (keyless scrape)",
   },
   {
     name: "Direct LLM visibility",

@@ -1,23 +1,32 @@
-import { searchGoogleOrganic as searchGoogleOrganicDataForSEO } from "@/lib/providers/dataforseo";
+import {
+  searchGoogleOrganic as searchGoogleOrganicDataForSEO,
+  isOmniDataActive,
+} from "@/lib/providers/dataforseo";
 import { searchGoogleOrganicBrave } from "@/lib/providers/brave-search";
 import { searchGoogleOrganicSerper } from "@/lib/providers/serper";
 import type { ProviderResult, SERPResult } from "./types";
 
-export type SerpProviderId = "serper" | "brave" | "dataforseo";
+export type SerpProviderId = "serper" | "brave" | "omnidata" | "dataforseo";
 
 function hasEnv(key: string): boolean {
   const v = process.env[key];
   return Boolean(v && v.length > 0 && !v.startsWith("your-"));
 }
 
+/** OmniData (self-hosted) serves the DataForSEO-compatible /v3 SERP endpoint and can scrape keylessly. */
+function hasDataForSeoBackend(): boolean {
+  return isOmniDataActive() || (hasEnv("DATAFORSEO_LOGIN") && hasEnv("DATAFORSEO_PASSWORD"));
+}
+
 export function getActiveSerpProvider(): SerpProviderId | null {
   if (hasEnv("SERPER_API_KEY")) return "serper";
   if (hasEnv("BRAVE_SEARCH_API_KEY")) return "brave";
+  if (isOmniDataActive()) return "omnidata";
   if (hasEnv("DATAFORSEO_LOGIN") && hasEnv("DATAFORSEO_PASSWORD")) return "dataforseo";
   return null;
 }
 
-/** Priority: Serper (cheap) → Brave (free tier) → DataForSEO (optional fallback). */
+/** Priority: Serper (cheap) → Brave (free tier) → OmniData/DataForSEO (self-hosted or paid). */
 export async function searchGoogleOrganicRouter(
   keyword: string,
   location = "United States",
@@ -40,8 +49,8 @@ export async function searchGoogleOrganicRouter(
       search: () => searchGoogleOrganicBrave(keyword, location, brandDomain, competitors),
     },
     {
-      id: "dataforseo",
-      enabled: hasEnv("DATAFORSEO_LOGIN") && hasEnv("DATAFORSEO_PASSWORD"),
+      id: isOmniDataActive() ? "omnidata" : "dataforseo",
+      enabled: hasDataForSeoBackend(),
       search: () => searchGoogleOrganicDataForSEO(keyword, location, brandDomain, competitors),
     },
   ];
