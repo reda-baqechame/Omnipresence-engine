@@ -3,14 +3,27 @@
 import { useState } from "react";
 import type { ResultsLedgerEntry } from "@/types/database";
 
+export interface GuaranteeMetrics {
+  omnipresence_score: number;
+  citation_rate: number;
+  visibility_mention_rate: number;
+}
+
 interface GuaranteePanelProps {
   projectId: string;
   contract: Record<string, unknown> | null;
   claims: Array<Record<string, unknown>>;
   ledger: ResultsLedgerEntry[];
+  latestMetrics: GuaranteeMetrics;
 }
 
-export function GuaranteePanel({ projectId, contract, claims, ledger }: GuaranteePanelProps) {
+export function GuaranteePanel({
+  projectId,
+  contract,
+  claims,
+  ledger,
+  latestMetrics,
+}: GuaranteePanelProps) {
   const [message, setMessage] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
 
@@ -20,19 +33,13 @@ export function GuaranteePanel({ projectId, contract, claims, ledger }: Guarante
     const body: Record<string, unknown> = { projectId, action };
     if (action === "lock_baseline") {
       body.snapshot = {
-        omnipresence_score: contract?.baseline_snapshot
-          ? (contract.baseline_snapshot as Record<string, number>).omnipresence_score ?? 0
-          : 0,
-        citation_rate: 0,
-        visibility_mention_rate: 0,
+        omnipresence_score: latestMetrics.omnipresence_score,
+        citation_rate: latestMetrics.citation_rate,
+        visibility_mention_rate: latestMetrics.visibility_mention_rate,
       };
     }
     if (action === "verify") {
-      body.currentMetrics = {
-        omnipresence_score: 0,
-        citation_rate: 0,
-        visibility_mention_rate: 0,
-      };
+      body.currentMetrics = { ...latestMetrics };
     }
     const res = await fetch("/api/guarantee", {
       method: "POST",
@@ -54,11 +61,26 @@ export function GuaranteePanel({ projectId, contract, claims, ledger }: Guarante
         </p>
       </div>
 
-      <div className="grid md:grid-cols-3 gap-4">
+      <div className="grid md:grid-cols-4 gap-4">
+        <div className="bg-card border border-border rounded-xl p-4">
+          <div className="text-sm text-muted-foreground">Current score</div>
+          <div className="text-2xl font-bold text-primary">{latestMetrics.omnipresence_score}</div>
+        </div>
+        <div className="bg-card border border-border rounded-xl p-4">
+          <div className="text-sm text-muted-foreground">Citation rate</div>
+          <div className="text-2xl font-bold">{Math.round(latestMetrics.citation_rate * 100)}%</div>
+        </div>
+        <div className="bg-card border border-border rounded-xl p-4">
+          <div className="text-sm text-muted-foreground">Mention rate</div>
+          <div className="text-2xl font-bold">{Math.round(latestMetrics.visibility_mention_rate * 100)}%</div>
+        </div>
         <div className="bg-card border border-border rounded-xl p-4">
           <div className="text-sm text-muted-foreground">Contract status</div>
           <div className="text-lg font-semibold">{(contract?.status as string) || "not started"}</div>
         </div>
+      </div>
+
+      <div className="grid md:grid-cols-2 gap-4">
         <div className="bg-card border border-border rounded-xl p-4">
           <div className="text-sm text-muted-foreground">KPI / threshold</div>
           <div className="text-lg font-semibold">
@@ -74,7 +96,7 @@ export function GuaranteePanel({ projectId, contract, claims, ledger }: Guarante
       <div className="flex flex-wrap gap-2">
         <button
           onClick={() => runAction("lock_baseline")}
-          disabled={loading}
+          disabled={loading || latestMetrics.omnipresence_score === 0}
           className="bg-primary text-primary-foreground px-4 py-2 rounded-lg text-sm disabled:opacity-50"
         >
           Lock baseline
@@ -94,6 +116,9 @@ export function GuaranteePanel({ projectId, contract, claims, ledger }: Guarante
           Submit claim
         </button>
       </div>
+      {latestMetrics.omnipresence_score === 0 && (
+        <p className="text-sm text-yellow-400">Run a full project scan first to populate live scores.</p>
+      )}
       {message && <p className="text-sm text-muted-foreground">{message}</p>}
 
       <div className="bg-card border border-border rounded-xl p-6">

@@ -1,9 +1,14 @@
 import type { PromptCategory, VisibilityEngine } from "@/types/database";
-import { preferLiveData } from "@/lib/config/capabilities";
+import { preferLiveData, hasSerpCapability, hasCitationTrackingCapability } from "@/lib/config/capabilities";
+import { isProductionDeploy } from "@/lib/config/production";
 import { SCAN_ENGINES } from "@/lib/config/scan-engines";
 
-/** Demo mode is last-resort fallback when no live providers are configured. */
+/** Demo mode is last-resort fallback when no live providers are configured. Never on production with keys. */
 export function isDemoMode(): boolean {
+  if (process.env.FORCE_DEMO_MODE === "true") return true;
+  if (isProductionDeploy() && (hasSerpCapability() || hasCitationTrackingCapability())) {
+    return false;
+  }
   return !preferLiveData();
 }
 

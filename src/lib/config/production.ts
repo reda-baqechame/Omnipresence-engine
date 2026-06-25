@@ -64,9 +64,18 @@ export function getProductionReadiness(): {
   checks.push({
     id: "live_data",
     label: "Live visibility & SERP data",
-    status: preferLiveData() ? "ok" : "warning",
+    status: preferLiveData() ? "ok" : isProductionDeploy() ? "error" : "warning",
     message: "Add SERPER or OMNIDATA + at least one LLM key for real scans",
   });
+
+  if (process.env.FORCE_DEMO_MODE === "true" && isProductionDeploy()) {
+    checks.push({
+      id: "demo_mode",
+      label: "Demo mode disabled in production",
+      status: "error",
+      message: "Remove FORCE_DEMO_MODE on Vercel — production must deliver measured results",
+    });
+  }
 
   checks.push({
     id: "serp",

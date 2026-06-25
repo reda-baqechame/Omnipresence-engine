@@ -19,6 +19,7 @@
     "audit:phase9": "node scripts/audit-phase9.mjs",
     "audit:full": "node scripts/audit-full.mjs",
     "production:ready": "node scripts/production-ready.mjs",
+    "audit:live": "node scripts/audit-live-results.mjs",
     "verify:all": "node scripts/verify-all.mjs",
     "e2e:happy-path": "node scripts/e2e-happy-path.mjs",
     "omnidata:test": "npm run test --prefix services/omnidata",

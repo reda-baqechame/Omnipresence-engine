@@ -105,7 +105,10 @@ export async function analyzeContentGaps(
 ) {
   if (!preferLiveData()) return { gaps: [], live: false };
   const gaps = await contentGapsLive(domain, competitors, seeds);
-  return { gaps: gaps || [], live: Boolean(gaps) };
+  if (gaps?.length) return { gaps, live: true };
+  const { contentGapsFromSerp } = await import("@/lib/engines/serp-content-gaps");
+  const serpGaps = await contentGapsFromSerp(domain, competitors, seeds);
+  return { gaps: serpGaps, live: serpGaps.length > 0 };
 }
 
 export async function analyzeBacklinkGaps(domain: string, competitors: string[]) {

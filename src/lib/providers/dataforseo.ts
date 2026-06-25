@@ -490,7 +490,35 @@ export async function getKeywordSuggestionsLive(seed: string): Promise<{
   suggestions: Array<{ keyword: string; volume_estimate?: number; source?: string }>;
   related: Array<{ keyword: string; volume_estimate?: number }>;
 } | null> {
-  if (USE_OMNIDATA) return null;
+  if (USE_OMNIDATA) {
+    try {
+      const omnidata = await labsApiPost<{
+        tasks: Array<{ result: Array<{ suggestions?: unknown[]; related?: unknown[] }> }>;
+      }>("/keywords/suggestions/live", [{ keyword: seed }]);
+      const block = omnidata?.tasks?.[0]?.result?.[0] as {
+        suggestions?: Array<{ keyword: string; volume_estimate?: number; source?: string }>;
+        related?: Array<{ keyword: string; volume_estimate?: number }>;
+      } | undefined;
+      if (block?.suggestions?.length) {
+        return { seed, suggestions: block.suggestions, related: block.related || [] };
+      }
+    } catch {
+      /* fall through */
+    }
+  }
+
+  const hasDataForSeo =
+    Boolean(process.env.DATAFORSEO_LOGIN) && Boolean(process.env.DATAFORSEO_PASSWORD);
+  if (!hasDataForSeo && !USE_OMNIDATA) {
+    const { getKeywordSuggestionsSerper } = await import("@/lib/providers/serper-keywords");
+    return getKeywordSuggestionsSerper(seed);
+  }
+
+  if (USE_OMNIDATA && !hasDataForSeo) {
+    const { getKeywordSuggestionsSerper } = await import("@/lib/providers/serper-keywords");
+    return getKeywordSuggestionsSerper(seed);
+  }
+
   try {
     const data = await dataForSEORequest<{
       tasks: Array<{
@@ -546,7 +574,8 @@ export async function getKeywordSuggestionsLive(seed: string): Promise<{
 
     return { seed, suggestions, related };
   } catch {
-    return null;
+    const { getKeywordSuggestionsSerper } = await import("@/lib/providers/serper-keywords");
+    return getKeywordSuggestionsSerper(seed);
   }
 }
 

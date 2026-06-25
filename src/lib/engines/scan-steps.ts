@@ -132,6 +132,11 @@ export async function stepVisibilityScan(supabase: SupabaseClient, project: Proj
     await supabase.from("visibility_results").insert(visibilityResults as never[]);
   }
 
+  const measuredCount = visibilityResults.filter(
+    (r) => (r as { data_source?: string }).data_source === "measured"
+  ).length;
+  const runStatus = demo ? "completed" : measuredCount === 0 ? "failed" : "completed";
+
   if (!demo) {
     const citationRows = extractCitationSources(
       visibilityResults as import("@/lib/engines/visibility-scanner").VisibilityScanResult[],
@@ -144,7 +149,11 @@ export async function stepVisibilityScan(supabase: SupabaseClient, project: Proj
 
   await supabase
     .from("visibility_runs")
-    .update({ status: "completed", completed_at: new Date().toISOString() })
+    .update({
+      status: runStatus,
+      completed_at: new Date().toISOString(),
+      error_message: runStatus === "failed" ? "No live visibility measurements — check API keys (SERP + LLM)" : null,
+    })
     .eq("id", run!.id);
 
   return { prompts, visibilityResults, runId: run!.id };

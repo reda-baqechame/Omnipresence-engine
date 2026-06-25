@@ -24,7 +24,8 @@ function run(label, cmd, args, cwd = root) {
   if (
     result.stdout?.includes("FULL AUDIT PASSED") ||
     result.stdout?.includes("Prod ready:  YES") ||
-    result.stdout?.includes("Production ready: YES")
+    result.stdout?.includes("Production ready: YES") ||
+    (label === "audit:live" && result.stdout?.includes("PASS — 0 issue"))
   ) {
     return true;
   }
@@ -44,6 +45,7 @@ const results = [
   ["e2e structure", run("e2e", "npm", ["run", "e2e:happy-path"])],
   ["omnidata tests", run("omnidata", "npm", ["run", "omnidata:test"])],
   ["audit:full (live)", run("audit:full", "npm", ["run", "audit:full"])],
+  ["audit:live (measured)", run("audit:live", "npm", ["run", "audit:live"])],
   ["wire:diy (live caps)", run("wire:diy", "npm", ["run", "wire:diy"])],
 ];
 
