@@ -54,13 +54,43 @@ function parseGoogleJson<T>(text: string): T | null {
   }
 }
 
+// Google Trends rate-limits anonymous callers (429); a NID/consent cookie
+// dramatically improves success. Acquire once and cache with a short TTL.
+let cachedCookie: { value: string; at: number } | null = null;
+const COOKIE_TTL_MS = 30 * 60 * 1000;
+
+async function getTrendsCookie(): Promise<string> {
+  if (cachedCookie && Date.now() - cachedCookie.at < COOKIE_TTL_MS) {
+    return cachedCookie.value;
+  }
+  try {
+    const res = await fetch("https://trends.google.com/trends/explore?geo=US", {
+      headers: { "User-Agent": UA, "Accept-Language": "en-US,en;q=0.9" },
+      signal: AbortSignal.timeout(12_000),
+    });
+    const sc = res.headers.get("set-cookie") || "";
+    const value = sc
+      .split(",")
+      .map((s) => s.split(";")[0].trim())
+      .filter(Boolean)
+      .join("; ");
+    cachedCookie = { value, at: Date.now() };
+    return value;
+  } catch {
+    cachedCookie = { value: "", at: Date.now() };
+    return "";
+  }
+}
+
 async function trendsFetch(url: string): Promise<string | null> {
   try {
+    const cookie = await getTrendsCookie();
     const res = await fetch(url, {
       headers: {
         "User-Agent": UA,
         Accept: "application/json, text/plain, */*",
         "Accept-Language": "en-US,en;q=0.9",
+        ...(cookie ? { Cookie: cookie } : {}),
       },
       signal: AbortSignal.timeout(12_000),
     });
