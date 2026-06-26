@@ -153,6 +153,15 @@ export function getCapabilitiesSummary() {
       pageSpeed: true,
       trancoAuthority: true,
       aeoReadiness: true,
+      // Phase 11 - the Free Data Moat (all keyless / open-source).
+      googleTrends: true,
+      techStackDetection: true,
+      popularityIndex: true,
+      authorityRating: true,
+      wikipediaEntity: true,
+      hackerNews: true,
+      domainAge: true,
+      commonCrawlBacklinks: true,
     },
   };
 }

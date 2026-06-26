@@ -107,6 +107,14 @@ const live =
 console.log(`\nLocal live mode: ${live ? "READY" : "demo fallback"}`);
 console.log(`DataForSEO fallback: ${has("DATAFORSEO_LOGIN") && has("DATAFORSEO_PASSWORD") ? "enabled (optional)" : "off (good — saves ~$100/mo)"}`);
 
+console.log("\nFree Data Moat (keyless / open-source — always on):");
+console.log("  ✓ Google Trends demand index + related/rising queries");
+console.log("  ✓ Tech-stack detection (open fingerprints)");
+console.log("  ✓ Popularity Index (Tranco + Common Crawl + Wikipedia + domain age)");
+console.log("  ✓ Authority Rating (Tranco + Common Crawl + OpenPageRank + age)");
+console.log("  ✓ Wikipedia/Wikidata entity presence (AEO citation signal)");
+console.log("  ✓ Hacker News community mentions (Algolia)");
+
 let remoteOk = false;
 if (base) {
   try {

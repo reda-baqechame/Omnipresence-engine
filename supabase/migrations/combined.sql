@@ -1046,7 +1046,7 @@ CREATE TABLE IF NOT EXISTS link_building_orders (
 CREATE TABLE IF NOT EXISTS community_mentions (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   project_id UUID NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
-  platform TEXT NOT NULL CHECK (platform IN ('reddit', 'quora', 'other')),
+  platform TEXT NOT NULL CHECK (platform IN ('reddit', 'quora', 'hacker_news', 'github', 'other')),
   url TEXT NOT NULL,
   keyword TEXT,
   mention_type TEXT DEFAULT 'brand',

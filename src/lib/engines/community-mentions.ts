@@ -1,7 +1,7 @@
 import { searchGoogleOrganicRouter } from "@/lib/providers/serp-router";
 
 export interface CommunityMentionRow {
-  platform: "reddit" | "quora" | "other";
+  platform: "reddit" | "quora" | "hacker_news" | "github" | "other";
   url: string;
   keyword?: string;
   mention_type?: "brand" | "competitor" | "category";
@@ -109,6 +109,33 @@ export async function searchRedditViaSerp(query: string): Promise<CommunityMenti
   }
 }
 
+/** Real Hacker News mentions via the keyless Algolia HN Search API. */
+export async function searchHackerNewsMentions(query: string): Promise<CommunityMentionRow[]> {
+  try {
+    const res = await fetch(
+      `https://hn.algolia.com/api/v1/search?query=${encodeURIComponent(query)}&tags=story&hitsPerPage=20`,
+      { headers: { connection: "close" }, signal: AbortSignal.timeout(10_000) }
+    );
+    if (!res.ok) return [];
+    const data = (await res.json()) as {
+      hits?: Array<{ objectID?: string; title?: string; url?: string; story_text?: string }>;
+    };
+    return (data.hits || [])
+      .filter((h) => h.objectID && (h.title || h.url))
+      .slice(0, 15)
+      .map((h) => ({
+        platform: "hacker_news" as const,
+        url: h.url || `https://news.ycombinator.com/item?id=${h.objectID}`,
+        title: h.title,
+        keyword: query,
+        mention_type: "brand" as const,
+        source: "live" as const,
+      }));
+  } catch {
+    return [];
+  }
+}
+
 /** Best-effort Quora mention discovery via `site:quora.com` SERP. */
 export async function searchQuoraMentions(query: string): Promise<CommunityMentionRow[]> {
   try {
@@ -148,7 +175,7 @@ export async function fetchLiveCommunityMentions(
   const redditSearch = redditAvailable ? searchRedditMentions : searchRedditViaSerp;
 
   const results = await Promise.all(
-    queries.flatMap((q) => [redditSearch(q), searchQuoraMentions(q)])
+    queries.flatMap((q) => [redditSearch(q), searchQuoraMentions(q), searchHackerNewsMentions(q)])
   );
 
   const rows: CommunityMentionRow[] = [];
@@ -190,8 +217,12 @@ export function parseMentionsCsv(csv: string): CommunityMentionRow[] {
     const p = (cols[platformIdx >= 0 ? platformIdx : 1] || "").toLowerCase();
     if (p.includes("reddit")) platform = "reddit";
     else if (p.includes("quora")) platform = "quora";
+    else if (p.includes("hacker") || p.includes("hn")) platform = "hacker_news";
+    else if (p.includes("github")) platform = "github";
     else if (url.includes("reddit.com")) platform = "reddit";
     else if (url.includes("quora.com")) platform = "quora";
+    else if (url.includes("ycombinator.com")) platform = "hacker_news";
+    else if (url.includes("github.com")) platform = "github";
 
     return {
       platform,

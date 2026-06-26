@@ -13,8 +13,9 @@ import { findAuthorityOpportunities } from "@/lib/engines/authority-finder";
 import { generateRoadmap } from "@/lib/engines/roadmap-generator";
 import { calculateOmniPresenceScore } from "@/lib/scoring/omnipresence";
 import { calculateAeoReadiness } from "@/lib/engines/aeo-readiness";
-import { getDomainAuthority } from "@/lib/providers/tranco";
+import { getAuthorityRating } from "@/lib/engines/authority-rating";
 import { getPageSpeed, pageSpeedToRetrievalScore } from "@/lib/providers/pagespeed";
+import { hasWikipediaPresence, hasWikidataEntity } from "@/lib/providers/wikimedia";
 import { recordScanBaseline } from "@/lib/engines/results-ledger";
 import { lockGuaranteeBaseline } from "@/lib/engines/guarantee";
 import { syncTechnicalFindingsToOpsQueue } from "@/lib/engines/on-page-queue";
@@ -200,14 +201,17 @@ export async function stepScoreAndRoadmap(
     .select("*")
     .eq("project_id", project.id);
 
-  // Free authority + page-speed signals (graceful when unreachable)
-  const [authRes, psRes] = demo
-    ? [null, null]
+  // Free authority + page-speed signals (graceful when unreachable). Authority
+  // is the unified Authority Rating (Tranco + Common Crawl + OpenPageRank + age).
+  const [authRes, psRes, wikiPresence, wikidataPresence] = demo
+    ? [null, null, false, false]
     : await Promise.all([
-        getDomainAuthority(project.domain),
+        getAuthorityRating(project.domain).catch(() => null),
         getPageSpeed(project.domain, "mobile"),
+        hasWikipediaPresence(project.name).catch(() => false),
+        hasWikidataEntity(project.name).catch(() => false),
       ]);
-  const domainAuthority = authRes?.data?.authorityScore;
+  const domainAuthority = authRes?.rating;
   const pageSpeedScore = psRes?.success && psRes.data ? pageSpeedToRetrievalScore(psRes.data) : undefined;
 
   const score = calculateOmniPresenceScore({
@@ -235,6 +239,8 @@ export async function stepScoreAndRoadmap(
     technicalFindings,
     visibilityResults: (visibilityResults || []) as never[],
     entityScore: entityProfile?.entity_score ?? undefined,
+    hasWikipedia: wikiPresence,
+    hasWikidata: wikidataPresence,
     coverageItems: coverageItems as never[],
     authorityOpportunities: authorityOpportunities as never[],
     domainAuthority,

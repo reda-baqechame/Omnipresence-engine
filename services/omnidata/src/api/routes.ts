@@ -15,6 +15,9 @@ import { runMapsLive } from "../engines/maps-serp.js";
 import { getRankHistoryHydrated } from "../store.js";
 import { isWebgraphReady } from "../engines/webgraph.js";
 import { getKeywordMetrics, hasKeywordPlanner } from "../engines/keyword-planner.js";
+import { getTrends } from "../engines/trends.js";
+import { detectTechStack } from "../engines/techstack.js";
+import { runPopularity } from "../engines/popularity.js";
 import { dfsResponse } from "./response.js";
 
 const router = Router();
@@ -130,6 +133,16 @@ router.post("/v3/keywords/metrics/live", async (req, res) => {
   );
 });
 
+router.post("/v3/keywords/trends/live", async (req, res) => {
+  const item = (req.body as Array<{ keyword?: string; geo?: string; timeframe?: string }>)?.[0];
+  if (!item?.keyword) {
+    res.status(400).json(dfsResponse([], 40000));
+    return;
+  }
+  const result = await getTrends(item.keyword, item.geo || "US", item.timeframe || "today 12-m");
+  res.json(dfsResponse([{ result: [result] }]));
+});
+
 router.post("/v3/rank_tracker/check/live", async (req, res) => {
   const item = (req.body as Array<{ keyword?: string; domain?: string; location_name?: string }>)?.[0];
   if (!item?.keyword || !item?.domain) {
@@ -233,6 +246,28 @@ router.post("/v3/domain_analytics/overview/live", async (req, res) => {
     return;
   }
   const result = await runDomainAnalytics(domain);
+  res.json(dfsResponse([{ result: [result] }]));
+});
+
+router.post("/v3/domain/popularity/live", async (req, res) => {
+  const domain = (req.body as Array<{ target?: string; domain?: string }>)?.[0]?.target
+    || (req.body as Array<{ target?: string; domain?: string }>)?.[0]?.domain;
+  if (!domain) {
+    res.status(400).json(dfsResponse([], 40000));
+    return;
+  }
+  const result = await runPopularity(domain);
+  res.json(dfsResponse([{ result: [result] }]));
+});
+
+router.post("/v3/tech/detect", async (req, res) => {
+  const url = (req.body as Array<{ url?: string; target?: string }>)?.[0]?.url
+    || (req.body as Array<{ url?: string; target?: string }>)?.[0]?.target;
+  if (!url) {
+    res.status(400).json(dfsResponse([], 40000));
+    return;
+  }
+  const result = await detectTechStack(url);
   res.json(dfsResponse([{ result: [result] }]));
 });
 

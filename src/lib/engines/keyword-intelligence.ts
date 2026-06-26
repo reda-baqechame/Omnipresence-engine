@@ -12,6 +12,8 @@ import { preferLiveData } from "@/lib/config/capabilities";
 export interface KeywordOpportunityRow {
   keyword: string;
   volume_estimate?: number;
+  /** Relative Google Trends demand index (0-100), not absolute volume. */
+  trend_index?: number;
   difficulty?: number;
   intent?: string;
   our_position?: number | null;
@@ -49,10 +51,10 @@ export async function runKeywordResearch(
   }
 
   const volumeMap = new Map(
-    [...research.suggestions, ...research.related].map((k) => [
-      (k as { keyword: string }).keyword,
-      (k as { volume_estimate?: number }).volume_estimate,
-    ])
+    [...research.suggestions, ...research.related].map((k) => [k.keyword, k.volume_estimate])
+  );
+  const trendMap = new Map(
+    [...research.suggestions, ...research.related].map((k) => [k.keyword, k.trend_index])
   );
 
   const opportunities: KeywordOpportunityRow[] = (scored.length ? scored : allKeywords.map((k) => ({
@@ -64,11 +66,12 @@ export async function runKeywordResearch(
   }))).map((row) => ({
     keyword: row.keyword,
     volume_estimate: volumeMap.get(row.keyword),
+    trend_index: trendMap.get(row.keyword),
     difficulty: row.difficulty,
     intent: row.intent,
     our_position: row.our_position,
     opportunity_score: row.opportunity_score,
-    source: "omnidata_serp",
+    source: research.data_source === "keyword_planner" ? "keyword_planner" : "omnidata_serp",
   }));
 
   return { opportunities: opportunities.sort((a, b) => b.opportunity_score - a.opportunity_score), live: true };

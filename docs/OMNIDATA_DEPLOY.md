@@ -72,6 +72,9 @@ The app provider at `src/lib/providers/dataforseo.ts` routes to OmniData when `O
 - `POST /v3/keywords/metrics/live` — real volume/CPC (Keyword Planner)
 - `POST /v3/rank_tracker/check/live`
 - `POST /v3/on_page/crawl` — multi-page technical crawl
+- `POST /v3/keywords/trends/live` — keyless Google Trends demand index + related/rising (Phase 11)
+- `POST /v3/tech/detect` — best-effort tech-stack fingerprint (Phase 11)
+- `POST /v3/domain/popularity/live` — relative Popularity Index, not absolute traffic (Phase 11)
 
 ## VPS sizing
 

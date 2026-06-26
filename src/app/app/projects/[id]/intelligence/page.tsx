@@ -1,5 +1,6 @@
 import { notFound } from "next/navigation";
 import { IntelligencePanel } from "@/components/intelligence-panel";
+import { CompetitorIntel } from "@/components/competitor-intel";
 import { getProject } from "@/lib/projects";
 
 export default async function IntelligencePage({
@@ -20,6 +21,11 @@ export default async function IntelligencePage({
         </p>
       </div>
       <IntelligencePanel projectId={id} />
+      <CompetitorIntel
+        domain={project.domain}
+        competitors={project.competitors || []}
+        brandName={project.name}
+      />
     </div>
   );
 }

@@ -52,9 +52,13 @@ export interface AeoReadinessInputs {
   technicalFindings: Array<Pick<TechnicalFinding, "category" | "severity" | "title" | "fix_recommendation">>;
   visibilityResults: Array<Pick<VisibilityResult, "engine" | "brand_mentioned" | "brand_cited" | "competitor_mentions" | "raw_response" | "source_domains" | "prompt_text">>;
   entityScore?: number;
+  /** Brand has a Wikipedia article (strong AEO/LLM citation signal). */
+  hasWikipedia?: boolean;
+  /** Brand has a Wikidata entity (structured knowledge-graph presence). */
+  hasWikidata?: boolean;
   coverageItems?: Array<Pick<CoverageItem, "surface" | "is_present">>;
   authorityOpportunities?: Array<Pick<AuthorityOpportunity, "status">>;
-  /** 0-100 Tranco authority score */
+  /** 0-100 unified Authority Rating (Tranco + Common Crawl + OpenPageRank + age) */
   domainAuthority?: number;
   /** 0-100 PageSpeed retrieval-health score */
   pageSpeedScore?: number;
@@ -147,15 +151,21 @@ export function calculateAeoReadiness(inputs: AeoReadinessInputs): AeoReadiness 
     owningEngine: "schema-engine",
   };
 
-  // L4 — Entity consistency (probabilistic / high control)
-  const entityScore = clamp(inputs.entityScore ?? 0);
+  // L4 — Entity consistency (probabilistic / high control). Wikipedia + Wikidata
+  // presence are disproportionately strong LLM-citation signals, so they boost
+  // the base entity score.
+  const presenceBoost = (inputs.hasWikipedia ? 20 : 0) + (inputs.hasWikidata ? 15 : 0);
+  const entityScore = clamp((inputs.entityScore ?? 0) + presenceBoost);
+  const entityBlockers: string[] = [];
+  if (!inputs.hasWikipedia) entityBlockers.push("No Wikipedia article (high-value AI-citation source)");
+  if (entityScore < 45) entityBlockers.push("Weak or inconsistent entity graph");
   const l4: AeoLever = {
     id: "entity",
     name: "Entity consistency",
     type: "probabilistic",
     score: entityScore,
     status: statusOf(entityScore),
-    blockers: entityScore < 45 ? ["Weak or inconsistent entity graph"] : [],
+    blockers: entityBlockers,
     nextAction: entityScore < 75
       ? "Align name/category across Wikidata, Wikipedia, Crunchbase, G2, LinkedIn and add sameAs JSON-LD."
       : "Maintain entity consistency across knowledge-graph sources.",

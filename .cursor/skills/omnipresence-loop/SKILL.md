@@ -55,7 +55,8 @@ When all tasks are `done`, run `npm run production:ready` (or `verify:all` + `au
 
 ## Phase priority
 
-Read `docs/OMNIPRESENCE_PHASE10_SPEC.md` for the current (real-data) plan and
+Read `docs/OMNIPRESENCE_PHASE11_SPEC.md` for the current (Free Data Moat) plan,
+`docs/OMNIPRESENCE_PHASE10_SPEC.md` for the real-data plan, and
 `docs/OMNIPRESENCE_PHASE8_SPEC.md` for competitive gap analysis vs AEO Engine.
 
 | Phase | Manifest version | Status |
@@ -66,6 +67,15 @@ Read `docs/OMNIPRESENCE_PHASE10_SPEC.md` for the current (real-data) plan and
 | **Phase 8 Beat AEO Engine** | **v8.0.0** | **done** |
 | **Phase 9 Dominate AEO** | **v9.0.0** | **done** |
 | **Phase 10 Real Results, Real Data** | **v10.0.0** | **done — provision OmniData host + keys, then `audit:live`** |
+| **Phase 11 The Free Data Moat** | **v11.0.0** | **done — keyless Trends/tech/popularity/authority/HN/entity** |
+
+## Phase 11 focus order (v11.0.0)
+
+All Phase 11 tasks are implemented (keyless Google Trends demand index,
+open-source tech-stack detection, honest relative Popularity Index, unified
+Authority Rating, Hacker News + Wikipedia/Wikidata entity signals). Everything
+is keyless and works without paid APIs; OmniData is preferred when deployed.
+Apply migration `0019_phase11.sql` (extends `community_mentions.platform`).
 
 ## Phase 10 focus order (v10.0.0)
 
@@ -80,8 +90,8 @@ the OmniData host + provider keys, then `npm run audit:live` to verify real data
 ## Loop prompt (Cursor)
 
 ```
-Read .cursor/skills/omnipresence-loop/SKILL.md and docs/OMNIPRESENCE_PHASE10_SPEC.md.
-Execute the next pending BUILD_MANIFEST v10 task only. Run verify:all (+ omnidata:parity
+Read .cursor/skills/omnipresence-loop/SKILL.md and docs/OMNIPRESENCE_PHASE11_SPEC.md.
+Execute the next pending BUILD_MANIFEST v11 task only. Run verify:all (+ omnidata:parity
 if OmniData changed). Commit if green.
 ```
 

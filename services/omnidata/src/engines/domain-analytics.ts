@@ -103,9 +103,9 @@ export async function runInstantPage(url: string): Promise<{
     const ldMatches = html.matchAll(/"@type"\s*:\s*"([^"]+)"/g);
     schemaTypes = [...new Set([...ldMatches].map((m) => m[1]))];
     const imgTags = [...html.matchAll(/<img\b[^>]*>/gi)];
-    const imagesWithoutAlt = imgTags.filter((m) => !/\balt\s*=\s*["'][^"']+["']/i.test(m[0])).length;
+    imagesWithoutAlt = imgTags.filter((m) => !/\balt\s*=\s*["'][^"']+["']/i.test(m[0])).length;
     const text = html.replace(/<script[\s\S]*?<\/script>/gi, "").replace(/<[^>]+>/g, " ");
-    const wordCount = text.split(/\s+/).filter(Boolean).length;
+    wordCount = text.split(/\s+/).filter(Boolean).length;
   } catch {
     // partial data from crawl title only
   }

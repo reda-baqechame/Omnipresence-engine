@@ -1,5 +1,6 @@
 import type { KeywordSuggestion } from "../types.js";
 import { getKeywordMetrics, hasKeywordPlanner } from "./keyword-planner.js";
+import { getTrendsComparison } from "./trends.js";
 
 const SERPER_KEY = process.env.SERPER_API_KEY;
 
@@ -76,7 +77,7 @@ export async function runKeywords(seed: string): Promise<{
   seed: string;
   suggestions: KeywordSuggestion[];
   related: KeywordSuggestion[];
-  data_source: "keyword_planner" | "estimated";
+  data_source: "keyword_planner" | "trends_estimated" | "estimated";
 }> {
   const autocomplete = await googleAutocomplete(seed);
   const relatedSeeds = autocomplete.slice(0, 3);
@@ -106,7 +107,7 @@ export async function runKeywords(seed: string): Promise<{
   }));
 
   // Upgrade to REAL volume + CPC via Google Ads Keyword Planner when configured.
-  let dataSource: "keyword_planner" | "estimated" = "estimated";
+  let dataSource: "keyword_planner" | "trends_estimated" | "estimated" = "estimated";
   if (hasKeywordPlanner()) {
     const allKeywords = [
       seed,
@@ -130,6 +131,27 @@ export async function runKeywords(seed: string): Promise<{
       suggestions = suggestions.map(enrich);
       related = related.map(enrich);
       dataSource = "keyword_planner";
+    }
+  }
+
+  // No real volume? Attach a REAL Google Trends demand index (0-100) to the top
+  // keywords in one comparison request. This is relative demand, not volume.
+  if (dataSource === "estimated") {
+    const top = [...suggestions]
+      .sort((a, b) => (b.volume_estimate ?? 0) - (a.volume_estimate ?? 0))
+      .slice(0, 5)
+      .map((s) => s.keyword);
+    const compare = [...new Set([seed, ...top])].slice(0, 5);
+    const trendMap = await getTrendsComparison(compare);
+    if (trendMap && trendMap.size > 0) {
+      const attach = (s: KeywordSuggestion): KeywordSuggestion => {
+        const idx = trendMap.get(s.keyword);
+        if (idx === undefined) return s;
+        return { ...s, trend_index: idx, data_source: "trends_estimated" };
+      };
+      suggestions = suggestions.map(attach);
+      related = related.map(attach);
+      dataSource = "trends_estimated";
     }
   }
 

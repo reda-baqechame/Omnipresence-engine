@@ -42,8 +42,17 @@ export interface KeywordSuggestion {
   /** Real CPC (USD) from Google Ads Keyword Planner when available. */
   cpc?: number;
   competition?: "LOW" | "MEDIUM" | "HIGH" | "UNSPECIFIED";
-  /** "keyword_planner" = real Google Ads data; "estimated" = autocomplete heuristic. */
-  data_source?: "keyword_planner" | "estimated";
+  /** Relative Google Trends demand index (0-100), not an absolute volume. */
+  trend_index?: number;
+  /** Recent-vs-earlier momentum from Google Trends, -100..100. */
+  trend_momentum?: number;
+  /**
+   * Provenance of the demand figure:
+   * - "keyword_planner": real Google Ads data (bucketed)
+   * - "trends_estimated": heuristic volume + real Google Trends demand index
+   * - "estimated": autocomplete/SERP heuristic only
+   */
+  data_source?: "keyword_planner" | "trends_estimated" | "estimated";
 }
 
 export interface RankSnapshot {

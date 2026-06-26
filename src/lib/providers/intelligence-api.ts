@@ -14,22 +14,38 @@ function extractResult<T>(data: {
   return (block as T) || null;
 }
 
+export interface LiveKeywordRow {
+  keyword: string;
+  volume_estimate?: number;
+  source?: string;
+  /** Relative Google Trends demand index (0-100), not absolute volume. */
+  trend_index?: number;
+  data_source?: "keyword_planner" | "trends_estimated" | "estimated";
+}
+
 export async function researchKeywordsLive(seed: string): Promise<{
   seed: string;
-  suggestions: Array<{ keyword: string; volume_estimate?: number; source?: string }>;
-  related: Array<{ keyword: string; volume_estimate?: number }>;
+  suggestions: LiveKeywordRow[];
+  related: LiveKeywordRow[];
+  data_source?: "keyword_planner" | "trends_estimated" | "estimated";
 } | null> {
   const data = await intelligencePost<{ tasks: Array<{ result: Array<Record<string, unknown>> }> }>(
     "/keywords/suggestions/live",
     [{ keyword: seed }]
   );
   if (data) {
-    const result = extractResult<{ seed: string; suggestions: unknown[]; related: unknown[] }>(data);
+    const result = extractResult<{
+      seed: string;
+      suggestions: unknown[];
+      related: unknown[];
+      data_source?: "keyword_planner" | "trends_estimated" | "estimated";
+    }>(data);
     if (result) {
       return result as {
         seed: string;
-        suggestions: Array<{ keyword: string; volume_estimate?: number; source?: string }>;
-        related: Array<{ keyword: string; volume_estimate?: number }>;
+        suggestions: LiveKeywordRow[];
+        related: LiveKeywordRow[];
+        data_source?: "keyword_planner" | "trends_estimated" | "estimated";
       };
     }
   }

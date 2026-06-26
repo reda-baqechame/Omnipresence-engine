@@ -6,6 +6,8 @@ interface KeywordRow {
   id?: string;
   keyword: string;
   volume_estimate?: number;
+  /** Relative Google Trends demand index (0-100), not absolute volume. */
+  trend_index?: number;
   difficulty?: number;
   intent?: string;
   our_position?: number | null;
@@ -146,6 +148,7 @@ export function KeywordsPanel({ projectId, industry = "" }: KeywordsPanelProps) 
               <tr>
                 <th className="text-left p-3">Keyword</th>
                 <th className="text-right p-3">Score</th>
+                <th className="text-right p-3" title="Relative Google Trends demand (0-100), not absolute volume">Demand</th>
                 <th className="text-right p-3">Difficulty</th>
                 <th className="text-right p-3">Position</th>
                 <th className="text-left p-3">Intent</th>
@@ -156,6 +159,21 @@ export function KeywordsPanel({ projectId, industry = "" }: KeywordsPanelProps) 
                 <tr key={row.keyword} className="border-t border-border/50">
                   <td className="p-3">{row.keyword}</td>
                   <td className="p-3 text-right text-primary">{row.opportunity_score}</td>
+                  <td className="p-3 text-right">
+                    {typeof row.trend_index === "number" ? (
+                      <span className="inline-flex items-center gap-1.5">
+                        <span className="inline-block h-1.5 w-10 rounded bg-muted align-middle">
+                          <span
+                            className="block h-1.5 rounded bg-primary"
+                            style={{ width: `${row.trend_index}%` }}
+                          />
+                        </span>
+                        <span className="text-xs text-muted-foreground">{row.trend_index}</span>
+                      </span>
+                    ) : (
+                      "—"
+                    )}
+                  </td>
                   <td className="p-3 text-right">{row.difficulty ?? "—"}</td>
                   <td className="p-3 text-right">{row.our_position ?? "—"}</td>
                   <td className="p-3 text-muted-foreground">{row.intent ?? "—"}</td>
