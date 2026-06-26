@@ -12,6 +12,8 @@ interface KeywordRow {
   /** Relative Google Trends demand index (0-100), not absolute volume. */
   trend_index?: number;
   difficulty?: number;
+  /** ranking_authority = real (authority of ranking pages); heuristic = fallback. */
+  difficulty_method?: "ranking_authority" | "heuristic";
   intent?: string;
   our_position?: number | null;
   opportunity_score: number;
@@ -198,7 +200,23 @@ export function KeywordsPanel({ projectId, industry = "" }: KeywordsPanelProps) 
                       "—"
                     )}
                   </td>
-                  <td className="p-3 text-right">{row.difficulty ?? "—"}</td>
+                  <td className="p-3 text-right">
+                    {row.difficulty != null ? (
+                      <span
+                        className="inline-flex items-center gap-1"
+                        title={
+                          row.difficulty_method === "ranking_authority"
+                            ? "Real KD — from the authority of the domains currently ranking"
+                            : "Heuristic difficulty (no SERP authority available)"
+                        }
+                      >
+                        {row.difficulty}
+                        {row.difficulty_method === "ranking_authority" && (
+                          <span className="rounded bg-green-500/15 px-1 py-0.5 text-[9px] uppercase text-green-400">real</span>
+                        )}
+                      </span>
+                    ) : "—"}
+                  </td>
                   <td className="p-3 text-right">{row.our_position ?? "—"}</td>
                   <td className="p-3 text-muted-foreground">{row.intent ?? "—"}</td>
                 </tr>

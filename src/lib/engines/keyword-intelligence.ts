@@ -15,6 +15,7 @@ import {
   type VolumeAnchor,
   type VolumeConfidence,
 } from "@/lib/engines/keyword-volume";
+import { scoreKeywordsKeyless, hasKeylessDifficulty } from "@/lib/engines/keyword-difficulty";
 
 export interface KeywordOpportunityRow {
   keyword: string;
@@ -28,6 +29,8 @@ export interface KeywordOpportunityRow {
   /** Relative Google Trends demand index (0-100), not absolute volume. */
   trend_index?: number;
   difficulty?: number;
+  /** How difficulty was derived: ranking_authority=real (authority of ranking pages), heuristic=fallback. */
+  difficulty_method?: "ranking_authority" | "heuristic";
   intent?: string;
   our_position?: number | null;
   opportunity_score: number;
@@ -54,6 +57,7 @@ export async function runKeywordResearch(
   let scored: Array<{
     keyword: string;
     difficulty: number;
+    difficulty_method?: "ranking_authority" | "heuristic";
     intent: string;
     our_position: number | null;
     opportunity_score: number;
@@ -62,6 +66,23 @@ export async function runKeywordResearch(
   if (domain && allKeywords.length) {
     const raw = await keywordOpportunitiesLive(domain, allKeywords);
     if (raw) scored = raw as typeof scored;
+  }
+
+  // No OmniData/DataForSEO opportunity scoring? Compute REAL keyword difficulty
+  // keylessly from the Tranco authority of the domains actually ranking (the
+  // technique behind Ahrefs/Semrush KD), so app-only users still get real KD.
+  if (scored.length === 0 && domain && allKeywords.length && hasKeylessDifficulty()) {
+    const keyless = await scoreKeywordsKeyless(domain, allKeywords);
+    if (keyless.length) {
+      scored = keyless.map((k) => ({
+        keyword: k.keyword,
+        difficulty: k.difficulty,
+        difficulty_method: k.difficulty_method,
+        intent: k.intent,
+        our_position: k.our_position,
+        opportunity_score: k.opportunity_score,
+      }));
+    }
   }
 
   const volumeMap = new Map(
@@ -74,6 +95,7 @@ export async function runKeywordResearch(
   const opportunities: KeywordOpportunityRow[] = (scored.length ? scored : allKeywords.map((k) => ({
     keyword: k,
     difficulty: 50,
+    difficulty_method: "heuristic" as const,
     intent: "informational",
     our_position: null,
     opportunity_score: 40,
@@ -82,6 +104,7 @@ export async function runKeywordResearch(
     volume_estimate: volumeMap.get(row.keyword),
     trend_index: trendMap.get(row.keyword),
     difficulty: row.difficulty,
+    difficulty_method: row.difficulty_method,
     intent: row.intent,
     our_position: row.our_position,
     opportunity_score: row.opportunity_score,

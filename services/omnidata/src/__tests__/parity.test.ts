@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import { dfsResponse } from "../api/response.js";
 import { reverseHost } from "../engines/webgraph.js";
 import { detectFromResponse } from "../engines/techstack.js";
+import { computeDifficulty } from "../engines/keyword-difficulty.js";
 
 /**
  * Parity checks: the OmniData engine must speak DataForSEO's response shape so
@@ -62,5 +63,45 @@ describe("tech-stack fingerprint detection (Phase 11)", () => {
     assert.equal(env.status_code, 20000);
     const wrapped = (env.tasks[0] as { result: Array<{ technologies: unknown[] }> }).result[0];
     assert.ok(Array.isArray(wrapped.technologies));
+  });
+});
+
+describe("keyword difficulty from ranking authority (Phase 12)", () => {
+  test("real method: high-authority SERP yields high KD", () => {
+    const authorityMap = new Map([
+      ["wikipedia.org", 95],
+      ["forbes.com", 88],
+      ["nytimes.com", 90],
+    ]);
+    const { difficulty, method } = computeDifficulty({
+      domains: ["wikipedia.org", "forbes.com", "nytimes.com"],
+      serpFeatureTypes: ["ai_overview"],
+      authorityMap,
+    });
+    assert.equal(method, "ranking_authority");
+    assert.ok(difficulty >= 80, `expected hard KD, got ${difficulty}`);
+  });
+
+  test("real method: low-authority SERP yields low KD", () => {
+    const authorityMap = new Map([
+      ["smallblog.io", 8],
+      ["niche-forum.net", 5],
+    ]);
+    const { difficulty, method } = computeDifficulty({
+      domains: ["smallblog.io", "niche-forum.net"],
+      serpFeatureTypes: [],
+      authorityMap,
+    });
+    assert.equal(method, "ranking_authority");
+    assert.ok(difficulty < 30, `expected easy KD, got ${difficulty}`);
+  });
+
+  test("falls back to heuristic when no authority map is available", () => {
+    const { method } = computeDifficulty({
+      domains: ["a.com", "b.com", "c.com"],
+      serpFeatureTypes: [],
+      authorityMap: new Map(),
+    });
+    assert.equal(method, "heuristic");
   });
 });

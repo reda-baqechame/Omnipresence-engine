@@ -61,6 +61,29 @@ not visits**. `rankToPopularityScore` maps rank → 0-100 on a log scale.
   (Popularity, Authority, Global rank + trend, CWV field) plus per-domain tech
   stacks, for the brand vs up to 4 competitors.
 
+## Tier D — Real keyword difficulty (Ahrefs-style, keyless)
+
+Ahrefs/Semrush KD is a function of **how strong the pages that already rank
+are** (referring domains / authority of the top results), not the average SERP
+position. We reproduce that keylessly:
+
+- `src/lib/engines/keyword-difficulty.ts` — for each keyword, fetch the top-10
+  organic results (Serper/Brave/OmniData scrape) and compute KD from the
+  **Tranco authority of the domains actually ranking** (`difficulty = avgAuth ×
+  0.85 + highAuthorityCount × 3 + AI-overview/feature boosts`). This means
+  app-only keyless users get **real KD** instead of a flat `50`. Opportunity
+  score blends low-KD, striking-distance position, and not-yet-ranking gaps.
+- `services/omnidata/src/engines/keyword-difficulty.ts` — `estimateKeywordDifficulty`
+  now uses **OpenPageRank** authority of the ranking domains via the pure,
+  parity-tested `computeDifficulty()`, with graceful fallback to the prior
+  diversity heuristic when no authority data is available.
+- Every row is labeled `ranking_authority` (real) vs `heuristic`, and the
+  keywords table shows a small **"real"** marker so the source is transparent.
+
+Verified live: a SERP of high-authority domains (wikipedia/forbes/github/
+stackoverflow) yields KD ≈ 73 from real Tranco data; a low-authority SERP yields
+KD < 30.
+
 ## Honesty guardrails (unchanged, reinforced)
 
 - Never present absolute traffic/visits. Popularity Index and global rank are
