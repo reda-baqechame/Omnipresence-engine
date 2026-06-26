@@ -77,10 +77,14 @@ export async function getCompetitiveSnapshot(
   const popWeight = popParts.reduce((s, p) => s + p.weight, 0);
   const popularityScore = popWeight > 0 ? Math.round(popParts.reduce((s, p) => s + p.value * p.weight, 0) / popWeight) : 0;
 
-  // Authority Rating (DR-style).
+  // Authority Rating (DR-style). When Tranco is unlisted (domain outside the
+  // top-1M), fall back to the rank.to-derived score so smaller real domains
+  // still get a non-zero authority instead of "unranked".
+  const authBase = tranco > 0 ? tranco : typeof globalRank === "number" ? rankToPopularityScore(globalRank) : 0;
+  const authBaseSource = tranco > 0 ? "tranco" : typeof globalRank === "number" ? "rank.to" : "unlisted";
   const authParts: Array<{ value: number; weight: number }> = [];
   const authSources: string[] = [];
-  if (tranco > 0) { authParts.push({ value: tranco, weight: 0.45 }); authSources.push("tranco"); }
+  if (authBase > 0) { authParts.push({ value: authBase, weight: authBaseSource === "tranco" ? 0.45 : 0.36 }); authSources.push(authBaseSource); }
   if (referringDomains > 0) { authParts.push({ value: logScore(referringDomains, 33), weight: 0.35 }); authSources.push("common_crawl"); }
   if (ageYears > 0) { authParts.push({ value: Math.min(100, ageYears * 5), weight: 0.2 }); authSources.push("domain_age"); }
   const authWeight = authParts.reduce((s, p) => s + p.weight, 0);

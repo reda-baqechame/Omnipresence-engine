@@ -84,6 +84,24 @@ Verified live: a SERP of high-authority domains (wikipedia/forbes/github/
 stackoverflow) yields KD ≈ 73 from real Tranco data; a low-authority SERP yields
 KD < 30.
 
+## Tier E — Authority coverage beyond Tranco's top-1M (keyless)
+
+Tranco only ranks the top ~1M domains, so smaller (but real) sites returned a
+`0`/"unlisted" authority — understating KD, Authority Rating, and the AEO
+authority lever. `src/lib/providers/domain-authority.ts` adds a keyless
+resolution chain:
+
+1. **Tranco** rank (research-grade top-1M) — best when present.
+2. **rank.to** global rank (covers millions of domains, no auth) — fallback.
+3. `unlisted` (0) only when nothing resolves.
+
+Wired into `authority-rating.ts` and `competitive-snapshot.ts` (reusing the
+already-fetched rank.to rank to avoid duplicate calls). The base-authority
+weight is slightly lower when sourced from rank.to (popularity-derived proxy)
+vs Tranco, and the `authoritySource` is returned for honest labeling. This
+strictly improves coverage — a smaller domain now gets a real authority score
+instead of zero.
+
 ## Honesty guardrails (unchanged, reinforced)
 
 - Never present absolute traffic/visits. Popularity Index and global rank are

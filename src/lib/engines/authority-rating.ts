@@ -9,7 +9,7 @@
  * This is a blended proxy, not Ahrefs' proprietary DR. Callers should label it
  * "Authority Rating (free-signal blend)".
  */
-import { getDomainAuthority } from "@/lib/providers/tranco";
+import { resolveDomainAuthority } from "@/lib/providers/domain-authority";
 import { getBacklinksFree } from "@/lib/providers/backlinks-free";
 import { getDomainAge } from "@/lib/providers/domain-age";
 import { isOmniDataActive, labsApiPost } from "@/lib/providers/dataforseo";
@@ -19,7 +19,10 @@ export interface AuthorityRating {
   /** 0-100 blended authority (DR-like). */
   rating: number;
   components: {
+    /** Base authority score (Tranco when listed, else rank.to-derived). */
     tranco: number;
+    /** Where the base authority came from. */
+    authoritySource: "tranco" | "rank.to" | "unlisted";
     referringDomains: number;
     openPageRank?: number;
     ageYears: number;
@@ -46,13 +49,14 @@ export async function getAuthorityRating(domain: string): Promise<AuthorityRatin
   const clean = domain.replace(/^https?:\/\//, "").replace(/^www\./, "").split("/")[0].toLowerCase();
 
   const [authority, backlinks, age, opr] = await Promise.all([
-    getDomainAuthority(clean),
+    resolveDomainAuthority(clean),
     getBacklinksFree(clean, 100).catch(() => null),
     getDomainAge(clean),
     fetchOpenPageRank(clean),
   ]);
 
-  const tranco = authority.success && authority.data ? authority.data.authorityScore : 0;
+  const tranco = authority.score;
+  const authoritySource = authority.source;
   const referringDomains = backlinks?.success && backlinks.data
     ? new Set(backlinks.data.map((b) => b.domain)).size
     : 0;
@@ -62,8 +66,9 @@ export async function getAuthorityRating(domain: string): Promise<AuthorityRatin
   const parts: Array<{ value: number; weight: number }> = [];
 
   if (tranco > 0) {
-    parts.push({ value: tranco, weight: 0.4 });
-    sources.push("tranco");
+    // rank.to-derived base is a slightly weaker authority proxy than Tranco.
+    parts.push({ value: tranco, weight: authoritySource === "tranco" ? 0.4 : 0.32 });
+    sources.push(authoritySource === "tranco" ? "tranco" : "rank.to");
   }
   if (referringDomains > 0) {
     parts.push({ value: logScore(referringDomains, 33), weight: 0.3 });
@@ -86,7 +91,7 @@ export async function getAuthorityRating(domain: string): Promise<AuthorityRatin
   return {
     domain: clean,
     rating,
-    components: { tranco, referringDomains, openPageRank: opr, ageYears },
+    components: { tranco, authoritySource, referringDomains, openPageRank: opr, ageYears },
     sources,
   };
 }
