@@ -18,7 +18,9 @@ export async function CompetitorIntel({
   const targets = [domain, ...competitors.slice(0, 4)].filter(Boolean);
   const snapshots = await Promise.all(
     targets.map((t, i) =>
-      safeSnapshot(t, { name: i === 0 ? brandName : undefined, includeWiki: i === 0, includeCwv: true })
+      // Real-user CWV (PSI) only for the brand: the keyless quota is small, so
+      // fetching it for every competitor just burns quota and slows the page.
+      safeSnapshot(t, { name: i === 0 ? brandName : undefined, includeWiki: i === 0, includeCwv: i === 0 })
     )
   );
 

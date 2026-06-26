@@ -22,22 +22,41 @@ function cleanDomain(domain: string): string {
   return domain.replace(/^https?:\/\//, "").replace(/^www\./, "").split("/")[0].toLowerCase().trim();
 }
 
+// In-process TTL cache — rank.to updates daily and asks callers to keep request
+// rates reasonable, so reuse within a process (popularity + competitive matrix
+// both look up the same domains).
+const RANKTO_CACHE_TTL_MS = 60 * 60 * 1000;
+const rankToCache = new Map<string, { at: number; result: RankToResult }>();
+
 export async function getRankToRank(domain: string, days: 7 | 14 | 30 = 30): Promise<RankToResult> {
   const clean = cleanDomain(domain);
   const empty: RankToResult = { domain: clean, trend: "unknown", history: [], available: false };
   if (!clean) return empty;
+
+  const cacheKey = `${clean}:${days}`;
+  const cached = rankToCache.get(cacheKey);
+  if (cached && Date.now() - cached.at < RANKTO_CACHE_TTL_MS) {
+    return cached.result;
+  }
+
+  // Cache failures briefly too, so a flaky/rate-limited response doesn't trigger
+  // a retry storm across the popularity + competitive-matrix callers.
+  const cacheFail = () => {
+    rankToCache.set(cacheKey, { at: Date.now(), result: empty });
+    return empty;
+  };
 
   try {
     const res = await fetch(`https://rank.to/api/?d=${encodeURIComponent(clean)}&n=${days}`, {
       headers: { Accept: "application/json", connection: "close" },
       signal: AbortSignal.timeout(10_000),
     });
-    if (!res.ok) return empty;
+    if (!res.ok) return cacheFail();
     const data = (await res.json()) as { ranks?: Record<string, number> };
     const entries = Object.entries(data.ranks || {})
       .filter(([, v]) => typeof v === "number" && v > 0)
       .sort(([a], [b]) => a.localeCompare(b));
-    if (entries.length === 0) return empty;
+    if (entries.length === 0) return cacheFail();
 
     const history = entries.map(([date, rank]) => ({ date, rank }));
     const rank = history[history.length - 1].rank;
@@ -48,9 +67,11 @@ export async function getRankToRank(domain: string, days: 7 | 14 | 30 = 30): Pro
     if (delta > Math.max(1, previousRank * 0.02)) trend = "up";
     else if (delta < -Math.max(1, previousRank * 0.02)) trend = "down";
 
-    return { domain: clean, rank, previousRank, trend, history, available: true };
+    const result: RankToResult = { domain: clean, rank, previousRank, trend, history, available: true };
+    rankToCache.set(cacheKey, { at: Date.now(), result });
+    return result;
   } catch {
-    return empty;
+    return cacheFail();
   }
 }
 
