@@ -162,6 +162,11 @@ export function getCapabilitiesSummary() {
       hackerNews: true,
       domainAge: true,
       commonCrawlBacklinks: true,
+      // Phase 12 - Index Expansion & Calibration.
+      keywordVolumeCalibration: true, // Trends extrapolation + buckets + confidence
+      globalDomainRank: true, // rank.to keyless aggregated-traffic rank
+      competitiveMatrix: true, // unified popularity + authority + tech + CWV
+      realUserCwv: true, // CrUX field data (reliable with PAGESPEED_API_KEY)
     },
   };
 }

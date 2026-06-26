@@ -8,10 +8,23 @@ import {
   hasIntelligenceApi,
 } from "@/lib/providers/intelligence-api";
 import { preferLiveData } from "@/lib/config/capabilities";
+import {
+  calibrateWithAnchor,
+  fromKnownVolume,
+  volumeBucket,
+  type VolumeAnchor,
+  type VolumeConfidence,
+} from "@/lib/engines/keyword-volume";
 
 export interface KeywordOpportunityRow {
   keyword: string;
   volume_estimate?: number;
+  /** Honest log-scale bucket, e.g. "1K–10K" or "n/a". */
+  volume_range?: string;
+  volume_low?: number;
+  volume_high?: number;
+  /** Confidence in the volume figure: high=Keyword Planner, medium=Trends-extrapolated, low=relative/heuristic. */
+  volume_confidence?: VolumeConfidence;
   /** Relative Google Trends demand index (0-100), not absolute volume. */
   trend_index?: number;
   difficulty?: number;
@@ -23,7 +36,8 @@ export interface KeywordOpportunityRow {
 
 export async function runKeywordResearch(
   seed: string,
-  domain?: string
+  domain?: string,
+  anchor?: VolumeAnchor | null
 ): Promise<{ opportunities: KeywordOpportunityRow[]; live: boolean }> {
   if (!preferLiveData() || !hasIntelligenceApi()) {
     return { opportunities: [], live: false };
@@ -74,7 +88,59 @@ export async function runKeywordResearch(
     source: research.data_source === "keyword_planner" ? "keyword_planner" : "omnidata_serp",
   }));
 
+  await applyVolumeCalibration(opportunities, research.data_source, anchor);
+
   return { opportunities: opportunities.sort((a, b) => b.opportunity_score - a.opportunity_score), live: true };
+}
+
+/**
+ * Attach honest volume buckets + confidence. Keyword Planner volumes are real
+ * (high); otherwise extrapolate from a GSC/known anchor via Trends (medium);
+ * else fall back to a heuristic bucket from the estimate (low).
+ */
+async function applyVolumeCalibration(
+  opportunities: KeywordOpportunityRow[],
+  dataSource: string | undefined,
+  anchor?: VolumeAnchor | null
+): Promise<void> {
+  if (opportunities.length === 0) return;
+  const top = opportunities.slice(0, 20).map((o) => o.keyword);
+
+  if (dataSource === "keyword_planner") {
+    for (const o of opportunities) {
+      if (typeof o.volume_estimate === "number" && o.volume_estimate > 0) {
+        const v = fromKnownVolume(o.keyword, o.volume_estimate, "keyword_planner");
+        o.volume_range = v.range_bucket;
+        o.volume_low = v.volume_low;
+        o.volume_high = v.volume_high;
+        o.volume_confidence = "high";
+      }
+    }
+    return;
+  }
+
+  if (anchor) {
+    const calibrated = await calibrateWithAnchor(top, anchor);
+    for (const o of opportunities) {
+      const v = calibrated.get(o.keyword);
+      if (!v) continue;
+      o.volume_estimate = v.volume ?? o.volume_estimate;
+      o.volume_range = v.range_bucket;
+      o.volume_low = v.volume_low;
+      o.volume_high = v.volume_high;
+      o.volume_confidence = v.confidence;
+      if (typeof v.trend_index === "number") o.trend_index = v.trend_index;
+    }
+    return;
+  }
+
+  // No anchor: present a low-confidence bucket from whatever estimate exists.
+  for (const o of opportunities) {
+    if (typeof o.volume_estimate === "number" && o.volume_estimate > 0) {
+      o.volume_range = volumeBucket(o.volume_estimate);
+      o.volume_confidence = "low";
+    }
+  }
 }
 
 export async function persistKeywordOpportunities(

@@ -195,6 +195,53 @@ async function getTrendsDirect(
   };
 }
 
+/**
+ * Relative interest (0-100) for up to 5 keywords in ONE comparison request.
+ * Returns a map keyword -> mean interest within the set. Used to extrapolate
+ * absolute volume from a known-volume anchor keyword.
+ */
+export async function getTrendsComparison(
+  keywords: string[],
+  geo = "US",
+  timeframe = "today 12-m"
+): Promise<Map<string, number> | null> {
+  const set = [...new Set(keywords)].filter(Boolean).slice(0, 5);
+  if (set.length === 0) return null;
+  const req = {
+    comparisonItem: set.map((keyword) => ({ keyword, geo, time: timeframe })),
+    category: 0,
+    property: "",
+  };
+  const exploreText = await trendsFetch(
+    `${TRENDS_BASE}/explore?hl=en-US&tz=0&req=${encodeURIComponent(JSON.stringify(req))}`
+  );
+  if (!exploreText) return null;
+  const widgets = parseGoogleJson<{ widgets?: ExploreWidget[] }>(exploreText)?.widgets || [];
+  const timeWidget = widgets.find((w) => w.id === "TIMESERIES");
+  if (!timeWidget) return null;
+
+  const text = await trendsFetch(
+    `${TRENDS_BASE}/widgetdata/multiline?hl=en-US&tz=0&req=${encodeURIComponent(
+      JSON.stringify(timeWidget.request)
+    )}&token=${encodeURIComponent(timeWidget.token)}`
+  );
+  if (!text) return null;
+  const data = parseGoogleJson<{
+    default?: { timelineData?: Array<{ value?: number[] }> };
+  }>(text);
+  const timeline = data?.default?.timelineData || [];
+  if (timeline.length === 0) return null;
+
+  const out = new Map<string, number>();
+  set.forEach((kw, idx) => {
+    const vals = timeline
+      .map((t) => t.value?.[idx])
+      .filter((v): v is number => typeof v === "number");
+    out.set(kw, vals.length ? Math.round(vals.reduce((a, b) => a + b, 0) / vals.length) : 0);
+  });
+  return out;
+}
+
 export async function getKeywordTrends(
   keyword: string,
   geo = "US",

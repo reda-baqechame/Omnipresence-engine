@@ -9,6 +9,9 @@ import {
 } from "@/lib/engines/keyword-intelligence";
 import { verifyProjectAccess } from "@/lib/security/project-access";
 import { apiError, apiForbidden, apiUnauthorized } from "@/lib/security/api-response";
+import { getValidOAuthToken } from "@/lib/oauth/tokens";
+import { fetchGscTopQueries } from "@/lib/engines/gsc-queries";
+import { deriveGscAnchor, type VolumeAnchor } from "@/lib/engines/keyword-volume";
 
 export async function GET(request: NextRequest) {
   const supabase = await createClient();
@@ -105,8 +108,38 @@ export async function POST(request: NextRequest) {
 
   const researchSeed =
     seed || project.industry || project.domain.replace(/^www\./, "").split(".")[0];
-  const { opportunities, live } = await runKeywordResearch(researchSeed, project.domain);
+
+  // Build a real volume anchor from Google Search Console when connected: a
+  // query the site ranks top-10 for, where impressions ≈ monthly searches.
+  // Lets us extrapolate absolute volume for other keywords via Google Trends.
+  const anchor = await deriveVolumeAnchorFromGsc(supabase, projectId, project.domain);
+
+  const { opportunities, live } = await runKeywordResearch(researchSeed, project.domain, anchor);
   const saved = await persistKeywordOpportunities(supabase, projectId, opportunities);
 
-  return NextResponse.json({ opportunities, saved, live, seed: researchSeed });
+  return NextResponse.json({
+    opportunities,
+    saved,
+    live,
+    seed: researchSeed,
+    volume_anchor: anchor ? { keyword: anchor.keyword, volume: anchor.volume } : null,
+  });
+}
+
+async function deriveVolumeAnchorFromGsc(
+  supabase: Awaited<ReturnType<typeof createClient>>,
+  projectId: string,
+  domain: string
+): Promise<VolumeAnchor | null> {
+  try {
+    const token = await getValidOAuthToken(supabase, projectId, "google_search_console");
+    if (!token) return null;
+    const end = new Date();
+    const start = new Date(end.getTime() - 30 * 24 * 60 * 60 * 1000);
+    const fmt = (d: Date) => d.toISOString().slice(0, 10);
+    const rows = await fetchGscTopQueries(token, domain, fmt(start), fmt(end), 200);
+    return deriveGscAnchor(rows);
+  } catch {
+    return null;
+  }
 }

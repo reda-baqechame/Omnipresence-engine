@@ -14,12 +14,17 @@ import { getDomainAuthority } from "@/lib/providers/tranco";
 import { getBacklinksFree } from "@/lib/providers/backlinks-free";
 import { getWikiInterest } from "@/lib/providers/wikimedia";
 import { getDomainAge } from "@/lib/providers/domain-age";
+import { getRankToRank, rankToPopularityScore } from "@/lib/providers/rankto";
 
 export interface PopularityComponents {
   authority: number;
   referringDomains: number;
   wikiViews: number;
   ageYears: number;
+  /** Global rank from rank.to (lower = more popular); undefined when unranked. */
+  globalRank?: number;
+  /** Rank movement over the last 30 days. */
+  rankTrend?: "up" | "down" | "flat" | "unknown";
 }
 
 export interface PopularityIndex {
@@ -44,13 +49,14 @@ export async function getPopularityIndex(
   const clean = domain.replace(/^https?:\/\//, "").replace(/^www\./, "").split("/")[0].toLowerCase();
   const includeWiki = opts.includeWiki ?? true;
 
-  const [authority, backlinks, age, wiki] = await Promise.all([
+  const [authority, backlinks, age, wiki, rankto] = await Promise.all([
     getDomainAuthority(clean),
     getBacklinksFree(clean, 100).catch(() => null),
     getDomainAge(clean),
     includeWiki && opts.name
       ? getWikiInterest(opts.name).catch(() => null)
       : Promise.resolve(null),
+    getRankToRank(clean).catch(() => null),
   ]);
 
   const authorityScore = authority.success && authority.data ? authority.data.authorityScore : 0;
@@ -59,12 +65,18 @@ export async function getPopularityIndex(
     : 0;
   const wikiViews = wiki?.exists ? wiki.totalViews : 0;
   const ageYears = age.ageYears ?? 0;
+  const globalRank = rankto?.available ? rankto.rank : undefined;
 
   const signals: string[] = [];
   const parts: Array<{ value: number; weight: number }> = [];
 
+  // rank.to aggregated traffic rank is the closest free SimilarWeb-style signal.
+  if (typeof globalRank === "number") {
+    parts.push({ value: rankToPopularityScore(globalRank), weight: 0.4 });
+    signals.push("rank.to");
+  }
   if (authorityScore > 0) {
-    parts.push({ value: authorityScore, weight: 0.45 });
+    parts.push({ value: authorityScore, weight: 0.4 });
     signals.push("tranco");
   }
   if (referringDomains > 0) {
@@ -88,7 +100,14 @@ export async function getPopularityIndex(
   return {
     domain: clean,
     score,
-    components: { authority: authorityScore, referringDomains, wikiViews, ageYears },
+    components: {
+      authority: authorityScore,
+      referringDomains,
+      wikiViews,
+      ageYears,
+      globalRank,
+      rankTrend: rankto?.available ? rankto.trend : undefined,
+    },
     signals,
     note: NOTE,
   };

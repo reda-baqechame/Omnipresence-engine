@@ -55,7 +55,8 @@ When all tasks are `done`, run `npm run production:ready` (or `verify:all` + `au
 
 ## Phase priority
 
-Read `docs/OMNIPRESENCE_PHASE11_SPEC.md` for the current (Free Data Moat) plan,
+Read `docs/OMNIPRESENCE_PHASE12_SPEC.md` for the current (Index Expansion &
+Calibration) plan, `docs/OMNIPRESENCE_PHASE11_SPEC.md` for the Free Data Moat,
 `docs/OMNIPRESENCE_PHASE10_SPEC.md` for the real-data plan, and
 `docs/OMNIPRESENCE_PHASE8_SPEC.md` for competitive gap analysis vs AEO Engine.
 
@@ -68,14 +69,17 @@ Read `docs/OMNIPRESENCE_PHASE11_SPEC.md` for the current (Free Data Moat) plan,
 | **Phase 9 Dominate AEO** | **v9.0.0** | **done** |
 | **Phase 10 Real Results, Real Data** | **v10.0.0** | **done — provision OmniData host + keys, then `audit:live`** |
 | **Phase 11 The Free Data Moat** | **v11.0.0** | **done — keyless Trends/tech/popularity/authority/HN/entity** |
+| **Phase 12 Index Expansion & Calibration** | **v12.0.0** | **done — keyword-volume calibration, rank.to popularity, competitive matrix + CrUX field** |
 
-## Phase 11 focus order (v11.0.0)
+## Phase 12 focus order (v12.0.0)
 
-All Phase 11 tasks are implemented (keyless Google Trends demand index,
-open-source tech-stack detection, honest relative Popularity Index, unified
-Authority Rating, Hacker News + Wikipedia/Wikidata entity signals). Everything
-is keyless and works without paid APIs; OmniData is preferred when deployed.
-Apply migration `0019_phase11.sql` (extends `community_mentions.platform`).
+All Phase 12 tasks are implemented. Honest keyword volume via Google Trends
+proportional extrapolation anchored to a GSC/Keyword-Planner known volume (log
+buckets + confidence + ±30% range); keyless global domain rank (rank.to) blended
+into the Popularity Index; a unified Competitive Matrix (popularity + authority +
+tech stack + real-user CrUX field CWV) computed in one pass per domain.
+Everything is keyless; set the free `PAGESPEED_API_KEY` to make CWV field data
+reliable (otherwise it degrades to "no field data").
 
 ## Phase 10 focus order (v10.0.0)
 
@@ -90,8 +94,8 @@ the OmniData host + provider keys, then `npm run audit:live` to verify real data
 ## Loop prompt (Cursor)
 
 ```
-Read .cursor/skills/omnipresence-loop/SKILL.md and docs/OMNIPRESENCE_PHASE11_SPEC.md.
-Execute the next pending BUILD_MANIFEST v11 task only. Run verify:all (+ omnidata:parity
+Read .cursor/skills/omnipresence-loop/SKILL.md and docs/OMNIPRESENCE_PHASE12_SPEC.md.
+Execute the next pending BUILD_MANIFEST v12 task only. Run verify:all (+ omnidata:parity
 if OmniData changed). Commit if green.
 ```
 

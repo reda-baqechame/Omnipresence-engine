@@ -114,6 +114,10 @@ console.log("  ✓ Popularity Index (Tranco + Common Crawl + Wikipedia + domain 
 console.log("  ✓ Authority Rating (Tranco + Common Crawl + OpenPageRank + age)");
 console.log("  ✓ Wikipedia/Wikidata entity presence (AEO citation signal)");
 console.log("  ✓ Hacker News community mentions (Algolia)");
+console.log("  ✓ Keyword-volume calibration (Trends extrapolation + buckets + confidence)");
+console.log("  ✓ Global domain rank (rank.to, no-auth) → Popularity Index");
+console.log("  ✓ Competitive matrix (popularity + authority + tech + real-user CWV)");
+console.log(`  ${has("PAGESPEED_API_KEY") ? "✓" : "○"} Real-user CrUX field CWV ${has("PAGESPEED_API_KEY") ? "(key set)" : "(set PAGESPEED_API_KEY for reliability)"}`);
 
 let remoteOk = false;
 if (base) {

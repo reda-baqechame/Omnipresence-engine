@@ -6,6 +6,9 @@ interface KeywordRow {
   id?: string;
   keyword: string;
   volume_estimate?: number;
+  /** Honest log-scale bucket e.g. "1K–10K". */
+  volume_range?: string;
+  volume_confidence?: "low" | "medium" | "high";
   /** Relative Google Trends demand index (0-100), not absolute volume. */
   trend_index?: number;
   difficulty?: number;
@@ -13,6 +16,12 @@ interface KeywordRow {
   our_position?: number | null;
   opportunity_score: number;
 }
+
+const CONFIDENCE_STYLE: Record<string, string> = {
+  high: "bg-green-500/15 text-green-400",
+  medium: "bg-yellow-500/15 text-yellow-400",
+  low: "bg-muted text-muted-foreground",
+};
 
 interface GapRow {
   keyword: string;
@@ -148,6 +157,7 @@ export function KeywordsPanel({ projectId, industry = "" }: KeywordsPanelProps) 
               <tr>
                 <th className="text-left p-3">Keyword</th>
                 <th className="text-right p-3">Score</th>
+                <th className="text-left p-3" title="Estimated monthly searches (log bucket). Confidence: high=Keyword Planner, medium=Trends-extrapolated, low=relative/heuristic">Volume (est.)</th>
                 <th className="text-right p-3" title="Relative Google Trends demand (0-100), not absolute volume">Demand</th>
                 <th className="text-right p-3">Difficulty</th>
                 <th className="text-right p-3">Position</th>
@@ -159,6 +169,20 @@ export function KeywordsPanel({ projectId, industry = "" }: KeywordsPanelProps) 
                 <tr key={row.keyword} className="border-t border-border/50">
                   <td className="p-3">{row.keyword}</td>
                   <td className="p-3 text-right text-primary">{row.opportunity_score}</td>
+                  <td className="p-3">
+                    {row.volume_range && row.volume_range !== "n/a" ? (
+                      <span className="inline-flex items-center gap-1.5">
+                        <span>{row.volume_range}</span>
+                        {row.volume_confidence && (
+                          <span className={`rounded px-1.5 py-0.5 text-[10px] uppercase ${CONFIDENCE_STYLE[row.volume_confidence]}`}>
+                            {row.volume_confidence}
+                          </span>
+                        )}
+                      </span>
+                    ) : (
+                      <span className="text-muted-foreground">—</span>
+                    )}
+                  </td>
                   <td className="p-3 text-right">
                     {typeof row.trend_index === "number" ? (
                       <span className="inline-flex items-center gap-1.5">

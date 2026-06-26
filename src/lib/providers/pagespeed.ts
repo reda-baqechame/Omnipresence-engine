@@ -7,6 +7,17 @@ import type { ProviderResult } from "./types";
  * AEO technical-readiness lever directly.
  */
 
+export interface CruxFieldData {
+  /** Real-user p75 Largest Contentful Paint (ms). */
+  lcpMs?: number;
+  /** Real-user p75 Cumulative Layout Shift. */
+  cls?: number;
+  /** Real-user p75 Interaction to Next Paint (ms). */
+  inpMs?: number;
+  /** Overall Core Web Vitals assessment from real Chrome users. */
+  assessment: "good" | "needs-improvement" | "poor" | "unknown";
+}
+
 export interface PageSpeedResult {
   /** 0-100 Lighthouse performance score */
   performanceScore: number;
@@ -20,6 +31,8 @@ export interface PageSpeedResult {
   inpMs?: number;
   /** Whether CrUX field data was present */
   hasFieldData: boolean;
+  /** Real-user Core Web Vitals (CrUX, origin-level when available). */
+  field?: CruxFieldData;
   strategy: "mobile" | "desktop";
 }
 
@@ -27,13 +40,35 @@ interface PSIAudit {
   numericValue?: number;
 }
 
+interface PSILoadingExperience {
+  metrics?: Record<string, { percentile?: number; category?: string }>;
+  overall_category?: string;
+}
+
 interface PSIResponse {
   lighthouseResult?: {
     categories?: { performance?: { score?: number } };
     audits?: Record<string, PSIAudit>;
   };
-  loadingExperience?: {
-    metrics?: Record<string, { percentile?: number }>;
+  loadingExperience?: PSILoadingExperience;
+  originLoadingExperience?: PSILoadingExperience;
+}
+
+function parseCruxField(le?: PSILoadingExperience): CruxFieldData | undefined {
+  const metrics = le?.metrics;
+  if (!metrics || Object.keys(metrics).length === 0) return undefined;
+  const lcp = metrics["LARGEST_CONTENTFUL_PAINT_MS"]?.percentile;
+  // CrUX reports CLS percentile scaled by 100 (e.g. 10 => 0.10).
+  const clsRaw = metrics["CUMULATIVE_LAYOUT_SHIFT_SCORE"]?.percentile;
+  const inp = metrics["INTERACTION_TO_NEXT_PAINT"]?.percentile;
+  const overall = le?.overall_category;
+  const assessment: CruxFieldData["assessment"] =
+    overall === "FAST" ? "good" : overall === "AVERAGE" ? "needs-improvement" : overall === "SLOW" ? "poor" : "unknown";
+  return {
+    lcpMs: typeof lcp === "number" ? lcp : undefined,
+    cls: typeof clsRaw === "number" ? Number((clsRaw / 100).toFixed(3)) : undefined,
+    inpMs: typeof inp === "number" ? inp : undefined,
+    assessment,
   };
 }
 
@@ -96,6 +131,8 @@ async function fetchPageSpeed(
 
     const field = data.loadingExperience?.metrics || {};
     const inpField = field["INTERACTION_TO_NEXT_PAINT"]?.percentile;
+    // Prefer origin-level CrUX for domain comparisons; fall back to page-level.
+    const cruxField = parseCruxField(data.originLoadingExperience) || parseCruxField(data.loadingExperience);
 
     return {
       success: true,
@@ -106,6 +143,7 @@ async function fetchPageSpeed(
         tbtMs: Math.round(audits["total-blocking-time"]?.numericValue ?? 0),
         inpMs: typeof inpField === "number" ? inpField : undefined,
         hasFieldData: Object.keys(field).length > 0,
+        field: cruxField,
         strategy,
       },
       creditsUsed: 0,
