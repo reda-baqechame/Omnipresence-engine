@@ -70,6 +70,19 @@ Calibration) plan, `docs/OMNIPRESENCE_PHASE11_SPEC.md` for the Free Data Moat,
 | **Phase 10 Real Results, Real Data** | **v10.0.0** | **done — provision OmniData host + keys, then `audit:live`** |
 | **Phase 11 The Free Data Moat** | **v11.0.0** | **done — keyless Trends/tech/popularity/authority/HN/entity** |
 | **Phase 12 Index Expansion & Calibration** | **v12.0.0** | **done — keyword-volume calibration, rank.to popularity, competitive matrix + CrUX field** |
+| **OmniPresence Expert Machine (Phases 1–22)** | **v22.0.0** | **done — rank depth, scale, frontier levers, alerts/API, local SEO, backlinks, reputation, topical, pSEO, indexation, distribution, SERP capture, demand, ROI command center, onboarding + continuous loop** |
+
+## Expert Machine focus order (v22.0.0)
+
+All 22 phases of the Expert Machine plan are implemented. Phase 22 closes the
+loop: the onboarding/objective wizard captures the business model (offer, AOV/LTV,
+conversion, scope, competitors) and generates a persisted master competitor list +
+keyword universe + 90-day operating plan from real data; daily/weekly/monthly/
+quarterly cadence reviews surface gainers/losers, regressions and citation gaps and
+materialize them as tracked execution tasks; and the guarantee/ledger auto-verifies
+the operational guarantees we actually cause (audit delivered, entity deployed,
+structural optimization shipped, GSC movement measurable). Never guarantee rankings
+or "appear everywhere in AI."
 
 ## Phase 12 focus order (v12.0.0)
 

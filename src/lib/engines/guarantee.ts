@@ -164,10 +164,19 @@ export async function gatherLedgerEvidence(
   return (data || []) as ResultsLedgerEntry[];
 }
 
+export interface OperationalGuaranteeRecord {
+  id: string;
+  name: string;
+  met: boolean;
+  evidence: string;
+}
+
 export interface GuaranteeVerificationOptions {
   tier1Deliverables?: DeterministicDeliverable[];
   tier1Met?: boolean;
   evidence?: ResultsLedgerEntry[];
+  /** Operational guarantees we cause (audit/entity/structural/GSC movement). */
+  operationalGuarantees?: OperationalGuaranteeRecord[];
 }
 
 export async function verifyGuaranteeContract(
@@ -210,6 +219,12 @@ export async function verifyGuaranteeContract(
         // Tier 1 — deterministic deliverables we promise outright.
         tier1_met: options.tier1Met ?? null,
         tier1_deliverables: options.tier1Deliverables ?? [],
+        // Operational guarantees we cause and auto-verify (Phase 22).
+        operational_guarantees: options.operationalGuarantees ?? [],
+        operational_all_met:
+          (options.operationalGuarantees?.length ?? 0) > 0
+            ? options.operationalGuarantees!.every((g) => g.met)
+            : null,
         // Real evidence backing the verification.
         actions_completed: evidenceCount,
       },

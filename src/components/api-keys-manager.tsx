@@ -24,7 +24,16 @@ export function ApiKeysManager() {
   }
 
   useEffect(() => {
-    load();
+    let active = true;
+    fetch("/api/keys")
+      .then((r) => r.json())
+      .then((data) => {
+        if (active) setKeys(data.keys || []);
+      })
+      .catch(() => {});
+    return () => {
+      active = false;
+    };
   }, []);
 
   async function create() {

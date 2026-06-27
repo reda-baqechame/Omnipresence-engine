@@ -22,6 +22,9 @@ export default function NewProjectPage() {
     conversion_goal: "",
     monthly_ad_spend: "",
     current_monthly_traffic: "",
+    aov: "",
+    ltv: "",
+    scope: "national",
   });
 
   function update(field: string, value: string) {
@@ -38,6 +41,9 @@ export default function NewProjectPage() {
         competitors: form.competitors.split(",").map((c) => c.trim()).filter(Boolean),
         monthly_ad_spend: form.monthly_ad_spend ? parseFloat(form.monthly_ad_spend) : undefined,
         current_monthly_traffic: form.current_monthly_traffic ? parseInt(form.current_monthly_traffic) : undefined,
+        aov: form.aov ? parseFloat(form.aov) : undefined,
+        ltv: form.ltv ? parseFloat(form.ltv) : undefined,
+        scope: form.scope,
       }),
     });
 
@@ -69,7 +75,7 @@ export default function NewProjectPage() {
           <>
             <div>
               <label className="block text-sm font-medium mb-1.5">Brand Name *</label>
-              <input value={form.name} onChange={(e) => update("name", e.target.value)}
+              <input value={form.name} onChange={(e) => update("name", e.target.value)} placeholder="Acme Inc." title="Brand name"
                 className="w-full bg-background border border-input rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring" required />
             </div>
             <div>
@@ -122,15 +128,39 @@ export default function NewProjectPage() {
             <div className="grid grid-cols-2 gap-4">
               <div>
                 <label className="block text-sm font-medium mb-1.5">Monthly Ad Spend ($)</label>
-                <input type="number" value={form.monthly_ad_spend} onChange={(e) => update("monthly_ad_spend", e.target.value)}
+                <input type="number" value={form.monthly_ad_spend} onChange={(e) => update("monthly_ad_spend", e.target.value)} placeholder="0" title="Monthly ad spend"
                   className="w-full bg-background border border-input rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring" />
               </div>
               <div>
                 <label className="block text-sm font-medium mb-1.5">Monthly Traffic</label>
-                <input type="number" value={form.current_monthly_traffic} onChange={(e) => update("current_monthly_traffic", e.target.value)}
+                <input type="number" value={form.current_monthly_traffic} onChange={(e) => update("current_monthly_traffic", e.target.value)} placeholder="0" title="Current monthly traffic"
                   className="w-full bg-background border border-input rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring" />
               </div>
             </div>
+            <div className="grid grid-cols-3 gap-4">
+              <div>
+                <label className="block text-sm font-medium mb-1.5">Avg. Order Value ($)</label>
+                <input type="number" value={form.aov} onChange={(e) => update("aov", e.target.value)} placeholder="e.g. 250"
+                  className="w-full bg-background border border-input rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring" />
+              </div>
+              <div>
+                <label className="block text-sm font-medium mb-1.5">Customer LTV ($)</label>
+                <input type="number" value={form.ltv} onChange={(e) => update("ltv", e.target.value)} placeholder="e.g. 1200"
+                  className="w-full bg-background border border-input rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring" />
+              </div>
+              <div>
+                <label className="block text-sm font-medium mb-1.5">Market Scope</label>
+                <select value={form.scope} onChange={(e) => update("scope", e.target.value)} aria-label="Market scope" title="Market scope"
+                  className="w-full bg-background border border-input rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring">
+                  <option value="local">Local</option>
+                  <option value="national">National</option>
+                  <option value="global">Global</option>
+                </select>
+              </div>
+            </div>
+            <p className="text-xs text-muted-foreground">
+              AOV/LTV and scope tune the 90-day operating plan and paid-ad-equivalent value — they&apos;re never used to fabricate metrics.
+            </p>
           </>
         )}
 

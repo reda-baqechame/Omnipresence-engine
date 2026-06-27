@@ -70,8 +70,20 @@ export function TasksBoard({ projectId }: { projectId: string }) {
   }, [projectId]);
 
   useEffect(() => {
-    load();
-  }, [load]);
+    let active = true;
+    fetch(`/api/tasks?projectId=${projectId}`)
+      .then((r) => (r.ok ? r.json() : { tasks: [] }))
+      .then((data) => {
+        if (active) setTasks(data.tasks || []);
+      })
+      .catch(() => {})
+      .finally(() => {
+        if (active) setLoading(false);
+      });
+    return () => {
+      active = false;
+    };
+  }, [projectId]);
 
   async function sync() {
     setBusy(true);

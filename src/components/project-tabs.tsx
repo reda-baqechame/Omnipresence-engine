@@ -33,6 +33,7 @@ const TABS = [
   { href: "/tasks", label: "Tasks" },
   { href: "/attribution", label: "Attribution" },
   { href: "/roi", label: "ROI Center" },
+  { href: "/operating", label: "Operating OS" },
   { href: "/guarantee", label: "Guarantee" },
 ];
 

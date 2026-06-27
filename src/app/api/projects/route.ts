@@ -38,6 +38,17 @@ export async function POST(request: NextRequest) {
     ? body.competitors.slice(0, 10).map((c: string) => String(c).slice(0, 80))
     : [];
 
+  // Phase 22 — business-model intake for the operating plan (refund-safe context).
+  const scope = ["local", "national", "global"].includes(body.scope) ? body.scope : undefined;
+  const businessModel = {
+    offer: body.main_offer ? String(body.main_offer).slice(0, 200) : undefined,
+    conversion_goal: body.conversion_goal ? String(body.conversion_goal).slice(0, 120) : undefined,
+    aov: typeof body.aov === "number" && body.aov >= 0 ? body.aov : undefined,
+    ltv: typeof body.ltv === "number" && body.ltv >= 0 ? body.ltv : undefined,
+    scope,
+    monthly_ad_spend: typeof body.monthly_ad_spend === "number" ? body.monthly_ad_spend : undefined,
+  };
+
   const { data: project, error } = await supabase
     .from("projects")
     .insert({
@@ -52,6 +63,7 @@ export async function POST(request: NextRequest) {
       conversion_goal: body.conversion_goal ? String(body.conversion_goal).slice(0, 120) : null,
       monthly_ad_spend: typeof body.monthly_ad_spend === "number" ? body.monthly_ad_spend : null,
       current_monthly_traffic: typeof body.current_monthly_traffic === "number" ? body.current_monthly_traffic : null,
+      settings: { business_model: businessModel },
       status: "scanning",
     })
     .select()

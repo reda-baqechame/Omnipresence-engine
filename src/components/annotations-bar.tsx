@@ -33,8 +33,16 @@ export function AnnotationsBar({ projectId }: { projectId: string }) {
   }
 
   useEffect(() => {
-    load();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    let active = true;
+    fetch(`/api/annotations?projectId=${projectId}`)
+      .then((r) => r.json())
+      .then((data) => {
+        if (active) setAnnotations(data.annotations || []);
+      })
+      .catch(() => {});
+    return () => {
+      active = false;
+    };
   }, [projectId]);
 
   async function add() {

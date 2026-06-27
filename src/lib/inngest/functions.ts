@@ -20,6 +20,7 @@ import {
   gatherTier1Deliverables,
   gatherLedgerEvidence,
 } from "@/lib/engines/guarantee";
+import { runCadenceReview, gatherOperationalGuarantees } from "@/lib/engines/continuous-loop";
 import { runAllRankChecks } from "@/lib/engines/rank-tracker-service";
 import { snapshotProjectBacklinks } from "@/lib/engines/backlink-monitor";
 import { processScheduledContent } from "@/lib/engines/content-publish-scheduler";
@@ -466,16 +467,18 @@ export const guaranteeVerificationCron = inngest.createFunction(
           ai_referral_traffic: aiReferrals ?? 0,
         };
 
-        // Tier 1 deterministic deliverables + real ledger evidence.
-        const [{ deliverables, tier1Met }, evidence] = await Promise.all([
+        // Tier 1 deterministic deliverables + operational guarantees + ledger.
+        const [{ deliverables, tier1Met }, evidence, operationalGuarantees] = await Promise.all([
           gatherTier1Deliverables(supabase, contract.project_id),
           gatherLedgerEvidence(supabase, contract.project_id),
+          gatherOperationalGuarantees(supabase, contract.project_id),
         ]);
 
         await verifyGuaranteeContract(supabase, contract.project_id, metrics, {
           tier1Deliverables: deliverables,
           tier1Met,
           evidence,
+          operationalGuarantees,
         });
       });
       verified++;
@@ -723,6 +726,30 @@ export const monthlyLinkBuilding = inngest.createFunction(
   }
 );
 
+// Quarterly operating review: surface gainers/losers, regressions, citation
+// gaps and materialize them as tracked tasks for every active project.
+export const quarterlyOperatingReview = inngest.createFunction(
+  { id: "quarterly-operating-review", retries: 1, triggers: [{ cron: "0 6 1 */3 *" }] },
+  async ({ step }) => {
+    const supabase = await createServiceClient();
+
+    const projects = await step.run("fetch-projects", async () => {
+      const { data } = await supabase.from("projects").select("id, organization_id");
+      return data || [];
+    });
+
+    let reviewed = 0;
+    for (const project of projects) {
+      await step.run(`review-${project.id}`, async () => {
+        await runCadenceReview(supabase, project.id, project.organization_id, "quarterly");
+      });
+      reviewed++;
+    }
+
+    return { reviewed };
+  }
+);
+
 export const functions = [
   runFullScan,
   runFullScanLegacy,
@@ -744,4 +771,5 @@ export const functions = [
   dailyOnPageAutomation,
   weeklyInternalLinkScan,
   monthlyLinkBuilding,
+  quarterlyOperatingReview,
 ];
