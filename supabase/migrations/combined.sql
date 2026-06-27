@@ -1,5 +1,5 @@
--- PresenceOS combined migration (36 files)
--- Generated 2026-06-27T04:24:44.622Z
+-- PresenceOS combined migration (41 files)
+-- Generated 2026-06-27T14:28:54.732Z
 
 -- ========== 0001_init.sql ==========
 
@@ -1737,5 +1737,167 @@ ALTER TABLE attribution_metrics
 -- per project for volatile money keywords.
 ALTER TABLE projects
   ADD COLUMN IF NOT EXISTS daily_rank_tracking BOOLEAN NOT NULL DEFAULT false;
+
+
+-- ========== 0037_behavior.sql ==========
+
+-- Phase 1 (100X): Microsoft Clarity behavioral analytics.
+-- Per-URL behavioral metrics with provenance. Refund-safety: rows are only
+-- written when Clarity returns real data (data_source = 'measured').
+
+CREATE TABLE IF NOT EXISTS behavior_metrics (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  project_id UUID NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+  url TEXT NOT NULL,
+  sessions INT NOT NULL DEFAULT 0,
+  scroll_depth_pct NUMERIC,
+  engagement_time_sec NUMERIC,
+  dead_clicks INT NOT NULL DEFAULT 0,
+  rage_clicks INT NOT NULL DEFAULT 0,
+  quickbacks INT NOT NULL DEFAULT 0,
+  data_source TEXT NOT NULL DEFAULT 'measured'
+    CHECK (data_source IN ('measured', 'estimated', 'model_knowledge', 'simulated', 'unavailable')),
+  provider TEXT,
+  captured_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  UNIQUE (project_id, url)
+);
+
+CREATE INDEX IF NOT EXISTS idx_behavior_metrics_project ON behavior_metrics(project_id, sessions DESC);
+
+ALTER TABLE behavior_metrics ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS behavior_metrics_all ON behavior_metrics;
+CREATE POLICY behavior_metrics_all ON behavior_metrics FOR ALL
+  USING (project_id IN (SELECT id FROM projects WHERE organization_id IN (SELECT get_user_org_ids())));
+
+
+-- ========== 0038_pgvector.sql ==========
+
+-- Phase 3 (100X): local semantic engine — pgvector storage for keyless
+-- all-MiniLM-L6-v2 (384-dim) embeddings computed by OmniData.
+-- The extension is optional; if a managed Postgres lacks it the app still works
+-- (semantic features report `available:false`). Guarded so a missing extension
+-- does not abort the whole migration batch.
+
+DO $$
+BEGIN
+  CREATE EXTENSION IF NOT EXISTS vector;
+EXCEPTION WHEN OTHERS THEN
+  RAISE NOTICE 'pgvector extension unavailable; semantic storage disabled';
+END$$;
+
+DO $$
+BEGIN
+  IF EXISTS (SELECT 1 FROM pg_extension WHERE extname = 'vector') THEN
+    CREATE TABLE IF NOT EXISTS content_embeddings (
+      id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+      project_id UUID NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+      kind TEXT NOT NULL DEFAULT 'page',          -- page | keyword | title
+      ref TEXT NOT NULL,                           -- url / keyword / id
+      content_hash TEXT,
+      embedding vector(384),
+      model TEXT NOT NULL DEFAULT 'all-MiniLM-L6-v2',
+      created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+      UNIQUE (project_id, kind, ref)
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_content_embeddings_project ON content_embeddings(project_id, kind);
+
+    ALTER TABLE content_embeddings ENABLE ROW LEVEL SECURITY;
+    DROP POLICY IF EXISTS content_embeddings_all ON content_embeddings;
+    CREATE POLICY content_embeddings_all ON content_embeddings FOR ALL
+      USING (project_id IN (SELECT id FROM projects WHERE organization_id IN (SELECT get_user_org_ids())));
+  END IF;
+END$$;
+
+
+-- ========== 0039_deep_crawl.sql ==========
+
+-- Phase 4 (100X): deep technical crawl (Screaming-Frog-class) storage.
+
+CREATE TABLE IF NOT EXISTS crawl_pages (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  project_id UUID NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+  url TEXT NOT NULL,
+  status INT NOT NULL DEFAULT 0,
+  depth INT NOT NULL DEFAULT 0,
+  title TEXT,
+  meta_description TEXT,
+  h1_count INT NOT NULL DEFAULT 0,
+  canonical TEXT,
+  noindex BOOLEAN NOT NULL DEFAULT false,
+  word_count INT NOT NULL DEFAULT 0,
+  internal_links INT NOT NULL DEFAULT 0,
+  external_links INT NOT NULL DEFAULT 0,
+  redirect_hops INT NOT NULL DEFAULT 0,
+  data_source TEXT NOT NULL DEFAULT 'measured',
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE INDEX IF NOT EXISTS idx_crawl_pages_project ON crawl_pages(project_id, status);
+
+CREATE TABLE IF NOT EXISTS crawl_issues (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  project_id UUID NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+  type TEXT NOT NULL,
+  severity TEXT NOT NULL DEFAULT 'medium'
+    CHECK (severity IN ('critical', 'high', 'medium', 'low')),
+  title TEXT NOT NULL,
+  detail TEXT,
+  urls JSONB NOT NULL DEFAULT '[]',
+  data_source TEXT NOT NULL DEFAULT 'measured',
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE INDEX IF NOT EXISTS idx_crawl_issues_project ON crawl_issues(project_id, severity);
+
+ALTER TABLE crawl_pages ENABLE ROW LEVEL SECURITY;
+ALTER TABLE crawl_issues ENABLE ROW LEVEL SECURITY;
+
+DROP POLICY IF EXISTS crawl_pages_all ON crawl_pages;
+CREATE POLICY crawl_pages_all ON crawl_pages FOR ALL
+  USING (project_id IN (SELECT id FROM projects WHERE organization_id IN (SELECT get_user_org_ids())));
+
+DROP POLICY IF EXISTS crawl_issues_all ON crawl_issues;
+CREATE POLICY crawl_issues_all ON crawl_issues FOR ALL
+  USING (project_id IN (SELECT id FROM projects WHERE organization_id IN (SELECT get_user_org_ids())));
+
+
+-- ========== 0040_cwv_history.sql ==========
+
+-- Phase 7 (100X): Core Web Vitals history (CrUX real-user p75 trends).
+
+CREATE TABLE IF NOT EXISTS cwv_history (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  project_id UUID NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+  collected_on DATE NOT NULL,
+  lcp_ms INT,
+  inp_ms INT,
+  cls NUMERIC,
+  data_source TEXT NOT NULL DEFAULT 'measured',
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  UNIQUE (project_id, collected_on)
+);
+
+CREATE INDEX IF NOT EXISTS idx_cwv_history_project ON cwv_history(project_id, collected_on);
+
+ALTER TABLE cwv_history ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS cwv_history_all ON cwv_history;
+CREATE POLICY cwv_history_all ON cwv_history FOR ALL
+  USING (project_id IN (SELECT id FROM projects WHERE organization_id IN (SELECT get_user_org_ids())));
+
+
+-- ========== 0041_mention_firehose.sql ==========
+
+-- Phase 14 (100X): Social & community mention firehose.
+-- Extend allowed platforms to include the broader free/keyless sources.
+
+ALTER TABLE community_mentions DROP CONSTRAINT IF EXISTS community_mentions_platform_check;
+ALTER TABLE community_mentions
+  ADD CONSTRAINT community_mentions_platform_check
+  CHECK (platform IN (
+    'reddit', 'quora', 'hacker_news', 'github',
+    'stackexchange', 'producthunt', 'mastodon', 'bluesky', 'wikipedia',
+    'other'
+  ));
 
 
