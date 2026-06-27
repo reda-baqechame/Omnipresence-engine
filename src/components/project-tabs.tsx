@@ -18,6 +18,7 @@ const TABS = [
   { href: "/topical", label: "Topical Map" },
   { href: "/pseo", label: "pSEO" },
   { href: "/ranks", label: "Rankings" },
+  { href: "/serp-capture", label: "SERP Capture" },
   { href: "/local", label: "Local SEO" },
   { href: "/gsc", label: "Search Console" },
   { href: "/backlinks", label: "Backlinks" },
