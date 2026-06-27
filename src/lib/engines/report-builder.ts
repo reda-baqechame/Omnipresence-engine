@@ -3,7 +3,9 @@ import { generateReportHTML, type ReportData } from "@/lib/engines/report-genera
 import { generateReportPDF } from "@/lib/engines/report-pdf";
 import { calculateAdsEquivalent } from "@/lib/engines/ads-equivalent";
 import { getRealKeywordCpc } from "@/lib/providers/dataforseo";
-import type { RoadmapItem, VisibilityResult } from "@/types/database";
+import { buildProofReport, renderProofHTML } from "@/lib/engines/proof-report";
+import { canUseWhiteLabel } from "@/lib/plans/features";
+import type { RoadmapItem, SubscriptionPlan, VisibilityResult } from "@/types/database";
 
 export interface WhiteLabelBranding {
   name: string;
@@ -21,6 +23,11 @@ export async function getOrgWhiteLabel(
     .single();
 
   if (!org?.white_label_name) {
+    return undefined;
+  }
+
+  // White-label is an agency/enterprise capability (or open under FREE_ACCESS_MODE).
+  if (!canUseWhiteLabel(org.plan as SubscriptionPlan)) {
     return undefined;
   }
 
@@ -65,6 +72,9 @@ export async function gatherReportData(
 
   const whiteLabel = await getOrgWhiteLabel(supabase, project.organization_id);
 
+  const proof = await buildProofReport(supabase, projectId).catch(() => null);
+  const proofHtml = proof ? renderProofHTML(proof, whiteLabel?.color) : undefined;
+
   let realCpc: number | null = null;
   if (attribution) {
     const { data: kwRows } = await supabase
@@ -96,6 +106,7 @@ export async function gatherReportData(
     roadmapItems: (roadmap?.items || []) as RoadmapItem[],
     visibilityResults: (visibility || []) as VisibilityResult[],
     generatedAt: new Date().toISOString(),
+    proofHtml,
     adsEquivalent: adsEquivalent
       ? {
           totalOrganicValue: adsEquivalent.totalOrganicValue,

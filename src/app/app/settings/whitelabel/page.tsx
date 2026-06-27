@@ -8,6 +8,8 @@ export default function WhiteLabelSettingsPage() {
     white_label_name: "",
     white_label_primary_color: "#6366f1",
     logo_url: "",
+    white_label_domain: "",
+    client_portal_enabled: false,
   });
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
@@ -23,7 +25,7 @@ export default function WhiteLabelSettingsPage() {
 
       const { data: membership } = await supabase
         .from("memberships")
-        .select("organization_id, organizations(white_label_name, white_label_primary_color, logo_url)")
+        .select("organization_id, organizations(white_label_name, white_label_primary_color, logo_url, white_label_domain, client_portal_enabled)")
         .eq("user_id", user.id)
         .limit(1)
         .single();
@@ -32,6 +34,8 @@ export default function WhiteLabelSettingsPage() {
         white_label_name?: string;
         white_label_primary_color?: string;
         logo_url?: string;
+        white_label_domain?: string;
+        client_portal_enabled?: boolean;
       } | null;
 
       if (org) {
@@ -39,6 +43,8 @@ export default function WhiteLabelSettingsPage() {
           white_label_name: org.white_label_name || "",
           white_label_primary_color: org.white_label_primary_color || "#6366f1",
           logo_url: org.logo_url || "",
+          white_label_domain: org.white_label_domain || "",
+          client_portal_enabled: Boolean(org.client_portal_enabled),
         });
       }
       setLoading(false);
@@ -132,17 +138,44 @@ export default function WhiteLabelSettingsPage() {
           <div className="flex gap-3 items-center">
             <input
               type="color"
+              aria-label="Primary color picker"
               value={form.white_label_primary_color}
               onChange={(e) => setForm({ ...form, white_label_primary_color: e.target.value })}
               className="h-10 w-16 rounded cursor-pointer"
             />
             <input
+              aria-label="Primary color hex value"
+              placeholder="#6366f1"
               value={form.white_label_primary_color}
               onChange={(e) => setForm({ ...form, white_label_primary_color: e.target.value })}
               className="flex-1 bg-background border border-input rounded-lg px-3 py-2 text-sm"
             />
           </div>
         </div>
+
+        <div>
+          <label className="block text-sm font-medium mb-1.5">Client Portal Custom Domain</label>
+          <input
+            value={form.white_label_domain}
+            onChange={(e) => setForm({ ...form, white_label_domain: e.target.value })}
+            placeholder="reports.youragency.com"
+            className="w-full bg-background border border-input rounded-lg px-3 py-2 text-sm"
+          />
+          <p className="text-xs text-muted-foreground mt-1">
+            Point a CNAME at this app, then add the domain here. Client portals render at
+            <code className="mx-1">/portal/&lt;share-token&gt;</code> with your branding.
+          </p>
+        </div>
+
+        <label className="flex items-center gap-2 text-sm">
+          <input
+            type="checkbox"
+            checked={form.client_portal_enabled}
+            onChange={(e) => setForm({ ...form, client_portal_enabled: e.target.checked })}
+            className="h-4 w-4 rounded border-input"
+          />
+          Enable white-label client portal
+        </label>
 
         <button
           type="submit"

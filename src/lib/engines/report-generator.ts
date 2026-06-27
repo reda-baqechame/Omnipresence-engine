@@ -26,6 +26,8 @@ export interface ReportData {
   roadmapItems: RoadmapItem[];
   visibilityResults: VisibilityResult[];
   generatedAt: string;
+  /** Pre-rendered Before/After proof section (from proof-report.renderProofHTML). */
+  proofHtml?: string;
   adsEquivalent?: {
     totalOrganicValue: number;
     replacementRatio: number;
@@ -99,6 +101,8 @@ export function generateReportHTML(data: ReportData, whiteLabel?: { name: string
       <div class="score-number">${Math.round(data.score.omnipresence_score)}</div>
       <div class="score-label">OmniPresence Score — ${e(scoreLabel.label)}</div>
     </div>
+
+    ${data.proofHtml || ""}
 
     <div class="sub-scores">
       ${subScoreHTML("AI Visibility", data.score.ai_visibility)}
