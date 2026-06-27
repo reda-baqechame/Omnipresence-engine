@@ -21,8 +21,8 @@ import { getPageSpeed, type CruxFieldData } from "@/lib/providers/pagespeed";
 export interface CompetitiveSnapshot {
   target: string;
   domain: string;
-  popularity: { score: number; signals: string[]; globalRank?: number; rankTrend?: string };
-  authority: { rating: number; sources: string[] };
+  popularity: { score: number; signals: string[]; globalRank?: number; rankTrend?: string; available: boolean };
+  authority: { rating: number; sources: string[]; available: boolean };
   techCategories: Record<string, string[]>;
   techAvailable: boolean;
   cwv?: CruxFieldData;
@@ -93,8 +93,8 @@ export async function getCompetitiveSnapshot(
   return {
     target,
     domain,
-    popularity: { score: popularityScore, signals: popSignals, globalRank, rankTrend: rankto?.available ? rankto.trend : undefined },
-    authority: { rating: authorityRating, sources: authSources },
+    popularity: { score: popularityScore, signals: popSignals, globalRank, rankTrend: rankto?.available ? rankto.trend : undefined, available: popParts.length > 0 },
+    authority: { rating: authorityRating, sources: authSources, available: authParts.length > 0 },
     techCategories: tech?.categories || {},
     techAvailable: Boolean(tech?.available),
     cwv: ps?.success && ps.data ? ps.data.field : undefined,

@@ -20,13 +20,13 @@ import { recordScanBaseline } from "@/lib/engines/results-ledger";
 import { lockGuaranteeBaseline } from "@/lib/engines/guarantee";
 import { syncTechnicalFindingsToOpsQueue } from "@/lib/engines/on-page-queue";
 import {
-  isDemoMode,
   generateDemoPrompts,
   generateDemoVisibilityResults,
   generateDemoBrandProfile,
   generateDemoAuthorityOpportunities,
 } from "@/lib/demo/scan-data";
 import { getPromptGenerationLimit, getVisibilityScanPromptLimit } from "@/lib/plans/limits";
+import { resolveAndPersistCompetitors } from "@/lib/engines/competitor-resolver";
 import type { Project } from "@/types/database";
 
 export async function stepTechnicalAudit(supabase: SupabaseClient, projectId: string, domain: string) {
@@ -52,8 +52,7 @@ export async function stepTechnicalAudit(supabase: SupabaseClient, projectId: st
   return findings;
 }
 
-export async function stepBrandExtract(supabase: SupabaseClient, project: Project) {
-  const demo = isDemoMode();
+export async function stepBrandExtract(supabase: SupabaseClient, project: Project, demo: boolean) {
   const brandProfile = demo
     ? generateDemoBrandProfile(project.name, project.industry || "business")
     : await extractBrandProfile(project.domain, project.name, project.industry);
@@ -65,8 +64,7 @@ export async function stepBrandExtract(supabase: SupabaseClient, project: Projec
   return brandProfile;
 }
 
-export async function stepVisibilityScan(supabase: SupabaseClient, project: Project) {
-  const demo = isDemoMode();
+export async function stepVisibilityScan(supabase: SupabaseClient, project: Project, demo: boolean) {
   const promptCount = getPromptGenerationLimit();
   const maxScanPrompts = getVisibilityScanPromptLimit();
 
@@ -133,7 +131,17 @@ export async function stepVisibilityScan(supabase: SupabaseClient, project: Proj
       });
 
   if (visibilityResults.length) {
-    await supabase.from("visibility_results").insert(visibilityResults as never[]);
+    const now = new Date().toISOString();
+    const rows = (visibilityResults as Array<Record<string, unknown>>).map((r) => {
+      const ds = (r.data_source as string | undefined) ?? (demo ? "simulated" : undefined);
+      return {
+        ...r,
+        data_source: ds,
+        is_estimated: ds !== "measured",
+        last_checked_at: now,
+      };
+    });
+    await supabase.from("visibility_results").insert(rows as never[]);
   }
 
   const measuredCount = visibilityResults.filter(
@@ -166,10 +174,9 @@ export async function stepVisibilityScan(supabase: SupabaseClient, project: Proj
 export async function stepScoreAndRoadmap(
   supabase: SupabaseClient,
   project: Project,
-  technicalFindings: Awaited<ReturnType<typeof stepTechnicalAudit>>
+  technicalFindings: Awaited<ReturnType<typeof stepTechnicalAudit>>,
+  demo: boolean
 ) {
-  const demo = isDemoMode();
-
   const coverageItems = await checkPlatformCoverage(
     project.id,
     project.name,
@@ -180,6 +187,19 @@ export async function stepScoreAndRoadmap(
   if (coverageItems.length) await supabase.from("coverage_items").insert(coverageItems);
 
   const { data: prompts } = await supabase.from("prompts").select("text").eq("project_id", project.id);
+
+  // Resolve competitor names to real domains (SERP, confidence-scored) and
+  // persist them so backlink/citation gaps use confirmed domains — never a
+  // name+".com" guess.
+  const resolvedCompetitors = demo
+    ? []
+    : await resolveAndPersistCompetitors(
+        supabase,
+        project.id,
+        project.competitors || [],
+        project.industry || ""
+      );
+
   const authorityOpportunities = demo
     ? generateDemoAuthorityOpportunities(project.id, project.industry || "", project.competitors || [])
     : await findAuthorityOpportunities(
@@ -188,7 +208,8 @@ export async function stepScoreAndRoadmap(
         project.domain,
         project.industry || "",
         project.competitors || [],
-        (prompts || []).map((p) => p.text)
+        (prompts || []).map((p) => p.text),
+        resolvedCompetitors
       );
 
   await supabase.from("authority_opportunities").delete().eq("project_id", project.id);

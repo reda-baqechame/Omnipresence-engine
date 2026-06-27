@@ -211,12 +211,68 @@ export interface VisibilityResult {
   source_domains: string[];
   cited_urls: string[];
   raw_response?: Record<string, unknown>;
+  data_source?: DataQuality;
+  confidence?: number;
+  last_checked_at?: string;
+  evidence_url?: string;
+  is_estimated?: boolean;
   created_at: string;
 }
 
 export type DataSource = "measured" | "simulated";
 
+/**
+ * Full provenance vocabulary for the trust spine. `DataSource` is kept narrow
+ * for the legacy `citation_sources` table; `DataQuality` is the platform-wide
+ * label used on every metric.
+ */
+export type DataQuality =
+  | "measured"
+  | "estimated"
+  | "model_knowledge"
+  | "simulated"
+  | "unavailable";
+
 export type CitationGate = "index" | "crawl" | "retrieval" | "citation";
+
+export interface Competitor {
+  id: string;
+  project_id: string;
+  name: string;
+  domain?: string;
+  /** How the domain was resolved: serp, dataforseo, manual, unresolved. */
+  source?: string;
+  /** 0-1 confidence the domain is correct. */
+  confidence?: number;
+  confirmed: boolean;
+  evidence_url?: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface KeywordOpportunity {
+  id: string;
+  project_id: string;
+  keyword: string;
+  volume_estimate?: number;
+  volume_range?: string;
+  volume_low?: number;
+  volume_high?: number;
+  volume_confidence?: "low" | "medium" | "high";
+  trend_index?: number;
+  difficulty?: number;
+  difficulty_method?: "ranking_authority" | "heuristic";
+  intent?: string;
+  our_position?: number | null;
+  opportunity_score?: number;
+  source?: string;
+  status?: string;
+  data_source?: DataQuality;
+  confidence?: number;
+  last_checked_at?: string;
+  created_at: string;
+  updated_at: string;
+}
 
 export interface ResultsLedgerEntry {
   id: string;
@@ -313,6 +369,11 @@ export interface TechnicalFinding {
   fix_recommendation?: string;
   affected_url?: string;
   is_resolved: boolean;
+  data_source?: DataQuality;
+  confidence?: number;
+  last_checked_at?: string;
+  evidence_url?: string;
+  is_estimated?: boolean;
   created_at: string;
 }
 
@@ -329,6 +390,12 @@ export interface CoverageItem {
   submission_status?: "not_started" | "in_progress" | "submitted" | "live";
   submitted_at?: string;
   measured?: boolean;
+  /** "measured" = we got a definitive answer; "estimated" = heuristic; "unavailable" = could not verify. */
+  data_quality?: DataQuality;
+  data_source?: DataQuality;
+  confidence?: number;
+  last_checked_at?: string;
+  evidence_url?: string;
   created_at: string;
   updated_at: string;
 }
@@ -365,6 +432,11 @@ export interface AuthorityOpportunity {
   published_url?: string;
   competitor_present: boolean;
   measured?: boolean;
+  data_source?: DataQuality;
+  confidence?: number;
+  last_checked_at?: string;
+  evidence_url?: string;
+  is_estimated?: boolean;
   citation_source_id?: string;
   created_at: string;
   updated_at: string;
@@ -383,6 +455,11 @@ export interface OmniPresenceScore {
   technical_readiness: number;
   conversion_readiness: number;
   breakdown?: Record<string, unknown>;
+  data_source?: DataQuality;
+  confidence?: number;
+  /** How many of the scored inputs were genuinely measured vs total. */
+  measured_inputs?: number;
+  total_inputs?: number;
   created_at: string;
 }
 
@@ -420,6 +497,12 @@ export interface AttributionMetric {
   revenue: number;
   paid_ads_equivalent: number;
   source_breakdown?: Record<string, number>;
+  data_source?: DataQuality;
+  confidence?: number;
+  last_checked_at?: string;
+  is_estimated?: boolean;
+  /** Per-source availability so a failed GSC/Bing sync is shown as Unavailable, not 0. */
+  source_availability?: Record<string, boolean>;
   created_at: string;
 }
 

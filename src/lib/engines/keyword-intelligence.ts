@@ -172,17 +172,29 @@ export async function persistKeywordOpportunities(
   rows: KeywordOpportunityRow[]
 ): Promise<number> {
   if (!rows.length) return 0;
+  const confidenceFor = (c?: VolumeConfidence): number =>
+    c === "high" ? 0.9 : c === "medium" ? 0.6 : 0.3;
   const { error } = await supabase.from("keyword_opportunities").upsert(
     rows.map((r) => ({
       project_id: projectId,
       keyword: r.keyword,
       volume_estimate: r.volume_estimate,
+      volume_range: r.volume_range,
+      volume_low: r.volume_low,
+      volume_high: r.volume_high,
+      volume_confidence: r.volume_confidence,
+      trend_index: r.trend_index,
       difficulty: r.difficulty,
+      difficulty_method: r.difficulty_method,
       intent: r.intent,
       our_position: r.our_position,
       opportunity_score: r.opportunity_score,
       source: r.source,
       status: "identified",
+      // Volume is exact only from Keyword Planner; everything else is an honest estimate.
+      data_source: r.volume_confidence === "high" ? "measured" : "estimated",
+      confidence: confidenceFor(r.volume_confidence),
+      last_checked_at: new Date().toISOString(),
       updated_at: new Date().toISOString(),
     })),
     { onConflict: "project_id,keyword" }

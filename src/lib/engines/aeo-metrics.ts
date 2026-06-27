@@ -1,4 +1,5 @@
 import type { VisibilityResult } from "@/types/database";
+import { resultDataQuality } from "@/lib/engines/provenance";
 
 export interface AeoMetrics {
   shareOfVoice: number;
@@ -19,11 +20,11 @@ export function calculateAeoMetrics(
   brandName: string,
   competitors: string[]
 ): AeoMetrics {
-  const brandToken = brandName.toLowerCase();
-  const measured = results.filter(
-    (r) => (r.raw_response as { data_source?: string } | undefined)?.data_source === "measured"
-  );
-  const pool = measured.length ? measured : results;
+  const measured = results.filter((r) => resultDataQuality(r) === "measured");
+  // Never blend demo rows into measured metrics. Use measured when present;
+  // otherwise fall back to demo ONLY when the whole set is demo (preview mode).
+  const demo = results.filter((r) => resultDataQuality(r) === "simulated");
+  const pool = measured.length ? measured : demo.length === results.length ? demo : measured;
 
   let brandMentions = 0;
   let brandCitations = 0;

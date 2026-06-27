@@ -112,8 +112,8 @@ async function safeSnapshot(
     return {
       target,
       domain: cleanLabel(target),
-      popularity: { score: 0, signals: [] },
-      authority: { rating: 0, sources: [] },
+      popularity: { score: 0, signals: [], available: false },
+      authority: { rating: 0, sources: [], available: false },
       techCategories: {},
       techAvailable: false,
       components: { tranco: 0, referringDomains: 0, ageYears: 0, wikiViews: 0 },

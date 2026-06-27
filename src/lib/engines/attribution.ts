@@ -207,7 +207,7 @@ export async function syncGoogleSearchConsole(
   siteUrl: string,
   startDate: string,
   endDate: string
-): Promise<{ clicks: number; impressions: number; ctr: number; position: number }> {
+): Promise<{ clicks: number; impressions: number; ctr: number; position: number; available: boolean }> {
   try {
     const url = `https://www.googleapis.com/webmasters/v3/sites/${encodeURIComponent(siteUrl)}/searchAnalytics/query`;
     const response = await fetch(url, {
@@ -241,16 +241,17 @@ export async function syncGoogleSearchConsole(
     );
 
     totals.ctr = totals.impressions > 0 ? totals.clicks / totals.impressions : 0;
-    return totals;
+    return { ...totals, available: true };
   } catch {
-    return { clicks: 0, impressions: 0, ctr: 0, position: 0 };
+    // Provider failed — report unavailable so attribution is not a false zero.
+    return { clicks: 0, impressions: 0, ctr: 0, position: 0, available: false };
   }
 }
 
 export async function syncBingWebmaster(
   accessToken: string,
   siteUrl: string
-): Promise<{ clicks: number; impressions: number; aiCitations: number }> {
+): Promise<{ clicks: number; impressions: number; aiCitations: number; available: boolean }> {
   try {
     const response = await fetch(
       `https://ssl.bing.com/webmaster/api.svc/json/GetQueryStats?siteUrl=${encodeURIComponent(siteUrl)}`,
@@ -273,9 +274,9 @@ export async function syncBingWebmaster(
       { clicks: 0, impressions: 0 }
     );
 
-    return { ...totals, aiCitations: 0 };
+    return { ...totals, aiCitations: 0, available: true };
   } catch {
-    return { clicks: 0, impressions: 0, aiCitations: 0 };
+    return { clicks: 0, impressions: 0, aiCitations: 0, available: false };
   }
 }
 

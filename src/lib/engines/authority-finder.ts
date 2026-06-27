@@ -3,7 +3,10 @@ import {
   resolveCompetitorDomain,
 } from "@/lib/providers/dataforseo";
 import { getBacklinksFree } from "@/lib/providers/backlinks-free";
-import { resolveCompetitorDomainFree } from "@/lib/providers/competitor-resolve";
+import {
+  resolveCompetitorDomainFree,
+  type ResolvedCompetitor,
+} from "@/lib/providers/competitor-resolve";
 import { hasLLMMentionsCapability, hasCitationTrackingCapability } from "@/lib/config/capabilities";
 import {
   collectLiveCitationSources,
@@ -41,7 +44,8 @@ export async function findAuthorityOpportunities(
   domain: string,
   industry: string,
   competitors: string[],
-  buyerPrompts: string[] = []
+  buyerPrompts: string[] = [],
+  resolvedCompetitors?: ResolvedCompetitor[]
 ): Promise<Omit<AuthorityOpportunity, "id" | "created_at" | "updated_at">[]> {
   const opportunities: Omit<AuthorityOpportunity, "id" | "created_at" | "updated_at">[] = [];
   const domainLower = domain.replace(/^www\./, "").toLowerCase();
@@ -149,22 +153,27 @@ export async function findAuthorityOpportunities(
     }
   }
 
-  // Competitor backlink gaps via free link: SERP (DataForSEO optional boost)
-  const resolvedCompetitors: Array<{ name: string; domain: string }> = [];
-  for (const competitor of competitors.slice(0, 3)) {
-    const resolved =
-      (await resolveCompetitorDomainFree(competitor, industry)) ||
-      (hasLLMMentionsCapability()
-        ? await resolveCompetitorDomain(competitor, industry)
-        : null);
-
-    resolvedCompetitors.push({
-      name: competitor,
-      domain: resolved || competitor.toLowerCase().replace(/\s+/g, "") + ".com",
-    });
+  // Competitor backlink gaps via free link: SERP (DataForSEO optional boost).
+  // We ONLY use confidently-resolved competitor domains — never a name+".com"
+  // guess, which would attribute another company's backlinks to the competitor
+  // and produce refund-risk garbage.
+  const resolved: Array<{ name: string; domain: string }> = [];
+  if (resolvedCompetitors && resolvedCompetitors.length) {
+    for (const rc of resolvedCompetitors) {
+      if (rc.domain) resolved.push({ name: rc.name, domain: rc.domain });
+    }
+  } else {
+    for (const competitor of competitors.slice(0, 3)) {
+      const domainResolved =
+        (await resolveCompetitorDomainFree(competitor, industry)) ||
+        (hasLLMMentionsCapability()
+          ? await resolveCompetitorDomain(competitor, industry)
+          : null);
+      if (domainResolved) resolved.push({ name: competitor, domain: domainResolved });
+    }
   }
 
-  for (const { name, domain: compDomain } of resolvedCompetitors) {
+  for (const { name, domain: compDomain } of resolved) {
     let backlinksResult = await getBacklinksFree(compDomain, 20);
     if ((!backlinksResult.success || !backlinksResult.data?.length) && hasLLMMentionsCapability()) {
       backlinksResult = await getBacklinks(compDomain, 20);

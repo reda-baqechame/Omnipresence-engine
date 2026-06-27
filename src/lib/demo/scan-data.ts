@@ -1,7 +1,9 @@
 import type { PromptCategory, VisibilityEngine } from "@/types/database";
+import type { SupabaseClient } from "@supabase/supabase-js";
 import { preferLiveData, hasSerpCapability, hasCitationTrackingCapability } from "@/lib/config/capabilities";
 import { isProductionDeploy } from "@/lib/config/production";
 import { SCAN_ENGINES } from "@/lib/config/scan-engines";
+import { getOrganizationPlan } from "@/lib/plans/limits";
 
 /** Demo mode is last-resort fallback when no live providers are configured. Never on production with keys. */
 export function isDemoMode(): boolean {
@@ -10,6 +12,32 @@ export function isDemoMode(): boolean {
     return false;
   }
   return !preferLiveData();
+}
+
+/**
+ * Org-aware demo decision — THE refund-safety gate.
+ *
+ * A paying organization must NEVER receive simulated/demo data. If the base
+ * demo decision wants demo (no providers configured) but the org is on a paid
+ * plan, we force real engines instead (which honestly return Unavailable rather
+ * than fabricated numbers). FORCE_DEMO_MODE still wins for explicit previews.
+ */
+export async function resolveScanDemoMode(
+  supabase: SupabaseClient,
+  organizationId?: string | null
+): Promise<boolean> {
+  if (process.env.FORCE_DEMO_MODE === "true") return true;
+  const base = isDemoMode();
+  if (!base) return false;
+  if (!organizationId) return base;
+  try {
+    const plan = await getOrganizationPlan(supabase, organizationId);
+    if (plan && plan !== "free") return false; // paid orgs: real engines only
+  } catch {
+    // If we cannot confirm the plan, fail safe toward NOT showing demo data.
+    return false;
+  }
+  return base;
 }
 
 export function generateDemoPrompts(

@@ -1,5 +1,12 @@
-import type { CoverageItem, CoverageSurface } from "@/types/database";
+import type { CoverageItem, CoverageSurface, DataQuality } from "@/types/database";
 import { searchGoogleOrganicRouter } from "@/lib/providers/serp-router";
+
+interface PresenceResult {
+  present: boolean;
+  /** measured = definitive check; estimated = heuristic (e.g. HEAD probe); unavailable = could not verify. */
+  quality: DataQuality;
+  evidence?: string;
+}
 
 interface PlatformCheck {
   surface: CoverageSurface;
@@ -35,19 +42,31 @@ export async function checkPlatformCoverage(
   const brandSlug = brandName.toLowerCase().replace(/[^a-z0-9]/g, "");
   const domainName = domain.replace(/^www\./, "").split(".")[0];
 
+  const now = new Date().toISOString();
   for (const platform of PLATFORMS) {
-    const isPresent = await checkPresence(platform, brandName, brandSlug, domainName);
+    const presence = await checkPresence(platform, brandName, brandSlug, domainName);
     const competitorPresent = await checkCompetitorPresence(platform, competitors);
+    const unavailable = presence.quality === "unavailable";
 
     items.push({
       project_id: projectId,
       surface: platform.surface,
       platform_name: platform.platform_name,
-      profile_url: isPresent ? `${platform.checkUrl}${encodeURIComponent(brandName)}` : undefined,
-      is_present: isPresent,
+      profile_url: presence.present ? `${platform.checkUrl}${encodeURIComponent(brandName)}` : undefined,
+      is_present: presence.present,
       is_optimized: false,
       competitor_present: competitorPresent,
-      notes: isPresent ? undefined : `No detected presence on ${platform.platform_name}`,
+      measured: presence.quality === "measured",
+      data_quality: presence.quality,
+      data_source: presence.quality,
+      confidence: presence.quality === "measured" ? 0.85 : presence.quality === "estimated" ? 0.4 : 0,
+      last_checked_at: now,
+      evidence_url: presence.evidence,
+      notes: unavailable
+        ? `Could not verify ${platform.platform_name} (provider blocked or unreachable) — not counted as missing`
+        : presence.present
+          ? undefined
+          : `No detected presence on ${platform.platform_name}`,
     });
   }
 
@@ -66,6 +85,10 @@ export async function checkPlatformCoverage(
       is_present: false,
       is_optimized: false,
       competitor_present: false,
+      measured: false,
+      data_quality: "unavailable",
+      data_source: "unavailable",
+      confidence: 0,
       notes: "Manual verification recommended",
     });
   }
@@ -78,35 +101,35 @@ async function checkPresence(
   brandName: string,
   brandSlug: string,
   domainName: string
-): Promise<boolean> {
-  // Maps / GBP: verify via SERP local pack when available
+): Promise<PresenceResult> {
+  // Maps / GBP: verify via SERP local pack when available (definitive).
   if (["google_business", "bing_places", "apple_business"].includes(platform.surface)) {
-    const query = `${brandName} ${domainName}`;
     try {
+      const query = `${brandName} ${domainName}`;
       const serp = await searchGoogleOrganicRouter(query, "United States", domainName, []);
       if (serp.success && serp.data) {
         const inOrganic = serp.data.brandInResults;
-        const inLocal = serp.data.organicResults.some(
+        const local = serp.data.organicResults.find(
           (r) =>
             r.url.includes("google.com/maps") ||
             r.url.includes("g.page") ||
             r.title.toLowerCase().includes(brandName.toLowerCase())
         );
-        if (inOrganic || inLocal) return true;
+        return { present: Boolean(inOrganic || local), quality: "measured", evidence: local?.url };
       }
     } catch {
-      // fall through to heuristics
+      // SERP provider unreachable — honestly unavailable, not "missing".
     }
+    return { present: false, quality: "unavailable" };
   }
 
-  // Social platforms: try common URL patterns
+  // Social platforms: HEAD probe of common URL patterns. This is a heuristic
+  // (handles/usernames rarely match the brand slug exactly), so it is labeled
+  // "estimated" rather than a definitive measurement.
   const socialPlatforms = ["linkedin", "x_twitter", "facebook", "instagram", "tiktok"];
   if (socialPlatforms.includes(platform.surface)) {
-    const urls = [
-      `${platform.checkUrl}${brandSlug}`,
-      `${platform.checkUrl}${domainName}`,
-    ];
-
+    const urls = [`${platform.checkUrl}${brandSlug}`, `${platform.checkUrl}${domainName}`];
+    let anyReachable = false;
     for (const url of urls) {
       try {
         const response = await fetch(url, {
@@ -114,14 +137,20 @@ async function checkPresence(
           signal: AbortSignal.timeout(5000),
           redirect: "follow",
         });
-        if (response.ok || response.status === 200) return true;
+        anyReachable = true;
+        if (response.ok || response.status === 200) {
+          return { present: true, quality: "estimated", evidence: url };
+        }
       } catch {
-        // Continue
+        // network error for this URL — try the next pattern
       }
     }
+    return anyReachable
+      ? { present: false, quality: "estimated" }
+      : { present: false, quality: "unavailable" };
   }
 
-  // For review/directory platforms, use search-based heuristic
+  // Review/directory platforms: search-based content check (definitive on success).
   if (["g2", "capterra", "trustpilot", "yelp"].includes(platform.surface)) {
     try {
       const searchUrl = `${platform.checkUrl}${encodeURIComponent(brandName)}`;
@@ -130,16 +159,18 @@ async function checkPresence(
         headers: { "User-Agent": "PresenceOS-Audit/1.0" },
       });
       if (response.ok) {
-        const text = await response.text();
-        return text.toLowerCase().includes(brandName.toLowerCase()) ||
-          text.toLowerCase().includes(domainName.toLowerCase());
+        const text = (await response.text()).toLowerCase();
+        const present =
+          text.includes(brandName.toLowerCase()) || text.includes(domainName.toLowerCase());
+        return { present, quality: "measured", evidence: present ? searchUrl : undefined };
       }
+      return { present: false, quality: "unavailable" };
     } catch {
-      // Unable to verify
+      return { present: false, quality: "unavailable" };
     }
   }
 
-  return false;
+  return { present: false, quality: "unavailable" };
 }
 
 async function checkCompetitorPresence(

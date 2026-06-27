@@ -16,12 +16,13 @@ import {
   getVisibilityScanPromptLimit,
 } from "@/lib/plans/limits";
 import {
-  isDemoMode,
+  resolveScanDemoMode,
   generateDemoPrompts,
   generateDemoVisibilityResults,
   generateDemoBrandProfile,
   generateDemoAuthorityOpportunities,
 } from "@/lib/demo/scan-data";
+import { resolveAndPersistCompetitors } from "@/lib/engines/competitor-resolver";
 import type {
   Project,
   TechnicalFinding,
@@ -52,7 +53,7 @@ export async function runProjectScan(
   if (!project) throw new Error("Project not found");
 
   const p = project as Project;
-  const demo = isDemoMode();
+  const demo = await resolveScanDemoMode(supabase, p.organization_id);
   const promptCount = getPromptGenerationLimit();
   const maxScanPrompts = getVisibilityScanPromptLimit();
 
@@ -125,7 +126,12 @@ export async function runProjectScan(
       });
 
   if (visibilityResults.length > 0) {
-    await supabase.from("visibility_results").insert(visibilityResults as never[]);
+    const now = new Date().toISOString();
+    const rows = (visibilityResults as Array<Record<string, unknown>>).map((r) => {
+      const ds = (r.data_source as string | undefined) ?? (demo ? "simulated" : undefined);
+      return { ...r, data_source: ds, is_estimated: ds !== "measured", last_checked_at: now };
+    });
+    await supabase.from("visibility_results").insert(rows as never[]);
   }
 
   if (!demo) {
@@ -139,9 +145,23 @@ export async function runProjectScan(
       await supabase.from("citation_sources").insert(citationRows);
     }
   }
+
+  // Unify the failure gate with the step-based pipeline: a live scan that
+  // produced zero measured results is a failed run, not a silent "completed 0".
+  const measuredCount = visibilityResults.filter(
+    (r) => (r as { data_source?: string }).data_source === "measured"
+  ).length;
+  const runStatus = demo ? "completed" : measuredCount === 0 ? "failed" : "completed";
   await supabase
     .from("visibility_runs")
-    .update({ status: "completed", completed_at: new Date().toISOString() })
+    .update({
+      status: runStatus,
+      completed_at: new Date().toISOString(),
+      error_message:
+        runStatus === "failed"
+          ? "No live visibility measurements — check API keys (SERP + LLM)"
+          : null,
+    })
     .eq("id", run!.id);
 
   const coverageItems = await checkPlatformCoverage(
@@ -153,6 +173,10 @@ export async function runProjectScan(
   await supabase.from("coverage_items").delete().eq("project_id", projectId);
   if (coverageItems.length > 0) await supabase.from("coverage_items").insert(coverageItems);
 
+  const resolvedCompetitors = demo
+    ? []
+    : await resolveAndPersistCompetitors(supabase, projectId, p.competitors || [], p.industry || "");
+
   const authorityOpportunities = demo
     ? generateDemoAuthorityOpportunities(projectId, p.industry || "", p.competitors || [])
     : await findAuthorityOpportunities(
@@ -161,7 +185,8 @@ export async function runProjectScan(
         p.domain,
         p.industry || "",
         p.competitors || [],
-        prompts.map((pr) => pr.text)
+        prompts.map((pr) => pr.text),
+        resolvedCompetitors
       );
 
   await supabase.from("authority_opportunities").delete().eq("project_id", projectId);

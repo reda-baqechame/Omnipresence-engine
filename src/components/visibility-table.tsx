@@ -1,7 +1,8 @@
 "use client";
 
 import type { VisibilityResult } from "@/types/database";
-import { getResultDataSourceLabel } from "@/lib/engines/visibility-scanner";
+import { resultDataQuality } from "@/lib/engines/provenance";
+import { ProvenanceBadge } from "@/components/provenance-badge";
 
 interface VisibilityTableProps {
   results: VisibilityResult[];
@@ -35,8 +36,8 @@ export function VisibilityTable({ results, brandName, competitors }: VisibilityT
             <tr key={r.id} className="border-b border-border/50 hover:bg-secondary/30">
               <td className="p-3 max-w-xs truncate" title={r.prompt_text}>{r.prompt_text}</td>
               <td className="p-3 text-muted-foreground capitalize">{r.engine.replace(/_/g, " ")}</td>
-              <td className="p-3 text-xs text-muted-foreground">
-                {getResultDataSourceLabel(r)}
+              <td className="p-3 text-xs">
+                <ProvenanceBadge quality={resultDataQuality(r)} confidence={r.confidence} />
               </td>
               <td className="p-3 text-center">{r.brand_mentioned ? "✓" : "—"}</td>
               <td className="p-3 text-center">{r.brand_cited ? "✓" : "—"}</td>

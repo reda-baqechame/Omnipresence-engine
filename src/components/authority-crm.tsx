@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import type { AuthorityOpportunity } from "@/types/database";
+import { ProvenanceBadge } from "@/components/provenance-badge";
 
 interface AuthorityCRMProps {
   projectId: string;
@@ -80,6 +81,10 @@ export function AuthorityCRM({ projectId, opportunities: initial }: AuthorityCRM
                   {opp.competitor_present && (
                     <span className="text-xs bg-orange-500/10 text-orange-400 px-2 py-0.5 rounded">Competitor gap</span>
                   )}
+                  <ProvenanceBadge
+                    quality={opp.data_source ?? (opp.measured ? "measured" : "estimated")}
+                    confidence={opp.confidence}
+                  />
                 </div>
                 <p className="text-sm text-muted-foreground">{opp.pitch_angle}</p>
                 <div className="flex gap-4 mt-2 text-xs text-muted-foreground">

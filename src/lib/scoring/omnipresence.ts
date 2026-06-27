@@ -5,6 +5,22 @@ import type {
   AuthorityOpportunity,
   OmniPresenceScore,
 } from "@/types/database";
+import { resultDataQuality } from "@/lib/engines/provenance";
+
+/** Measured-only pool — never mix simulated/unavailable into a real score. */
+function scorePool(results: VisibilityResult[]): VisibilityResult[] {
+  const measured = results.filter((r) => resultDataQuality(r) === "measured");
+  if (measured.length) return measured;
+  // No measured data: fall back to demo rows only when the WHOLE set is demo
+  // (preview mode). Real-but-unmeasured rows score as no-data, never inflated.
+  const demo = results.filter((r) => resultDataQuality(r) === "simulated");
+  return demo.length === results.length ? demo : measured;
+}
+
+/** Coverage items we could actually verify (unavailable = unknown, not "missing"). */
+function verifiedCoverage(items: CoverageItem[]): CoverageItem[] {
+  return items.filter((c) => c.data_quality !== "unavailable");
+}
 
 export interface ScoreInputs {
   visibilityResults: VisibilityResult[];
@@ -32,12 +48,14 @@ const WEIGHTS = {
 };
 
 export function calculateOmniPresenceScore(inputs: ScoreInputs): Omit<OmniPresenceScore, "id" | "project_id" | "created_at"> {
-  const aiVisibility = calculateAIVisibility(inputs.visibilityResults);
-  const searchVisibility = calculateSearchVisibility(inputs.visibilityResults);
-  const localVisibility = calculateLocalVisibility(inputs.coverageItems, inputs.hasGbp);
-  const socialPresence = calculateSocialPresence(inputs.coverageItems);
-  const directoryCoverage = calculateDirectoryCoverage(inputs.coverageItems);
-  const authorityMentions = calculateAuthorityMentions(inputs.authorityOpportunities, inputs.visibilityResults, inputs.domainAuthority);
+  const pool = scorePool(inputs.visibilityResults);
+  const coverage = verifiedCoverage(inputs.coverageItems);
+  const aiVisibility = calculateAIVisibility(pool);
+  const searchVisibility = calculateSearchVisibility(pool);
+  const localVisibility = calculateLocalVisibility(coverage, inputs.hasGbp);
+  const socialPresence = calculateSocialPresence(coverage);
+  const directoryCoverage = calculateDirectoryCoverage(coverage);
+  const authorityMentions = calculateAuthorityMentions(inputs.authorityOpportunities, pool, inputs.domainAuthority);
   const technicalReadiness = calculateTechnicalReadiness(inputs.technicalFindings, inputs.pageSpeedScore);
   const conversionReadiness = calculateConversionReadiness(inputs.hasConversionTracking, inputs.monthlyTraffic);
 
@@ -51,6 +69,12 @@ export function calculateOmniPresenceScore(inputs: ScoreInputs): Omit<OmniPresen
     technicalReadiness * WEIGHTS.technical_readiness +
     conversionReadiness * WEIGHTS.conversion_readiness;
 
+  const measuredInputs = inputs.visibilityResults.filter(
+    (r) => resultDataQuality(r) === "measured"
+  ).length;
+  const totalInputs = inputs.visibilityResults.length;
+  const allSimulated = totalInputs > 0 && measuredInputs === 0 && pool.length > 0;
+
   return {
     omnipresence_score: Math.round(omnipresenceScore * 100) / 100,
     ai_visibility: Math.round(aiVisibility * 100) / 100,
@@ -61,11 +85,17 @@ export function calculateOmniPresenceScore(inputs: ScoreInputs): Omit<OmniPresen
     authority_mentions: Math.round(authorityMentions * 100) / 100,
     technical_readiness: Math.round(technicalReadiness * 100) / 100,
     conversion_readiness: Math.round(conversionReadiness * 100) / 100,
+    data_source: measuredInputs > 0 ? "measured" : allSimulated ? "simulated" : "unavailable",
+    confidence: totalInputs > 0 ? Math.round((measuredInputs / totalInputs) * 100) / 100 : 0,
+    measured_inputs: measuredInputs,
+    total_inputs: totalInputs,
     breakdown: {
       weights: WEIGHTS,
       visibilityResultCount: inputs.visibilityResults.length,
+      measuredVisibilityCount: measuredInputs,
       technicalFindingCount: inputs.technicalFindings.length,
       coverageItemCount: inputs.coverageItems.length,
+      verifiedCoverageCount: coverage.length,
       authorityOpportunityCount: inputs.authorityOpportunities.length,
     },
   };

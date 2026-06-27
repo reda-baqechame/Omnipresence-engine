@@ -7,6 +7,7 @@ import {
   stepVisibilityScan,
   stepScoreAndRoadmap,
 } from "@/lib/engines/scan-steps";
+import { resolveScanDemoMode } from "@/lib/demo/scan-data";
 import { analyzePassageReadiness } from "@/lib/engines/passage-readiness";
 import { sendScoreDropAlert } from "@/lib/email/reports";
 import { gatherReportData, saveReportArtifacts } from "@/lib/engines/report-builder";
@@ -44,16 +45,22 @@ export const runFullScan = inngest.createFunction(
       return data as Project;
     });
 
+    // Refund-safety gate: paid orgs never receive demo data, even if no provider
+    // is configured (real engines return Unavailable instead of fabricated data).
+    const demo = await step.run("resolve-demo-mode", () =>
+      resolveScanDemoMode(supabase, organizationId)
+    );
+
     const technicalFindings = await step.run("technical-audit", () =>
       stepTechnicalAudit(supabase, projectId, project.domain)
     );
 
-    await step.run("brand-extract", () => stepBrandExtract(supabase, project));
+    await step.run("brand-extract", () => stepBrandExtract(supabase, project, demo));
 
-    await step.run("visibility-scan", () => stepVisibilityScan(supabase, project));
+    await step.run("visibility-scan", () => stepVisibilityScan(supabase, project, demo));
 
     const { score } = await step.run("score-roadmap", () =>
-      stepScoreAndRoadmap(supabase, project, technicalFindings)
+      stepScoreAndRoadmap(supabase, project, technicalFindings, demo)
     );
 
     await step.run("finalize", async () => {

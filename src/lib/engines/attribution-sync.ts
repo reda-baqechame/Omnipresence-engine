@@ -21,6 +21,10 @@ export async function syncProjectAttribution(
   let leads = 0;
   let revenue = 0;
 
+  // Track which real sources actually returned data so a failed sync is shown
+  // as Unavailable rather than a confident zero.
+  const sourceAvailability: Record<string, boolean> = {};
+
   // Edge-detected AI referrals from beacon
   const { count: beaconAiHits } = await supabase
     .from("ai_referrals")
@@ -29,12 +33,14 @@ export async function syncProjectAttribution(
     .gte("created_at", periodStart);
 
   aiReferralTraffic += beaconAiHits || 0;
+  sourceAvailability.beacon = true;
 
   const gscToken = await getValidOAuthToken(supabase, projectId, "google_search_console");
   if (gscToken) {
     const gscData = await syncGoogleSearchConsole(projectId, gscToken, project.domain, periodStart, periodEnd);
     organicTraffic += gscData.clicks;
     searchClicks = gscData.clicks;
+    sourceAvailability.google_search_console = gscData.available;
   }
 
   const bingToken = await getValidOAuthToken(supabase, projectId, "bing_webmaster");
@@ -43,6 +49,7 @@ export async function syncProjectAttribution(
     organicTraffic += bingData.clicks;
     searchClicks += bingData.clicks;
     aiReferralTraffic += bingData.aiCitations;
+    sourceAvailability.bing_webmaster = bingData.available;
 
     const aiPerf = await fetchBingAIPerformance(bingToken, `https://${project.domain}`);
     if (aiPerf.success && aiPerf.data) {
@@ -110,6 +117,21 @@ export async function syncProjectAttribution(
     periodEnd
   );
 
-  await supabase.from("attribution_metrics").insert(metric);
+  // A connected source that failed (available === false) makes the metric only
+  // partially trustworthy; no connected real source at all = unavailable.
+  const connectedSources = Object.keys(sourceAvailability).filter((k) => k !== "beacon");
+  const anyConnectedAvailable = connectedSources.some((k) => sourceAvailability[k]);
+  const anyConnectedFailed = connectedSources.some((k) => !sourceAvailability[k]);
+
+  await supabase.from("attribution_metrics").insert({
+    ...metric,
+    source_availability: sourceAvailability,
+    data_source: anyConnectedAvailable ? "measured" : "unavailable",
+    is_estimated: anyConnectedFailed || connectedSources.length === 0,
+    confidence: connectedSources.length
+      ? Math.round((connectedSources.filter((k) => sourceAvailability[k]).length / connectedSources.length) * 100) / 100
+      : 0,
+    last_checked_at: new Date().toISOString(),
+  });
   return { success: true };
 }
