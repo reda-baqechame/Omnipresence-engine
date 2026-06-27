@@ -64,6 +64,15 @@ export function isMeasured(q: DataQuality | null | undefined): boolean {
   return q === "measured";
 }
 
+/**
+ * Real AI-visibility signal that should count toward a score: a grounded live
+ * measurement OR a model-knowledge answer (the model's own recommendation). Both
+ * are genuine — demo/estimated/unavailable are not.
+ */
+export function isCountableVisibility(q: DataQuality | null | undefined): boolean {
+  return q === "measured" || q === "model_knowledge";
+}
+
 /** A demo/simulated row — must never be mixed into measured metrics or shown to paid users. */
 export function isSimulated(q: DataQuality | null | undefined): boolean {
   return q === "simulated";

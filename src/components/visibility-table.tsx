@@ -10,6 +10,13 @@ interface VisibilityTableProps {
   competitors: string[];
 }
 
+function sentimentIcon(s?: VisibilityResult["sentiment"]) {
+  if (s === "positive") return <span className="text-green-400" title="Positive">▲</span>;
+  if (s === "negative") return <span className="text-red-400" title="Negative">▼</span>;
+  if (s === "neutral") return <span className="text-muted-foreground" title="Neutral">●</span>;
+  return <span className="text-muted-foreground/40" title="Unknown">—</span>;
+}
+
 export function VisibilityTable({ results, brandName, competitors }: VisibilityTableProps) {
   if (results.length === 0) {
     return <p className="text-muted-foreground text-sm">No visibility results yet. Run a scan first.</p>;
@@ -25,6 +32,7 @@ export function VisibilityTable({ results, brandName, competitors }: VisibilityT
             <th className="text-left p-3">Source</th>
             <th className="text-center p-3">Brand</th>
             <th className="text-center p-3">Cited</th>
+            <th className="text-center p-3" title="Sentiment of the brand mention">Sentiment</th>
             {competitors.slice(0, 3).map((c) => (
               <th key={c} className="text-center p-3">{c}</th>
             ))}
@@ -41,6 +49,7 @@ export function VisibilityTable({ results, brandName, competitors }: VisibilityT
               </td>
               <td className="p-3 text-center">{r.brand_mentioned ? "✓" : "—"}</td>
               <td className="p-3 text-center">{r.brand_cited ? "✓" : "—"}</td>
+              <td className="p-3 text-center">{sentimentIcon(r.sentiment)}</td>
               {competitors.slice(0, 3).map((c) => (
                 <td key={c} className="p-3 text-center">
                   {r.competitor_mentions?.[c] ? "✓" : "—"}

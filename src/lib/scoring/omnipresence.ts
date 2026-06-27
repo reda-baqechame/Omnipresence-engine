@@ -5,11 +5,11 @@ import type {
   AuthorityOpportunity,
   OmniPresenceScore,
 } from "@/types/database";
-import { resultDataQuality } from "@/lib/engines/provenance";
+import { resultDataQuality, isCountableVisibility } from "@/lib/engines/provenance";
 
 /** Measured-only pool — never mix simulated/unavailable into a real score. */
 function scorePool(results: VisibilityResult[]): VisibilityResult[] {
-  const measured = results.filter((r) => resultDataQuality(r) === "measured");
+  const measured = results.filter((r) => isCountableVisibility(resultDataQuality(r)));
   if (measured.length) return measured;
   // No measured data: fall back to demo rows only when the WHOLE set is demo
   // (preview mode). Real-but-unmeasured rows score as no-data, never inflated.
@@ -70,6 +70,9 @@ export function calculateOmniPresenceScore(inputs: ScoreInputs): Omit<OmniPresen
     conversionReadiness * WEIGHTS.conversion_readiness;
 
   const measuredInputs = inputs.visibilityResults.filter(
+    (r) => isCountableVisibility(resultDataQuality(r))
+  ).length;
+  const groundedInputs = inputs.visibilityResults.filter(
     (r) => resultDataQuality(r) === "measured"
   ).length;
   const totalInputs = inputs.visibilityResults.length;
@@ -85,7 +88,7 @@ export function calculateOmniPresenceScore(inputs: ScoreInputs): Omit<OmniPresen
     authority_mentions: Math.round(authorityMentions * 100) / 100,
     technical_readiness: Math.round(technicalReadiness * 100) / 100,
     conversion_readiness: Math.round(conversionReadiness * 100) / 100,
-    data_source: measuredInputs > 0 ? "measured" : allSimulated ? "simulated" : "unavailable",
+    data_source: groundedInputs > 0 ? "measured" : measuredInputs > 0 ? "model_knowledge" : allSimulated ? "simulated" : "unavailable",
     confidence: totalInputs > 0 ? Math.round((measuredInputs / totalInputs) * 100) / 100 : 0,
     measured_inputs: measuredInputs,
     total_inputs: totalInputs,

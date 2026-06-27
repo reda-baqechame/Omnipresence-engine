@@ -147,6 +147,8 @@ export function getCapabilitiesSummary() {
       firecrawl: hasEnv("FIRECRAWL_API_KEY"),
       omnidata: hasEnv("OMNIDATA_BASE_URL"),
       dataForSeoOptional: hasLLMMentionsCapability(),
+      // Phase 2 - optional grounded AI UI-surface capture (Profound-style).
+      aiUiCapture: process.env.ENABLE_AI_UI_CAPTURE === "true" && hasEnv("AI_UI_CAPTURE_URL"),
     },
     // Free, keyless-first AEO signals (always available, rate-limited).
     freeSignals: {

@@ -6,8 +6,9 @@ import {
 import { hasLLMMentionsCapability } from "@/lib/config/capabilities";
 import { queryPerplexitySonar } from "@/lib/providers/perplexity";
 import { searchGoogleOrganicRouter } from "@/lib/providers/serp-router";
+import { hasAiUiCapture, captureAiUiSurface } from "@/lib/providers/ai-ui-capture";
 import type { VisibilityEngine, VisibilityResult } from "@/types/database";
-import type { DataSource } from "@/types/database";
+import type { DataSource, DataQuality } from "@/types/database";
 import { SCAN_ENGINES } from "@/lib/config/scan-engines";
 
 export interface VisibilityScanConfig {
@@ -23,7 +24,7 @@ export interface VisibilityScanConfig {
 }
 
 export interface VisibilityScanResult extends Omit<VisibilityResult, "id" | "created_at"> {
-  data_source: DataSource;
+  data_source: DataQuality;
 }
 
 const DEFAULT_ENGINES: VisibilityEngine[] = SCAN_ENGINES;
@@ -74,11 +75,46 @@ async function scanSinglePrompt(
     competitor_citations: {} as Record<string, boolean>,
     source_domains: [] as string[],
     cited_urls: [] as string[],
-    data_source: "simulated" as DataSource,
+    data_source: "simulated" as DataQuality,
   };
 
   const domainLower = config.brandDomain.replace(/^www\./, "").toLowerCase();
   const brandToken = domainLower.split(".")[0];
+
+  // Preferred (when enabled): grounded UI-surface capture for AI engines —
+  // the real surface a user sees, not just the model's parametric knowledge.
+  if (hasAiUiCapture() && (LLM_ENGINES.has(engine) || engine === "perplexity" || engine === "google_ai_overview")) {
+    const surface = engine === "claude" ? "chatgpt" : (engine as "chatgpt" | "gemini" | "perplexity" | "google_ai_overview");
+    const captured = await captureAiUiSurface(surface, prompt.text, config.brandName, config.brandDomain, config.competitors).catch(() => null);
+    if (captured) {
+      const sourceDomains = captured.sourceDomains.length
+        ? captured.sourceDomains
+        : captured.citedUrls.map(tryHostname).filter(Boolean);
+      return {
+        ...base,
+        brand_mentioned: captured.brandMentioned,
+        brand_cited: captured.brandCited,
+        competitor_mentions: captured.competitorMentions,
+        source_domains: [...new Set(sourceDomains)],
+        cited_urls: captured.citedUrls,
+        measurement_mode: "grounded",
+        sentiment: captured.brandMentioned ? analyzeSentiment(captured.answer, config.brandName) : "unknown",
+        recommendation_strength: captured.brandMentioned ? recommendationStrength(captured.answer, config.brandName) : 0,
+        owned_cited: captured.brandCited,
+        third_party_cited: captured.brandMentioned && [...new Set(sourceDomains)].some((d) => !d.includes(brandToken)),
+        answer_position: answerPosition(captured.answer, config.brandName, config.competitors),
+        sample_count: 1,
+        variance: 0,
+        raw_response: {
+          answer: captured.answer,
+          data_source: "measured",
+          data_source_detail: "ai_ui_capture",
+          measurement_mode: "grounded",
+        },
+        data_source: "measured",
+      };
+    }
+  }
 
   // Primary: direct LLM queries and cheap SERP providers
   try {
@@ -88,19 +124,30 @@ async function scanSinglePrompt(
     } else if (engine === "perplexity") {
       const res = await queryPerplexitySonar(prompt.text, config.brandName, config.brandDomain, config.competitors);
       if (res.success && res.data) {
+        const sourceDomains = res.data.citations.map((u) => {
+          try { return new URL(u).hostname.replace(/^www\./, ""); } catch { return ""; }
+        }).filter(Boolean);
+        const answer = res.data.answer || "";
         return {
           ...base,
           brand_mentioned: res.data.brandMentioned,
           brand_cited: res.data.brandCited,
           competitor_mentions: res.data.competitorMentions,
           cited_urls: res.data.citations,
-          source_domains: res.data.citations.map((u) => {
-            try { return new URL(u).hostname.replace(/^www\./, ""); } catch { return ""; }
-          }).filter(Boolean),
+          source_domains: sourceDomains,
+          measurement_mode: "grounded",
+          sentiment: res.data.brandMentioned ? analyzeSentiment(answer, config.brandName) : "unknown",
+          recommendation_strength: res.data.brandMentioned ? recommendationStrength(answer, config.brandName) : 0,
+          owned_cited: res.data.brandCited,
+          third_party_cited: res.data.brandMentioned && sourceDomains.some((d) => !d.includes(brandToken)),
+          answer_position: answerPosition(answer, config.brandName, config.competitors),
+          sample_count: 1,
+          variance: 0,
           raw_response: {
-            answer: res.data.answer,
+            answer,
             data_source: "measured",
             data_source_detail: "perplexity",
+            measurement_mode: "grounded",
           },
           data_source: "measured",
         };
@@ -127,6 +174,11 @@ async function scanSinglePrompt(
         const aiDomains = res.data.aiOverview?.citedDomains || [];
         const aiUrls = res.data.aiOverview?.citedUrls || [];
 
+        // Brand's organic rank = its position in the answer surface.
+        const organicPosition = res.data.organicResults.findIndex(
+          (r) => tryHostname(r.url).includes(domainLower) || tryHostname(r.url).includes(brandToken)
+        );
+
         return {
           ...base,
           brand_mentioned: brandInAi,
@@ -134,11 +186,20 @@ async function scanSinglePrompt(
           competitor_mentions: res.data.competitorInResults,
           source_domains: [...new Set([...aiDomains, ...organicDomains])],
           cited_urls: [...new Set([...aiUrls, ...organicUrls])],
+          measurement_mode: "grounded",
+          sentiment: brandInAi ? "neutral" : "unknown",
+          recommendation_strength: aiCited ? 1 : brandInAi ? 0.5 : 0,
+          owned_cited: aiCited || organicPosition >= 0,
+          third_party_cited: brandInAi && aiDomains.some((d) => !d.includes(brandToken)),
+          answer_position: organicPosition >= 0 ? organicPosition + 1 : undefined,
+          sample_count: 1,
+          variance: 0,
           raw_response: {
             organic: res.data.organicResults,
             aiOverview: res.data.aiOverview,
             data_source: "measured",
             data_source_detail: res.provider || "serp",
+            measurement_mode: "grounded",
           },
           data_source: "measured",
         };
@@ -166,7 +227,7 @@ async function sampleLLMVisibility(
   _brandToken: string
 ): Promise<VisibilityScanResult | null> {
   const provider = engine === "chatgpt" ? "openai" : engine === "gemini" ? "gemini" : "claude";
-  const runs: Array<ReturnType<typeof mapAIResult> & { data_source: DataSource }> = [];
+  const runs: Array<ReturnType<typeof mapAIResult> & { text: string }> = [];
 
   for (let i = 0; i < AI_SAMPLE_RUNS; i++) {
     const res = await queryLLMForVisibility(
@@ -177,7 +238,7 @@ async function sampleLLMVisibility(
       config.competitors
     );
     if (res.success && res.data) {
-      runs.push({ ...mapAIResult(res.data), data_source: "measured" as DataSource });
+      runs.push({ ...mapAIResult(res.data), text: res.data.rawResponse || "" });
     }
   }
 
@@ -186,11 +247,19 @@ async function sampleLLMVisibility(
   const mentionRate = runs.filter((r) => r.brand_mentioned).length / runs.length;
   const citationRate = runs.filter((r) => r.brand_cited).length / runs.length;
   const aggregated = runs[runs.length - 1];
+  const combinedText = runs.map((r) => r.text).join("\n\n");
 
   const competitorMentions: Record<string, boolean> = {};
   for (const comp of config.competitors) {
     competitorMentions[comp] = runs.some((r) => r.competitor_mentions[comp]);
   }
+
+  const sourceDomains = [...new Set(runs.flatMap((r) => r.source_domains))];
+  // Average recommendation strength only over runs that actually mentioned the brand.
+  const mentionedRuns = runs.filter((r) => r.brand_mentioned);
+  const recStrength = mentionedRuns.length
+    ? mentionedRuns.reduce((s, r) => s + recommendationStrength(r.text, config.brandName), 0) / mentionedRuns.length
+    : 0;
 
   return {
     run_id: config.runId,
@@ -202,17 +271,27 @@ async function sampleLLMVisibility(
     brand_cited: citationRate >= 0.5,
     competitor_mentions: competitorMentions,
     competitor_citations: aggregated.competitor_citations,
-    source_domains: [...new Set(runs.flatMap((r) => r.source_domains))],
+    source_domains: sourceDomains,
     cited_urls: [...new Set(runs.flatMap((r) => r.cited_urls))],
+    // LLM-direct measures the model's PARAMETRIC knowledge, not a live search UI.
+    measurement_mode: "model_knowledge",
+    sentiment: mentionRate >= 0.5 ? analyzeSentiment(combinedText, config.brandName) : "unknown",
+    recommendation_strength: recStrength,
+    owned_cited: citationRate >= 0.5,
+    third_party_cited: mentionRate >= 0.5 && sourceDomains.some((d) => !d.includes(_brandToken)),
+    answer_position: answerPosition(combinedText, config.brandName, config.competitors),
+    sample_count: runs.length,
+    variance: Math.round(mentionRate * (1 - mentionRate) * 1000) / 1000,
     raw_response: {
       sample_runs: runs.length,
       mention_rate: mentionRate,
       citation_rate: citationRate,
-      data_source: "measured",
+      data_source: "model_knowledge",
       data_source_detail: "llm_direct",
-      label: `Live LLM (${runs.length}-run sample)`,
+      measurement_mode: "model_knowledge",
+      label: `Model-knowledge (${runs.length}-run sample, no browsing)`,
     },
-    data_source: "measured",
+    data_source: "model_knowledge",
   };
 }
 
@@ -263,10 +342,19 @@ async function scanViaLLMMentions(
     competitor_citations: competitorCitations,
     source_domains: [...new Set(sourceDomains)],
     cited_urls: citedUrls,
+    measurement_mode: "grounded",
+    sentiment: brandMentioned ? analyzeSentiment(answerText, config.brandName) : "unknown",
+    recommendation_strength: brandMentioned ? recommendationStrength(answerText, config.brandName) : 0,
+    owned_cited: brandCited,
+    third_party_cited: brandMentioned && [...new Set(sourceDomains)].some((d) => !d.includes(brandToken)),
+    answer_position: answerPosition(answerText, config.brandName, config.competitors),
+    sample_count: res.data.length,
+    variance: 0,
     raw_response: {
       llmMentions: res.data,
       data_source: "measured",
       data_source_detail: "dataforseo",
+      measurement_mode: "grounded",
       aiSearchVolume: res.data[0]?.aiSearchVolume,
     },
     data_source: "measured",
@@ -279,6 +367,57 @@ function tryHostname(url: string): string {
   } catch {
     return "";
   }
+}
+
+const POSITIVE_TERMS = [
+  "best", "top", "leading", "excellent", "great", "recommended", "recommend",
+  "reliable", "trusted", "popular", "powerful", "favorite", "favourite", "strong",
+  "high-quality", "award", "innovative", "preferred",
+];
+const NEGATIVE_TERMS = [
+  "worst", "avoid", "poor", "unreliable", "scam", "disappointing", "lacking",
+  "weak", "outdated", "overpriced", "complaint", "complaints", "issues", "buggy",
+];
+
+/** Heuristic sentiment in a window around the brand mention. */
+function analyzeSentiment(
+  text: string,
+  brand: string
+): "positive" | "neutral" | "negative" | "unknown" {
+  const lower = text.toLowerCase();
+  const idx = lower.indexOf(brand.toLowerCase());
+  if (idx < 0) return "unknown";
+  const window = lower.slice(Math.max(0, idx - 140), idx + 140);
+  let pos = 0;
+  let neg = 0;
+  for (const w of POSITIVE_TERMS) if (window.includes(w)) pos++;
+  for (const w of NEGATIVE_TERMS) if (window.includes(w)) neg++;
+  if (pos > neg) return "positive";
+  if (neg > pos) return "negative";
+  return "neutral";
+}
+
+/** 0-1: strongly recommended (1), merely mentioned (0.5), or absent (0). */
+function recommendationStrength(text: string, brand: string): number {
+  const lower = text.toLowerCase();
+  const idx = lower.indexOf(brand.toLowerCase());
+  if (idx < 0) return 0;
+  const window = lower.slice(Math.max(0, idx - 90), idx + 90);
+  const strong = ["best", "#1", "number one", "top", "recommend", "leading", "first choice", "go-to", "the go to"];
+  return strong.some((s) => window.includes(s)) ? 1 : 0.5;
+}
+
+/** Ordinal position of the brand among brand+competitors by first appearance. */
+function answerPosition(text: string, brand: string, competitors: string[]): number | undefined {
+  const lower = text.toLowerCase();
+  const entries = [
+    { name: brand, idx: lower.indexOf(brand.toLowerCase()) },
+    ...competitors.map((c) => ({ name: c, idx: lower.indexOf(c.toLowerCase()) })),
+  ]
+    .filter((e) => e.idx >= 0)
+    .sort((a, b) => a.idx - b.idx);
+  const pos = entries.findIndex((e) => e.name === brand);
+  return pos >= 0 ? pos + 1 : undefined;
 }
 
 function mapAIResult(data: {
@@ -319,7 +458,9 @@ export function getResultDataSourceLabel(result: Pick<VisibilityResult, "raw_res
     return labels[detail] || detail;
   }
   const ds = result.raw_response?.data_source;
-  return ds === "measured" ? "Measured" : "Simulated";
+  if (ds === "measured") return "Live (grounded)";
+  if (ds === "model_knowledge") return "Model-knowledge";
+  return "Simulated";
 }
 
 export function calculateVisibilityMetrics(results: Array<Pick<VisibilityResult, "brand_mentioned" | "brand_cited" | "competitor_mentions" | "raw_response">>) {
@@ -331,7 +472,7 @@ export function calculateVisibilityMetrics(results: Array<Pick<VisibilityResult,
   const measured = results.filter((r) => {
     const row = r as VisibilityScanResult;
     const ds = row.data_source ?? r.raw_response?.data_source;
-    return ds === "measured";
+    return ds === "measured" || ds === "model_knowledge";
   }).length;
 
   const brandWins = results.filter((r) => {
@@ -429,7 +570,9 @@ export function extractCitationSources(
         cites_competitor: citesCompetitor,
         competitor_name: competitorName,
         ai_search_volume: volume,
-        data_source: r.data_source,
+        // citation_sources uses the narrow legacy DataSource; model_knowledge
+        // answers are still a real measurement of citation behavior.
+        data_source: r.data_source === "simulated" ? "simulated" : "measured",
       });
     }
   }

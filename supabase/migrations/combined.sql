@@ -1212,3 +1212,18 @@ CREATE POLICY competitors_org ON competitors FOR ALL USING (
 );
 
 
+-- ========== 0021_ai_measurement.sql ==========
+
+-- Phase 2: Honest AI Measurement — grounded vs model_knowledge + rich signals.
+
+ALTER TABLE visibility_results
+  ADD COLUMN IF NOT EXISTS measurement_mode TEXT,
+  ADD COLUMN IF NOT EXISTS sentiment TEXT,
+  ADD COLUMN IF NOT EXISTS recommendation_strength NUMERIC,
+  ADD COLUMN IF NOT EXISTS owned_cited BOOLEAN,
+  ADD COLUMN IF NOT EXISTS third_party_cited BOOLEAN,
+  ADD COLUMN IF NOT EXISTS answer_position INT,
+  ADD COLUMN IF NOT EXISTS sample_count INT,
+  ADD COLUMN IF NOT EXISTS variance NUMERIC;
+
+

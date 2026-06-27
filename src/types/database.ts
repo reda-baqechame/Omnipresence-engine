@@ -216,6 +216,20 @@ export interface VisibilityResult {
   last_checked_at?: string;
   evidence_url?: string;
   is_estimated?: boolean;
+  /** grounded = live search UI / retrieval with citations; model_knowledge = parametric LLM answer. */
+  measurement_mode?: "grounded" | "model_knowledge";
+  sentiment?: "positive" | "neutral" | "negative" | "unknown";
+  /** 0-1: how strongly the brand was recommended across samples. */
+  recommendation_strength?: number;
+  /** The brand's own domain was cited. */
+  owned_cited?: boolean;
+  /** A third-party source cited the brand. */
+  third_party_cited?: boolean;
+  /** Ordinal position of the brand among recommended options in the answer. */
+  answer_position?: number;
+  sample_count?: number;
+  /** 0-1 variance of brand mention across samples (sampling stability). */
+  variance?: number;
   created_at: string;
 }
 
