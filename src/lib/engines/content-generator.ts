@@ -1,6 +1,7 @@
 import { generateWithAI, generateStructured } from "@/lib/providers/ai-gateway";
 import { z } from "zod";
 import type { ContentAssetType, ContentStatus, BrandProfile } from "@/types/database";
+import { analyzeStructure, buildHowToJsonLd, buildFaqJsonLd, extractSteps, extractFaqs } from "@/lib/engines/structural-aeo";
 
 const ContentSchema = z.object({
   title: z.string(),
@@ -125,6 +126,12 @@ CITATION OPTIMIZATION RULES (mandatory):
     const qc = await import("@/lib/engines/schema-engine").then((m) =>
       m.runSchemaContentQC(result.data!.content, ["Article", "FAQPage"])
     );
+    // Deterministic structural QC + extractable schema (HowTo/FAQ) from the draft.
+    const structuralQc = analyzeStructure(result.data.content);
+    const steps = extractSteps(result.data.content);
+    const faqs = extractFaqs(result.data.content);
+    const howToJsonLd = buildHowToJsonLd(result.data.title, steps);
+    const faqJsonLd = buildFaqJsonLd(faqs);
     return {
       ...result.data,
       metadata: {
@@ -132,7 +139,13 @@ CITATION OPTIMIZATION RULES (mandatory):
         qc_score: qc.score,
         qc_passed: qc.passed,
         qc_issues: qc.issues,
-        suggested_schema: ["Article", "FAQPage", "Organization"],
+        structural_score: structuralQc.score,
+        structural_passed: structuralQc.passed,
+        structural_checks: structuralQc.checks,
+        structural_issues: structuralQc.issues,
+        how_to_json_ld: howToJsonLd,
+        faq_json_ld: faqJsonLd,
+        suggested_schema: ["Article", "FAQPage", "Organization", ...(howToJsonLd ? ["HowTo"] : [])],
       },
     };
   }

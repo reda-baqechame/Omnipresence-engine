@@ -11,10 +11,21 @@ interface Faq {
   question: string;
   answer: string;
 }
+interface StructuralQC {
+  score: number;
+  passed: boolean;
+  issues: string[];
+}
+interface StructuredDoc {
+  markdown: string;
+  jsonLd: Record<string, unknown>[];
+  qc: StructuralQC;
+}
 interface RewriteResponse {
   url: string;
   rewrites: Rewrite[];
   suggestedFaqs: Faq[];
+  structured?: StructuredDoc;
   source: "ai" | "unavailable";
   error?: string;
 }
@@ -24,6 +35,22 @@ export function PassageRewriterPanel({ projectId }: { projectId: string }) {
   const [loading, setLoading] = useState(false);
   const [result, setResult] = useState<RewriteResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [publishing, setPublishing] = useState(false);
+
+  async function publish(platform: "wordpress" | "webflow") {
+    setPublishing(true);
+    try {
+      const res = await fetch("/api/aeo/rewrite", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ projectId, url: url.trim() || undefined, publish: true, platform }),
+      });
+      const data = await res.json();
+      alert(res.ok && data.published?.ok ? `Published to ${platform}.` : `Publish failed: ${data.error || "unknown"}`);
+    } finally {
+      setPublishing(false);
+    }
+  }
 
   async function run() {
     setLoading(true);
@@ -86,6 +113,50 @@ export function PassageRewriterPanel({ projectId }: { projectId: string }) {
               <p className="text-sm">{r.supporting}</p>
             </div>
           ))}
+
+          {result.structured && (
+            <div className="border border-border rounded-lg p-4 space-y-3">
+              <div className="flex items-center justify-between">
+                <div className="font-medium text-sm">
+                  Structural QC:{" "}
+                  <span className={result.structured.qc.passed ? "text-green-400" : "text-yellow-400"}>
+                    {result.structured.qc.score}/100 {result.structured.qc.passed ? "(pass)" : "(needs work)"}
+                  </span>
+                </div>
+                <div className="flex gap-2">
+                  <button
+                    onClick={() => publish("wordpress")}
+                    disabled={publishing}
+                    className="text-xs border border-border px-3 py-1.5 rounded-lg hover:bg-secondary disabled:opacity-50"
+                  >
+                    Publish to WordPress
+                  </button>
+                  <button
+                    onClick={() => publish("webflow")}
+                    disabled={publishing}
+                    className="text-xs border border-border px-3 py-1.5 rounded-lg hover:bg-secondary disabled:opacity-50"
+                  >
+                    Publish to Webflow
+                  </button>
+                </div>
+              </div>
+              {result.structured.qc.issues.length > 0 && (
+                <ul className="text-xs text-yellow-400 list-disc pl-4 space-y-0.5">
+                  {result.structured.qc.issues.map((iss, i) => (
+                    <li key={i}>{iss}</li>
+                  ))}
+                </ul>
+              )}
+              <details>
+                <summary className="text-xs text-muted-foreground cursor-pointer">Assembled markdown + JSON-LD</summary>
+                <pre className="text-xs bg-secondary p-3 rounded-lg overflow-auto max-h-72 mt-2">
+                  {result.structured.markdown}
+                  {"\n\n"}
+                  {result.structured.jsonLd.map((b) => JSON.stringify(b, null, 2)).join("\n")}
+                </pre>
+              </details>
+            </div>
+          )}
 
           {result.suggestedFaqs.length > 0 && (
             <div className="border border-border rounded-lg p-4">
