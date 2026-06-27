@@ -3,6 +3,8 @@ import { createClient } from "@/lib/supabase/server";
 import { getProject } from "@/lib/projects";
 import { calculateAeoReadiness, type AeoLever, type AeoReadiness } from "@/lib/engines/aeo-readiness";
 import { calculateAeoMetrics } from "@/lib/engines/aeo-metrics";
+import { assessCitationGates, type GateAssessment } from "@/lib/engines/gate-assessment";
+import type { TechnicalAuditFinding } from "@/lib/engines/technical-audit";
 import { PassageRewriterPanel } from "@/components/passage-rewriter-panel";
 import type { VisibilityResult, TechnicalFinding } from "@/types/database";
 
@@ -56,6 +58,10 @@ export default async function AeoReadinessPage({
 
   const aeoMetrics = calculateAeoMetrics(results, project.name, project.competitors || []);
 
+  // 4-gate citation funnel — derived live from persisted technical findings.
+  // Each gate must pass for an AI engine to index → crawl → retrieve → cite you.
+  const citation = assessCitationGates((findings || []) as TechnicalAuditFinding[]);
+
   const deterministic = readiness.levers.filter((l) => l.type === "deterministic");
   const probabilistic = readiness.levers.filter((l) => l.type === "probabilistic");
 
@@ -82,6 +88,12 @@ export default async function AeoReadinessPage({
           <div className="text-sm text-muted-foreground mt-1">Probabilistic (measured)</div>
         </div>
       </div>
+
+      <CitationGatePanel
+        gates={citation.gates}
+        blocker={citation.timeToCitationBlocker}
+        overallPassed={citation.overallPassed}
+      />
 
       {readiness.nextBestActions.length > 0 && (
         <div className="bg-card border border-border rounded-xl p-6">
@@ -130,6 +142,69 @@ export default async function AeoReadinessPage({
             )}
           </div>
         </div>
+      </div>
+    </div>
+  );
+}
+
+function CitationGatePanel({
+  gates,
+  blocker,
+  overallPassed,
+}: {
+  gates: GateAssessment[];
+  blocker?: string;
+  overallPassed: boolean;
+}) {
+  return (
+    <div className="bg-card border border-border rounded-xl p-6">
+      <div className="flex items-center justify-between mb-1">
+        <h3 className="font-semibold">Citation funnel — 4 gates to get cited</h3>
+        <span
+          className={`text-xs px-2 py-0.5 rounded-full border ${
+            overallPassed
+              ? "border-green-500/40 text-green-400"
+              : "border-yellow-500/40 text-yellow-400"
+          }`}
+        >
+          {overallPassed ? "All gates clear" : "Blocked"}
+        </span>
+      </div>
+      <p className="text-sm text-muted-foreground mb-4">
+        An AI engine can only cite you if you pass every gate in order: indexed → crawlable by AI bots → retrieval-ready → backed by citation signals.
+      </p>
+
+      {blocker && !overallPassed && (
+        <div className="mb-4 text-sm text-red-400 bg-red-500/10 border border-red-500/20 rounded-lg px-3 py-2">
+          Top blocker: {blocker}
+        </div>
+      )}
+
+      <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-3">
+        {gates.map((g) => (
+          <div key={g.gate} className="border border-border rounded-lg p-3">
+            <div className="flex items-center justify-between mb-2">
+              <span className="text-sm font-medium">{g.label}</span>
+              <span className={g.passed ? "text-green-400" : "text-red-400"}>
+                {g.passed ? "✓" : "✕"}
+              </span>
+            </div>
+            <div className="h-1.5 bg-muted rounded-full overflow-hidden mb-2">
+              <div
+                className={`h-full ${g.passed ? "bg-green-500" : g.score >= 40 ? "bg-yellow-500" : "bg-red-500"}`}
+                style={{ width: `${g.score}%` }}
+              />
+            </div>
+            <div className="text-xs text-muted-foreground">{g.score}/100</div>
+            {g.blockers.length > 0 && (
+              <ul className="mt-2 text-xs text-red-400 space-y-1">
+                {g.blockers.slice(0, 2).map((b, i) => (
+                  <li key={i}>• {b}</li>
+                ))}
+              </ul>
+            )}
+          </div>
+        ))}
       </div>
     </div>
   );
