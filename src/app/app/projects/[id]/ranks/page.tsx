@@ -2,6 +2,7 @@ import { notFound } from "next/navigation";
 import { getProject } from "@/lib/projects";
 import { RankPanel } from "@/components/rank-panel";
 import { ExportButtons } from "@/components/export-buttons";
+import { AnnotationsBar } from "@/components/annotations-bar";
 
 export default async function RanksPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
@@ -20,6 +21,7 @@ export default async function RanksPage({ params }: { params: Promise<{ id: stri
         <ExportButtons projectId={id} types={["ranks", "keywords", "findings", "ledger"]} />
       </div>
       <RankPanel projectId={id} />
+      <AnnotationsBar projectId={id} />
     </div>
   );
 }

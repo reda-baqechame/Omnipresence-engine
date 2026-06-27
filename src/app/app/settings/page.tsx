@@ -29,6 +29,10 @@ export default function SettingsPage() {
           <h3 className="font-semibold">Notifications</h3>
           <p className="text-sm text-muted-foreground">Slack webhooks for weekly score summaries</p>
         </Link>
+        <Link href="/app/settings/api" className="block bg-card border border-border rounded-xl p-4 hover:border-primary/50 transition">
+          <h3 className="font-semibold">API Keys</h3>
+          <p className="text-sm text-muted-foreground">Create keys for the public read + batch-scan API</p>
+        </Link>
       </div>
     </div>
   );

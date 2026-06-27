@@ -9,7 +9,8 @@ import {
 } from "@/lib/engines/scan-steps";
 import { resolveScanDemoMode } from "@/lib/demo/scan-data";
 import { analyzePassageReadiness } from "@/lib/engines/passage-readiness";
-import { sendScoreDropAlert } from "@/lib/email/reports";
+import { sendScoreDropAlert, sendCitationDropAlert } from "@/lib/email/reports";
+import { dispatchProjectAlerts } from "@/lib/engines/monitoring-alerts";
 import { gatherReportData, saveReportArtifacts } from "@/lib/engines/report-builder";
 import { syncProjectAttribution } from "@/lib/engines/attribution-sync";
 import { sendWeeklyReport } from "@/lib/email/reports";
@@ -376,7 +377,8 @@ export const citationDiffAlert = inngest.createFunction(
       if (delta && delta.current < delta.previous) {
         const email = await getOwnerEmail(supabase, project.organization_id);
         if (email) {
-          await sendScoreDropAlert(
+          // Use the citation-specific template (previously mislabeled as a score drop).
+          await sendCitationDropAlert(
             email,
             project.name,
             delta.previous,
@@ -386,6 +388,35 @@ export const citationDiffAlert = inngest.createFunction(
           alerted++;
         }
       }
+    }
+    return { alerted };
+  }
+);
+
+/**
+ * Daily consolidated monitoring alerts: rank drops, finding regressions, and
+ * SERP-feature losses pushed via email + Slack.
+ */
+export const monitoringAlerts = inngest.createFunction(
+  { id: "monitoring-alerts", retries: 1, triggers: [{ cron: "0 9 * * *" }] },
+  async ({ step }) => {
+    const supabase = await createServiceClient();
+    const projects = await step.run("fetch-projects", async () => {
+      const { data } = await supabase
+        .from("projects")
+        .select("id, name, organization_id")
+        .eq("status", "active");
+      return data || [];
+    });
+
+    let alerted = 0;
+    for (const project of projects) {
+      if (!project.organization_id) continue;
+      const result = await step.run(`alerts-${project.id}`, async () => {
+        const email = await getOwnerEmail(supabase, project.organization_id);
+        return dispatchProjectAlerts(supabase, project, { ownerEmail: email });
+      });
+      if (result.sent) alerted++;
     }
     return { alerted };
   }
@@ -704,6 +735,7 @@ export const functions = [
   weeklyReportEmail,
   dailyFreshnessCheck,
   citationDiffAlert,
+  monitoringAlerts,
   guaranteeVerificationCron,
   weeklyRankCheck,
   weeklyBacklinkMonitor,

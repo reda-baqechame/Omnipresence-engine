@@ -99,6 +99,85 @@ export async function sendScoreDropAlert(
   }
 }
 
+export async function sendCitationDropAlert(
+  toEmail: string,
+  projectName: string,
+  previousCitations: number,
+  newCitations: number,
+  projectId: string
+): Promise<boolean> {
+  const resend = getResend();
+  if (!resend) return false;
+
+  const drop = previousCitations - newCitations;
+  if (drop <= 0) return false;
+
+  try {
+    await resend.emails.send({
+      from: process.env.RESEND_FROM_EMAIL || "reports@presenceos.app",
+      to: toEmail,
+      subject: `AI citation alert — ${projectName} lost ${drop} AI citation${drop === 1 ? "" : "s"}`,
+      html: `
+        <div style="font-family: sans-serif; max-width: 600px; margin: 0 auto;">
+          <h1 style="color: #ef4444;">AI Citation Drop</h1>
+          <p>The number of AI answers citing <strong>${projectName}</strong> decreased since the previous run.</p>
+          <p style="font-size: 32px; font-weight: bold;">
+            <span style="color: #888;">${previousCitations}</span>
+            →
+            <span style="color: #ef4444;">${newCitations}</span>
+          </p>
+          <p>Check which prompts stopped citing you and review citation gaps for recovery.</p>
+          <a href="${process.env.NEXT_PUBLIC_APP_URL}/app/projects/${projectId}/visibility" style="display: inline-block; background: #6366f1; color: white; padding: 12px 24px; border-radius: 8px; text-decoration: none;">View Visibility</a>
+        </div>
+      `,
+    });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+export interface MonitoringAlertItem {
+  type: "rank_drop" | "finding_regression" | "serp_feature";
+  message: string;
+}
+
+export async function sendMonitoringAlert(
+  toEmail: string,
+  projectName: string,
+  projectId: string,
+  items: MonitoringAlertItem[]
+): Promise<boolean> {
+  const resend = getResend();
+  if (!resend || items.length === 0) return false;
+
+  const rows = items
+    .map(
+      (i) =>
+        `<li style="margin-bottom:6px;"><strong style="text-transform:capitalize;">${i.type.replace(/_/g, " ")}:</strong> ${i.message}</li>`
+    )
+    .join("");
+
+  try {
+    await resend.emails.send({
+      from: process.env.RESEND_FROM_EMAIL || "reports@presenceos.app",
+      to: toEmail,
+      subject: `Monitoring alert — ${projectName} (${items.length} change${items.length === 1 ? "" : "s"})`,
+      html: `
+        <div style="font-family: sans-serif; max-width: 600px; margin: 0 auto;">
+          <h1 style="color: #f59e0b;">OmniPresence Monitoring Alert</h1>
+          <p>We detected ${items.length} change${items.length === 1 ? "" : "s"} for <strong>${projectName}</strong>:</p>
+          <ul style="padding-left:18px;">${rows}</ul>
+          <a href="${process.env.NEXT_PUBLIC_APP_URL}/app/projects/${projectId}/ranks" style="display: inline-block; background: #6366f1; color: white; padding: 12px 24px; border-radius: 8px; text-decoration: none;">Review Changes</a>
+        </div>
+      `,
+    });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 export async function sendScanCompleteEmail(
   toEmail: string,
   projectName: string,

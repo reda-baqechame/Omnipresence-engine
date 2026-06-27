@@ -21,6 +21,43 @@ export async function sendSlackWebhook(
   }
 }
 
+export function buildMonitoringSlackMessage(
+  projectName: string,
+  items: { type: string; message: string }[],
+  dashboardUrl: string,
+  brandName?: string
+): SlackMessage {
+  return {
+    text: `${brandName || "PresenceOS"} alert: ${projectName} has ${items.length} change(s) to review.`,
+    blocks: [
+      {
+        type: "header",
+        text: { type: "plain_text", text: `⚠️ ${projectName} — ${items.length} change(s)` },
+      },
+      {
+        type: "section",
+        text: {
+          type: "mrkdwn",
+          text: items
+            .slice(0, 10)
+            .map((i) => `• *${i.type.replace(/_/g, " ")}:* ${i.message}`)
+            .join("\n"),
+        },
+      },
+      {
+        type: "actions",
+        elements: [
+          {
+            type: "button",
+            text: { type: "plain_text", text: "Review" },
+            url: dashboardUrl,
+          },
+        ],
+      },
+    ],
+  };
+}
+
 export function buildWeeklyReportSlackMessage(
   projectName: string,
   domain: string,
