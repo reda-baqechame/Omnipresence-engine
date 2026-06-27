@@ -1,4 +1,5 @@
 import { searchGoogleOrganicRouter } from "@/lib/providers/serp-router";
+import { logProviderError } from "@/lib/observability/log";
 
 export interface CommunityMentionRow {
   platform: "reddit" | "quora" | "hacker_news" | "github" | "other";
@@ -44,7 +45,8 @@ async function getRedditToken(): Promise<string | null> {
       expiresAt: Date.now() + (data.expires_in ?? 3600) * 1000,
     };
     return redditToken.value;
-  } catch {
+  } catch (error) {
+    logProviderError("community.reddit.token", error);
     return null;
   }
 }
@@ -78,7 +80,8 @@ export async function searchRedditMentions(
         mention_type: "brand" as const,
         source: "live" as const,
       }));
-  } catch {
+  } catch (error) {
+    logProviderError("community.reddit.search", error, { query });
     return [];
   }
 }
@@ -104,7 +107,8 @@ export async function searchRedditViaSerp(query: string): Promise<CommunityMenti
         mention_type: "brand" as const,
         source: "live" as const,
       }));
-  } catch {
+  } catch (error) {
+    logProviderError("community.reddit.serp", error, { query });
     return [];
   }
 }
@@ -131,7 +135,8 @@ export async function searchHackerNewsMentions(query: string): Promise<Community
         mention_type: "brand" as const,
         source: "live" as const,
       }));
-  } catch {
+  } catch (error) {
+    logProviderError("community.hackernews.search", error, { query });
     return [];
   }
 }
@@ -157,7 +162,8 @@ export async function searchQuoraMentions(query: string): Promise<CommunityMenti
         mention_type: "brand" as const,
         source: "live" as const,
       }));
-  } catch {
+  } catch (error) {
+    logProviderError("community.quora.serp", error, { query });
     return [];
   }
 }

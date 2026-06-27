@@ -6,6 +6,7 @@ import { compareVisibilityRuns } from "@/lib/engines/visibility-delta";
 import type { VisibilityResult } from "@/types/database";
 import { getProject } from "@/lib/projects";
 import { VisibilityTable } from "@/components/visibility-table";
+import { ExportButtons } from "@/components/export-buttons";
 import { CitationMovementPanel } from "@/components/citation-movement-panel";
 import { PromptImportPanel } from "@/components/prompt-import-panel";
 import { PromptHeatmap } from "@/components/prompt-heatmap";
@@ -85,13 +86,16 @@ export default async function VisibilityPage({
 
   return (
     <div className="space-y-8">
-      <div className="flex items-center gap-3 text-sm">
-        <span className={`px-2 py-1 rounded-full text-xs font-medium ${liveMode ? "bg-green-500/10 text-green-400 border border-green-500/30" : "bg-yellow-500/10 text-yellow-400 border border-yellow-500/30"}`}>
-          {liveMode ? "Live DIY stack" : "Demo mode"}
-        </span>
-        <span className="text-muted-foreground">
-          {Math.round(metrics.measuredRate * 100)}% measured citations
-        </span>
+      <div className="flex flex-wrap items-center justify-between gap-3 text-sm">
+        <div className="flex items-center gap-3">
+          <span className={`px-2 py-1 rounded-full text-xs font-medium ${liveMode ? "bg-green-500/10 text-green-400 border border-green-500/30" : "bg-yellow-500/10 text-yellow-400 border border-yellow-500/30"}`}>
+            {liveMode ? "Live DIY stack" : "Demo mode"}
+          </span>
+          <span className="text-muted-foreground">
+            {Math.round(metrics.measuredRate * 100)}% measured citations
+          </span>
+        </div>
+        <ExportButtons projectId={id} types={["visibility"]} />
       </div>
 
       <div className="grid md:grid-cols-4 gap-4">

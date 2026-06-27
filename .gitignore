@@ -47,3 +47,5 @@ next-env.d.ts
 # supabase
 .supabase
 .env*
+# ...but keep the committed env template
+!.env.example

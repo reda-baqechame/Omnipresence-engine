@@ -18,7 +18,7 @@ export default async function RanksPage({ params }: { params: Promise<{ id: stri
             Track Google positions via OmniData. Striking-distance keywords (positions 4–20) are flagged for quick wins.
           </p>
         </div>
-        <ExportButtons projectId={id} types={["ranks", "keywords", "findings", "ledger"]} />
+        <ExportButtons projectId={id} types={["ranks"]} />
       </div>
       <RankPanel projectId={id} />
       <AnnotationsBar projectId={id} />

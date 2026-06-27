@@ -1,6 +1,7 @@
 import { notFound } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { CoverageMap } from "@/components/coverage-map";
+import { ExportButtons } from "@/components/export-buttons";
 import { getProject } from "@/lib/projects";
 import type { CoverageItem } from "@/types/database";
 
@@ -26,12 +27,15 @@ export default async function CoveragePage({
 
   return (
     <div className="space-y-6">
-      <div>
-        <h2 className="text-xl font-semibold">Platform Coverage Map</h2>
-        <p className="text-sm text-muted-foreground mt-1">
-          {present} of {items.length} surfaces present for {project.domain}
-          {competitorGaps > 0 && ` — competitors active on ${competitorGaps} gaps`}
-        </p>
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <h2 className="text-xl font-semibold">Platform Coverage Map</h2>
+          <p className="text-sm text-muted-foreground mt-1">
+            {present} of {items.length} surfaces present for {project.domain}
+            {competitorGaps > 0 && ` — competitors active on ${competitorGaps} gaps`}
+          </p>
+        </div>
+        <ExportButtons projectId={id} types={["coverage"]} />
       </div>
       <CoverageMap items={items} />
     </div>

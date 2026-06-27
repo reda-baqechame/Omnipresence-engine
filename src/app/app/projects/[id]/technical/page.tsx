@@ -2,6 +2,7 @@ import { notFound } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { FindingCard } from "@/components/finding-card";
 import { OnPagePanel } from "@/components/on-page-panel";
+import { ExportButtons } from "@/components/export-buttons";
 import { getProject } from "@/lib/projects";
 import { AI_BOTS } from "@/lib/providers/ai-gateway";
 
@@ -45,11 +46,14 @@ export default async function TechnicalPage({
 
   return (
     <div className="space-y-8">
-      <div>
-        <h2 className="text-xl font-semibold">Technical Readiness Audit</h2>
-        <p className="text-sm text-muted-foreground mt-1">
-          Crawlability, indexability, schema, on-page SEO, and AI bot access for {project.domain}
-        </p>
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <h2 className="text-xl font-semibold">Technical Readiness Audit</h2>
+          <p className="text-sm text-muted-foreground mt-1">
+            Crawlability, indexability, schema, on-page SEO, and AI bot access for {project.domain}
+          </p>
+        </div>
+        <ExportButtons projectId={id} types={["findings"]} />
       </div>
 
       <div className="grid md:grid-cols-4 gap-4">

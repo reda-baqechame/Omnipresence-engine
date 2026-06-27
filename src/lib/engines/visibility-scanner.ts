@@ -7,6 +7,7 @@ import { hasLLMMentionsCapability } from "@/lib/config/capabilities";
 import { queryPerplexitySonar } from "@/lib/providers/perplexity";
 import { searchGoogleOrganicRouter } from "@/lib/providers/serp-router";
 import { hasAiUiCapture, captureAiUiSurface } from "@/lib/providers/ai-ui-capture";
+import { logProviderError } from "@/lib/observability/log";
 import type { VisibilityEngine, VisibilityResult } from "@/types/database";
 import type { DataSource, DataQuality } from "@/types/database";
 import { SCAN_ENGINES } from "@/lib/config/scan-engines";
@@ -205,8 +206,10 @@ async function scanSinglePrompt(
         };
       }
     }
-  } catch {
-    // Skip failed engine/prompt combo
+  } catch (error) {
+    // Grounded provider failed — log it (never silently render as "not mentioned"),
+    // then fall through to the LLM-mentions fallback / null below.
+    logProviderError("visibility.grounded", error, { engine, prompt: prompt.text.slice(0, 120) });
   }
 
   // Optional fallback: DataForSEO LLM Mentions (when keys exist)

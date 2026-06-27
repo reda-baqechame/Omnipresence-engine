@@ -7,6 +7,7 @@ import {
   type LLMPlatform,
 } from "@/lib/providers/dataforseo";
 import { hasLLMMentionsCapability } from "@/lib/config/capabilities";
+import { logProviderError } from "@/lib/observability/log";
 
 export interface CitationSourceItem {
   domain: string;
@@ -101,7 +102,8 @@ export async function getStoredCitationSources(
       platform: row.platform,
       promptText: row.prompt_text,
     }));
-  } catch {
+  } catch (error) {
+    logProviderError("citation.getStoredSources", error, { projectId });
     return [];
   }
 }

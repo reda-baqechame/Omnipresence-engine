@@ -1,6 +1,7 @@
 import { getKeywordTrends } from "@/lib/providers/google-trends";
 import { getKeywordSuggestionsSerper } from "@/lib/providers/serper-keywords";
 import { searchRedditViaSerp, searchHackerNewsMentions } from "@/lib/engines/community-mentions";
+import { logProviderError } from "@/lib/observability/log";
 
 /**
  * Phase 20: Demand & trend discovery.
@@ -66,7 +67,8 @@ async function communityVelocity(topic: string): Promise<number> {
       searchHackerNewsMentions(topic).catch(() => []),
     ]);
     return reddit.length + hn.length;
-  } catch {
+  } catch (error) {
+    logProviderError("demand-discovery.communityVelocity", error, { topic });
     return 0;
   }
 }

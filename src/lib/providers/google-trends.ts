@@ -1,4 +1,5 @@
 import { isOmniDataActive, labsApiPost } from "@/lib/providers/dataforseo";
+import { logProviderError } from "@/lib/observability/log";
 
 /**
  * Google Trends demand signal (relative interest, 0-100 — never absolute volume).
@@ -100,9 +101,13 @@ async function trendsFetch(url: string): Promise<string | null> {
       },
       signal: AbortSignal.timeout(12_000),
     });
-    if (!res.ok) return null;
+    if (!res.ok) {
+      logProviderError("google-trends.fetch", `HTTP ${res.status}`, { url });
+      return null;
+    }
     return await res.text();
-  } catch {
+  } catch (error) {
+    logProviderError("google-trends.fetch", error, { url });
     return null;
   }
 }

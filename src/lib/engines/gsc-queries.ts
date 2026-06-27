@@ -1,6 +1,7 @@
 /** Fetch top search queries from Google Search Console for prompt seeding. */
 
 import { selectPagesToRefresh, type PseoRefreshCandidate } from "@/lib/engines/programmatic-seo";
+import { logProviderError } from "@/lib/observability/log";
 
 export interface GscQueryRow {
   query: string;
@@ -55,7 +56,8 @@ export async function fetchGscTopQueries(
       ctr: row.ctr,
       position: row.position,
     })).filter((r) => r.query.length > 2);
-  } catch {
+  } catch (error) {
+    logProviderError("gsc.topQueries", error, { siteUrl });
     return [];
   }
 }
@@ -114,7 +116,8 @@ export async function fetchGscPagePerformance(
       ctr: row.ctr,
       position: row.position,
     })).filter((r) => r.url.startsWith("http"));
-  } catch {
+  } catch (error) {
+    logProviderError("gsc.pagePerformance", error, { siteUrl });
     return [];
   }
 }
