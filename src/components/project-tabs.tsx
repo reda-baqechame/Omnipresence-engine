@@ -8,6 +8,7 @@ const TABS = [
   { href: "", label: "Overview" },
   { href: "/visibility", label: "Visibility" },
   { href: "/aeo-readiness", label: "AEO Readiness" },
+  { href: "/frontier", label: "Frontier" },
   { href: "/prompts", label: "Prompts" },
   { href: "/intelligence", label: "AEO Intel" },
   { href: "/keywords", label: "Keywords" },
