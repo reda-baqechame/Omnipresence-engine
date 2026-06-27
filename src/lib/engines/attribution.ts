@@ -1,4 +1,5 @@
 import type { AttributionMetric } from "@/types/database";
+import { logProviderError } from "@/lib/observability/log";
 
 export interface AttributionInputs {
   organicTraffic: number;
@@ -343,7 +344,7 @@ export async function syncGoogleAnalytics(
   propertyId: string,
   startDate: string,
   endDate: string
-): Promise<{ sessions: number; aiReferrals: number; leads: number; revenue: number }> {
+): Promise<{ sessions: number; aiReferrals: number; leads: number; revenue: number; available: boolean }> {
   try {
     const response = await fetch(
       `https://analyticsdata.googleapis.com/v1beta/${propertyId}:runReport`,
@@ -394,9 +395,11 @@ export async function syncGoogleAnalytics(
       }
     }
 
-    return { sessions, aiReferrals, leads, revenue };
-  } catch {
-    return { sessions: 0, aiReferrals: 0, leads: 0, revenue: 0 };
+    return { sessions, aiReferrals, leads, revenue, available: true };
+  } catch (error) {
+    // Refund-safety: a failed GA4 call must NOT read as a confident $0 revenue.
+    logProviderError("attribution.ga4", error, { propertyId });
+    return { sessions: 0, aiReferrals: 0, leads: 0, revenue: 0, available: false };
   }
 }
 
@@ -493,9 +496,9 @@ export async function listGa4Properties(accessToken: string): Promise<Ga4Propert
 export async function syncPlausible(
   apiKey: string,
   siteId: string
-): Promise<{ visitors: number; pageviews: number; aiReferrals: number }> {
+): Promise<{ visitors: number; pageviews: number; aiReferrals: number; available: boolean }> {
   if (!apiKey || !siteId) {
-    return { visitors: 0, pageviews: 0, aiReferrals: 0 };
+    return { visitors: 0, pageviews: 0, aiReferrals: 0, available: false };
   }
 
   try {
@@ -537,8 +540,10 @@ export async function syncPlausible(
       visitors: aggregate.results?.visitors?.value || 0,
       pageviews: aggregate.results?.pageviews?.value || 0,
       aiReferrals,
+      available: true,
     };
-  } catch {
-    return { visitors: 0, pageviews: 0, aiReferrals: 0 };
+  } catch (error) {
+    logProviderError("attribution.plausible", error, { siteId });
+    return { visitors: 0, pageviews: 0, aiReferrals: 0, available: false };
   }
 }

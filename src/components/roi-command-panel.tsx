@@ -19,6 +19,10 @@ interface Summary {
   deltas?: Record<string, { value: number; change: number; changePercent: number }>;
   channelMix?: Array<{ channel: string; value: number; percent: number }>;
   isEstimated?: boolean;
+  dataSource?: string;
+  revenueAvailable?: boolean;
+  paidAdsEquivalentEstimated?: boolean;
+  confidence?: number;
 }
 interface UxEmbed {
   tool: string;
@@ -32,16 +36,44 @@ interface LandingPage {
   revenue: number;
 }
 
-function Stat({ label, value, delta, prefix = "" }: { label: string; value: number; delta?: { changePercent: number }; prefix?: string }) {
+function Stat({
+  label,
+  value,
+  delta,
+  prefix = "",
+  available = true,
+  tag,
+}: {
+  label: string;
+  value: number;
+  delta?: { changePercent: number };
+  prefix?: string;
+  available?: boolean;
+  tag?: string;
+}) {
   return (
     <div className="bg-card border border-border rounded-xl p-4">
-      <div className="text-xs text-muted-foreground">{label}</div>
-      <div className="text-2xl font-bold mt-1">{prefix}{value.toLocaleString()}</div>
-      {delta && (
+      <div className="text-xs text-muted-foreground flex items-center gap-1">
+        {label}
+        {tag && (
+          <span className="text-[10px] uppercase tracking-wide text-muted-foreground/70 border border-border rounded px-1">
+            {tag}
+          </span>
+        )}
+      </div>
+      {available ? (
+        <div className="text-2xl font-bold mt-1">{prefix}{value.toLocaleString()}</div>
+      ) : (
+        <div className="text-2xl font-bold mt-1 text-muted-foreground" title="Not measured this period — connect/repair the source">
+          —
+        </div>
+      )}
+      {available && delta && (
         <div className={`text-xs mt-1 ${delta.changePercent >= 0 ? "text-green-400" : "text-red-400"}`}>
           {delta.changePercent >= 0 ? "▲" : "▼"} {Math.abs(delta.changePercent)}% MoM
         </div>
       )}
+      {!available && <div className="text-[11px] mt-1 text-yellow-400">Unavailable</div>}
     </div>
   );
 }
@@ -105,14 +137,19 @@ export function RoiCommandPanel({ projectId }: { projectId: string }) {
       {summary.period && (
         <p className="text-xs text-muted-foreground">
           Period {summary.period.start} → {summary.period.end}
+          {" · source: "}
+          <span className={summary.dataSource === "measured" ? "text-green-400" : "text-yellow-400"}>
+            {summary.dataSource === "measured" ? "measured" : summary.dataSource || "unavailable"}
+          </span>
+          {typeof summary.confidence === "number" ? ` · confidence ${Math.round(summary.confidence * 100)}%` : ""}
           {summary.isEstimated ? " · some values estimated" : ""}
         </p>
       )}
 
       <div className="grid gap-3 grid-cols-2 md:grid-cols-4">
-        <Stat label="Revenue" value={t.revenue} delta={d.revenue} prefix="$" />
-        <Stat label="Leads" value={t.leads} delta={d.leads} />
-        <Stat label="Paid-ad equivalent" value={t.paidAdsEquivalent} delta={d.paid_ads_equivalent} prefix="$" />
+        <Stat label="Revenue" value={t.revenue} delta={d.revenue} prefix="$" available={summary.revenueAvailable !== false} />
+        <Stat label="Leads" value={t.leads} delta={d.leads} available={summary.revenueAvailable !== false} />
+        <Stat label="Paid-ad equivalent" value={t.paidAdsEquivalent} delta={d.paid_ads_equivalent} prefix="$" tag="est." />
         <Stat label="Organic traffic" value={t.organicTraffic} delta={d.organic_traffic} />
         <Stat label="AI referrals" value={t.aiReferralTraffic} delta={d.ai_referral_traffic} />
         <Stat label="Social clicks" value={t.socialClicks} delta={d.social_clicks} />

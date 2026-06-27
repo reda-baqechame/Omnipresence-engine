@@ -1,5 +1,6 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
-import { checkRankPosition, searchGoogleOrganic } from "@/lib/providers/dataforseo";
+import { checkRankPosition } from "@/lib/providers/dataforseo";
+import { searchGoogleOrganicRouter } from "@/lib/providers/serp-router";
 
 export type RankDevice = "desktop" | "mobile";
 
@@ -97,8 +98,10 @@ export async function runRankCheckForProject(
     .maybeSingle();
   const previousPosition = prev?.last_position ?? null;
 
-  // Preferred path: full SERP so we can compute overlay/SoV/cannibalization/AIO.
-  const serp = await searchGoogleOrganic(keyword, location, domain, competitors, device);
+  // Preferred path: full SERP via the provider router (Serper → Brave →
+  // OmniData/DataForSEO) so rank tracking works on the cheap/keyless stack too,
+  // not only when a paid backend is configured.
+  const serp = await searchGoogleOrganicRouter(keyword, location, domain, competitors);
 
   let position: number | null = null;
   let rankingUrl: string | undefined;

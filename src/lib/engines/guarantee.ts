@@ -112,16 +112,35 @@ export async function lockGuaranteeBaseline(
 export function evaluateGuaranteeFailure(
   contract: GuaranteeContract,
   current: Record<string, number>
-): { failed: boolean; delta: number; message: string } {
-  const baseline = Number(contract.baseline_snapshot[contract.kpi_metric] ?? 0);
-  const now = Number(current[contract.kpi_metric] ?? 0);
-  const delta = now - baseline;
-  const improvement = delta;
+): { failed: boolean; delta: number; message: string; measured: boolean } {
+  const baselineRaw = contract.baseline_snapshot[contract.kpi_metric];
+  const nowRaw = current[contract.kpi_metric];
+
+  // Refund-safety: we must NEVER auto-fail (and trigger a refund) on a KPI we
+  // didn't actually measure this window. A missing/non-finite value means "cannot
+  // verify", not "failed". Only a real measured drop below threshold fails.
+  const baseline = Number(baselineRaw);
+  const now = Number(nowRaw);
+  const measured =
+    baselineRaw !== undefined && baselineRaw !== null && Number.isFinite(baseline) &&
+    nowRaw !== undefined && nowRaw !== null && Number.isFinite(now);
+
+  if (!measured) {
+    return {
+      failed: false,
+      delta: 0,
+      measured: false,
+      message: `KPI ${contract.kpi_metric} could not be measured this window — cannot verify (no auto-fail).`,
+    };
+  }
+
+  const improvement = now - baseline;
   const failed = improvement < Number(contract.threshold_value);
 
   return {
     failed,
     delta: improvement,
+    measured: true,
     message: failed
       ? `KPI ${contract.kpi_metric} improved by ${improvement.toFixed(2)} (required +${contract.threshold_value})`
       : `KPI ${contract.kpi_metric} met threshold (+${improvement.toFixed(2)})`,
@@ -202,7 +221,9 @@ export async function verifyGuaranteeContract(
 
   // Tier 2 — measured aggregate KPI movement from real scans/visibility runs.
   const evaluation = evaluateGuaranteeFailure(contract as GuaranteeContract, currentMetrics);
-  const status = evaluation.failed ? "failed" : "verified";
+  // Inconclusive (KPI unmeasured this window) must not mark the contract failed —
+  // that would create refund liability on missing data. Keep monitoring instead.
+  const status = !evaluation.measured ? "inconclusive" : evaluation.failed ? "failed" : "verified";
 
   const evidenceCount = options.evidence?.length ?? 0;
 
@@ -215,6 +236,7 @@ export async function verifyGuaranteeContract(
         ...currentMetrics,
         improvement: evaluation.delta,
         threshold: contract.threshold_value,
+        kpi_measured: evaluation.measured,
         message: evaluation.message,
         // Tier 1 — deterministic deliverables we promise outright.
         tier1_met: options.tier1Met ?? null,

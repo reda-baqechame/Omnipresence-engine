@@ -8,6 +8,7 @@ import { queryPerplexitySonar } from "@/lib/providers/perplexity";
 import { searchGoogleOrganicRouter } from "@/lib/providers/serp-router";
 import { hasAiUiCapture, captureAiUiSurface } from "@/lib/providers/ai-ui-capture";
 import { logProviderError } from "@/lib/observability/log";
+import { makeBrandMatcher, makeCompetitorMatcher, sameRegistrableDomain, type EntityMatcher } from "@/lib/engines/brand-matcher";
 import type { VisibilityEngine, VisibilityResult } from "@/types/database";
 import type { DataSource, DataQuality } from "@/types/database";
 import { SCAN_ENGINES } from "@/lib/config/scan-engines";
@@ -81,6 +82,7 @@ async function scanSinglePrompt(
 
   const domainLower = config.brandDomain.replace(/^www\./, "").toLowerCase();
   const brandToken = domainLower.split(".")[0];
+  const brandMatcher = makeBrandMatcher(config.brandName, config.brandDomain);
 
   // Preferred (when enabled): grounded UI-surface capture for AI engines —
   // the real surface a user sees, not just the model's parametric knowledge.
@@ -102,7 +104,7 @@ async function scanSinglePrompt(
         sentiment: captured.brandMentioned ? analyzeSentiment(captured.answer, config.brandName) : "unknown",
         recommendation_strength: captured.brandMentioned ? recommendationStrength(captured.answer, config.brandName) : 0,
         owned_cited: captured.brandCited,
-        third_party_cited: captured.brandMentioned && [...new Set(sourceDomains)].some((d) => !d.includes(brandToken)),
+        third_party_cited: captured.brandMentioned && [...new Set(sourceDomains)].some((d) => !sameRegistrableDomain(d, config.brandDomain)),
         answer_position: answerPosition(captured.answer, config.brandName, config.competitors),
         sample_count: 1,
         variance: 0,
@@ -140,7 +142,7 @@ async function scanSinglePrompt(
           sentiment: res.data.brandMentioned ? analyzeSentiment(answer, config.brandName) : "unknown",
           recommendation_strength: res.data.brandMentioned ? recommendationStrength(answer, config.brandName) : 0,
           owned_cited: res.data.brandCited,
-          third_party_cited: res.data.brandMentioned && sourceDomains.some((d) => !d.includes(brandToken)),
+          third_party_cited: res.data.brandMentioned && sourceDomains.some((d) => !sameRegistrableDomain(d, config.brandDomain)),
           answer_position: answerPosition(answer, config.brandName, config.competitors),
           sample_count: 1,
           variance: 0,
@@ -162,9 +164,18 @@ async function scanSinglePrompt(
       );
 
       if (res.success && res.data) {
-        const aiCited = res.data.aiOverview?.citedDomains.some((d) =>
-          d.includes(brandToken) || d.includes(domainLower)
-        ) || false;
+        // Honesty gate: the AI Overview engine is only truly measured when the
+        // provider actually returned an AI Overview. Serper(default)/Brave can't,
+        // and falling back to plain organic while labeling it "grounded AI
+        // Overview" is exactly the kind of mislabel an expert catches. Emit an
+        // explicit unavailable row instead of a fake grounded one.
+        if (engine === "google_ai_overview" && !res.data.aiOverview) {
+          return unavailableRow(base, "ai_overview_unsupported_by_provider", res.provider);
+        }
+
+        const aiDomains = res.data.aiOverview?.citedDomains || [];
+        const aiUrls = res.data.aiOverview?.citedUrls || [];
+        const aiCited = brandMatcher.citedInDomains(aiDomains);
         const brandInAi = res.data.brandInResults || aiCited;
 
         const organicDomains = res.data.organicResults
@@ -172,12 +183,10 @@ async function scanSinglePrompt(
           .map((r) => tryHostname(r.url))
           .filter(Boolean);
         const organicUrls = res.data.organicResults.slice(0, 10).map((r) => r.url).filter(Boolean);
-        const aiDomains = res.data.aiOverview?.citedDomains || [];
-        const aiUrls = res.data.aiOverview?.citedUrls || [];
 
-        // Brand's organic rank = its position in the answer surface.
+        // Brand's organic rank = its position in the answer surface (eTLD+1).
         const organicPosition = res.data.organicResults.findIndex(
-          (r) => tryHostname(r.url).includes(domainLower) || tryHostname(r.url).includes(brandToken)
+          (r) => sameRegistrableDomain(r.url, config.brandDomain)
         );
 
         return {
@@ -191,7 +200,7 @@ async function scanSinglePrompt(
           sentiment: brandInAi ? "neutral" : "unknown",
           recommendation_strength: aiCited ? 1 : brandInAi ? 0.5 : 0,
           owned_cited: aiCited || organicPosition >= 0,
-          third_party_cited: brandInAi && aiDomains.some((d) => !d.includes(brandToken)),
+          third_party_cited: brandInAi && aiDomains.some((d) => !sameRegistrableDomain(d, config.brandDomain)),
           answer_position: organicPosition >= 0 ? organicPosition + 1 : undefined,
           sample_count: 1,
           variance: 0,
@@ -219,7 +228,34 @@ async function scanSinglePrompt(
     if (measured) return measured;
   }
 
-  return null;
+  // Nothing measured this engine. Emit an explicit `unavailable` row rather than
+  // dropping it (null), so coverage gaps are honest: "we attempted X engine and
+  // couldn't measure it" is different from "X engine says you're not mentioned".
+  return unavailableRow(base, "no_provider_for_engine");
+}
+
+/**
+ * An honest "we could not measure this" row. Counts toward coverage (lowers
+ * measuredRate) but is excluded from mention/citation rates so a failed probe
+ * never reads as "brand not mentioned".
+ */
+function unavailableRow(
+  base: Omit<VisibilityScanResult, "data_source"> & { data_source: DataQuality },
+  reason: string,
+  provider?: string
+): VisibilityScanResult {
+  return {
+    ...base,
+    measurement_mode: "unavailable",
+    sample_count: 0,
+    variance: 0,
+    raw_response: {
+      data_source: "unavailable",
+      reason,
+      ...(provider ? { provider } : {}),
+    },
+    data_source: "unavailable",
+  };
 }
 
 async function sampleLLMVisibility(
@@ -303,8 +339,8 @@ async function scanViaLLMMentions(
   prompt: { id?: string; text: string },
   engine: VisibilityEngine,
   platform: LLMPlatform,
-  domainLower: string,
-  brandToken: string
+  _domainLower: string,
+  _brandToken: string
 ): Promise<VisibilityScanResult | null> {
   const res = await searchLLMMentions(prompt.text, platform, config.location);
   if (!res.success || !res.data?.length) return null;
@@ -315,22 +351,18 @@ async function scanViaLLMMentions(
     .map((s) => s.domain || (s.url ? tryHostname(s.url) : ""))
     .filter(Boolean);
 
-  const brandCited = sourceDomains.some(
-    (d) => d.includes(domainLower) || d.includes(brandToken)
-  ) || citedUrls.some((u) => u.toLowerCase().includes(domainLower));
+  const brandMatcher = makeBrandMatcher(config.brandName, config.brandDomain);
+  const brandCited = brandMatcher.citedInDomains(sourceDomains) || brandMatcher.citedInUrls(citedUrls);
 
-  const answerText = res.data.map((m) => m.answer || "").join(" ").toLowerCase();
-  const brandMentioned =
-    brandCited ||
-    answerText.includes(config.brandName.toLowerCase()) ||
-    answerText.includes(brandToken);
+  const answerText = res.data.map((m) => m.answer || "").join(" ");
+  const brandMentioned = brandCited || brandMatcher.mentionedIn(answerText);
 
   const competitorMentions: Record<string, boolean> = {};
   const competitorCitations: Record<string, boolean> = {};
   for (const comp of config.competitors) {
-    const compLower = comp.toLowerCase();
-    competitorMentions[comp] = answerText.includes(compLower);
-    competitorCitations[comp] = sourceDomains.some((d) => d.includes(compLower.replace(/\s+/g, "")));
+    const cm = makeCompetitorMatcher(comp);
+    competitorMentions[comp] = cm.mentionedIn(answerText);
+    competitorCitations[comp] = cm.citedInDomains(sourceDomains);
   }
 
   return {
@@ -349,7 +381,7 @@ async function scanViaLLMMentions(
     sentiment: brandMentioned ? analyzeSentiment(answerText, config.brandName) : "unknown",
     recommendation_strength: brandMentioned ? recommendationStrength(answerText, config.brandName) : 0,
     owned_cited: brandCited,
-    third_party_cited: brandMentioned && [...new Set(sourceDomains)].some((d) => !d.includes(brandToken)),
+    third_party_cited: brandMentioned && [...new Set(sourceDomains)].some((d) => !sameRegistrableDomain(d, config.brandDomain)),
     answer_position: answerPosition(answerText, config.brandName, config.competitors),
     sample_count: res.data.length,
     variance: 0,
@@ -466,29 +498,38 @@ export function getResultDataSourceLabel(result: Pick<VisibilityResult, "raw_res
   return "Simulated";
 }
 
-export function calculateVisibilityMetrics(results: Array<Pick<VisibilityResult, "brand_mentioned" | "brand_cited" | "competitor_mentions" | "raw_response">>) {
-  const total = results.length;
+export function calculateVisibilityMetrics(results: Array<Pick<VisibilityResult, "brand_mentioned" | "brand_cited" | "competitor_mentions" | "raw_response" | "data_source">>) {
+  const attempted = results.length;
+  if (attempted === 0) return { mentionRate: 0, citationRate: 0, shareOfVoice: 0, winRate: 0, measuredRate: 0 };
+
+  const dq = (r: { data_source?: DataQuality; raw_response?: Record<string, unknown> }) =>
+    r.data_source ?? (r.raw_response?.data_source as DataQuality | undefined);
+
+  // Rates are computed over the COUNTABLE pool (measured + model_knowledge) so an
+  // `unavailable` probe never reads as "brand not mentioned". measuredRate keeps
+  // the full attempted denominator to expose coverage gaps honestly.
+  const pool = results.filter((r) => {
+    const ds = dq(r);
+    return ds === "measured" || ds === "model_knowledge";
+  });
+  const total = pool.length;
+  const measured = pool.length;
   if (total === 0) return { mentionRate: 0, citationRate: 0, shareOfVoice: 0, winRate: 0, measuredRate: 0 };
 
-  const mentions = results.filter((r) => r.brand_mentioned).length;
-  const citations = results.filter((r) => r.brand_cited).length;
-  const measured = results.filter((r) => {
-    const row = r as VisibilityScanResult;
-    const ds = row.data_source ?? r.raw_response?.data_source;
-    return ds === "measured" || ds === "model_knowledge";
-  }).length;
+  const mentions = pool.filter((r) => r.brand_mentioned).length;
+  const citations = pool.filter((r) => r.brand_cited).length;
 
-  const brandWins = results.filter((r) => {
+  const brandWins = pool.filter((r) => {
     const compMentioned = Object.values(r.competitor_mentions).some(Boolean);
     return r.brand_mentioned && !compMentioned;
   }).length;
 
-  const brandAndCompBoth = results.filter((r) => {
+  const brandAndCompBoth = pool.filter((r) => {
     const compMentioned = Object.values(r.competitor_mentions).some(Boolean);
     return r.brand_mentioned && compMentioned;
   }).length;
 
-  const compOnly = results.filter((r) => {
+  const compOnly = pool.filter((r) => {
     const compMentioned = Object.values(r.competitor_mentions).some(Boolean);
     return !r.brand_mentioned && compMentioned;
   }).length;
@@ -505,7 +546,7 @@ export function calculateVisibilityMetrics(results: Array<Pick<VisibilityResult,
     citationRate: citations / total,
     shareOfVoice,
     winRate,
-    measuredRate: measured / total,
+    measuredRate: measured / attempted,
   };
 }
 
@@ -537,30 +578,26 @@ export function extractCitationSources(
     data_source: DataSource;
   }> = [];
 
+  const competitorMatchers = competitors.map((c) => ({ name: c, matcher: makeCompetitorMatcher(c) }));
+
   for (const r of results) {
     const volume = typeof r.raw_response?.aiSearchVolume === "number"
       ? r.raw_response.aiSearchVolume
       : undefined;
 
-    const brandToken = brandDomain
-      ? brandDomain.replace(/^www\./, "").toLowerCase().split(".")[0]
-      : "";
-
     for (let i = 0; i < r.source_domains.length; i++) {
       const domain = r.source_domains[i];
       const url = r.cited_urls[i];
-      const domainLower = domain.toLowerCase();
       const citesBrand =
         r.brand_cited ||
-        (brandToken.length > 0 && domainLower.includes(brandToken)) ||
-        (brandDomain ? domainLower.includes(brandDomain.replace(/^www\./, "").toLowerCase()) : false);
+        (brandDomain ? sameRegistrableDomain(domain, brandDomain) : false);
       let citesCompetitor = false;
       let competitorName: string | undefined;
 
-      for (const comp of competitors) {
-        if (domain.includes(comp.toLowerCase().replace(/\s+/g, ""))) {
+      for (const { name, matcher } of competitorMatchers) {
+        if (matcher.citedInDomains([domain])) {
           citesCompetitor = true;
-          competitorName = comp;
+          competitorName = name;
         }
       }
 

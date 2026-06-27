@@ -56,40 +56,26 @@ export async function queryLLMForVisibility(
       responseText = result.text;
     }
 
-    const urlRegex = /https?:\/\/[^\s)>\]]+/g;
-    citedUrls = (responseText.match(urlRegex) || []).map((u) => u.replace(/[.,;]+$/, ""));
+    // IMPORTANT: this is the PARAMETRIC (no-browsing) path. URLs a non-browsing
+    // model emits in prose are frequently hallucinated, so we MUST NOT count them
+    // as real citations. We measure mentions only here; citations are left to the
+    // grounded providers (Perplexity / SERP / AI-UI capture). Anything else would
+    // record fabricated "source domains" as if measured.
+    const { makeBrandMatcher, makeCompetitorMatcher } = await import("@/lib/engines/brand-matcher");
+    const brandMatcher = makeBrandMatcher(brandName, brandDomain);
 
-    const lowerResponse = responseText.toLowerCase();
-    const brandLower = brandName.toLowerCase();
-    const domainLower = brandDomain.toLowerCase().replace(/^www\./, "");
-
-    const brandMentioned =
-      lowerResponse.includes(brandLower) || lowerResponse.includes(domainLower);
-    const brandCited = citedUrls.some(
-      (u) => u.toLowerCase().includes(domainLower)
-    );
+    const brandMentioned = brandMatcher.mentionedIn(responseText);
+    const brandCited = false;
+    citedUrls = [];
 
     const competitorMentions: Record<string, boolean> = {};
     const competitorCitations: Record<string, boolean> = {};
     for (const comp of competitors) {
-      const compLower = comp.toLowerCase();
-      competitorMentions[comp] = lowerResponse.includes(compLower);
-      competitorCitations[comp] = citedUrls.some((u) =>
-        u.toLowerCase().includes(compLower.replace(/\s+/g, ""))
-      );
+      competitorMentions[comp] = makeCompetitorMatcher(comp).mentionedIn(responseText);
+      competitorCitations[comp] = false;
     }
 
-    const sourceDomains = [
-      ...new Set(
-        citedUrls.map((u) => {
-          try {
-            return new URL(u).hostname.replace(/^www\./, "");
-          } catch {
-            return "";
-          }
-        }).filter(Boolean)
-      ),
-    ];
+    const sourceDomains: string[] = [];
 
     return {
       success: true,

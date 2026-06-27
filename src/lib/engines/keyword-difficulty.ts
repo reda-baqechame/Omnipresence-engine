@@ -10,7 +10,7 @@
  * distinguish it from the old heuristic.
  */
 import { searchGoogleOrganicRouter, getActiveSerpProvider } from "@/lib/providers/serp-router";
-import { getDomainAuthority } from "@/lib/providers/tranco";
+import { resolveDomainAuthority } from "@/lib/providers/domain-authority";
 
 export interface KeywordDifficultyRow {
   keyword: string;
@@ -65,16 +65,23 @@ export async function scoreKeywordKeyless(
 
   const domains = [...new Set(organic.map((r) => hostname(r.url)).filter(Boolean))];
   const authResults = await Promise.all(
-    domains.map((d) => getDomainAuthority(d).catch(() => null))
+    domains.map((d) => resolveDomainAuthority(d).catch(() => null))
   );
-  const authScores = authResults
-    .map((r) => (r?.success && r.data ? r.data.authorityScore : 0))
-    .filter((s) => s >= 0);
+  // Only count domains whose authority we could actually RESOLVE. Counting an
+  // unresolved domain as authority 0 (the old behavior) drags avgAuth down and
+  // makes a strong SERP look artificially easy — a false "low difficulty".
+  const resolved = authResults.filter(
+    (r): r is NonNullable<typeof r> => Boolean(r) && r!.source !== "unlisted"
+  );
+  const authScores = resolved.map((r) => r.score);
 
   const avgAuth = authScores.length
     ? authScores.reduce((a, b) => a + b, 0) / authScores.length
     : 0;
   const highCount = authScores.filter((s) => s >= 70).length;
+  // Coverage = how much of the SERP we could authority-resolve. Low coverage
+  // means the difficulty is a weaker estimate (surfaced via difficulty_method).
+  const coverage = domains.length ? resolved.length / domains.length : 0;
   const hasAi = Boolean(serp.data.aiOverview?.present);
 
   // KD is dominated by how authoritative the ranking pages are; a SERP stacked
@@ -103,7 +110,9 @@ export async function scoreKeywordKeyless(
   return {
     keyword,
     difficulty,
-    difficulty_method: "ranking_authority",
+    // Only claim the strong "ranking_authority" method when we resolved authority
+    // for a majority of the SERP; otherwise it's a weaker estimate.
+    difficulty_method: coverage >= 0.5 && authScores.length >= 3 ? "ranking_authority" : "heuristic",
     intent: classifyIntent(keyword),
     our_position,
     opportunity_score,

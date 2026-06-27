@@ -1,4 +1,3 @@
-import { searchGoogleOrganicRouter } from "@/lib/providers/serp-router";
 import { getBacklinks, isOmniDataActive, hasLabsApi } from "@/lib/providers/dataforseo";
 import type { ProviderResult } from "./types";
 
@@ -6,22 +5,15 @@ export interface BacklinkItem {
   url: string;
   domain: string;
   rank: number;
-  /** True when the row came from the deprecated `link:` operator (approximate). */
+  /** True when the row came from an approximate source rather than a real index. */
   estimated?: boolean;
 }
 
-function hostnameFromUrl(url: string): string {
-  try {
-    return new URL(url).hostname.replace(/^www\./, "");
-  } catch {
-    return "";
-  }
-}
-
 /**
- * Inbound links for a domain. Prefers the real backlink index (OmniData Common
- * Crawl webgraph or DataForSEO); falls back to the deprecated `link:` SERP
- * operator only when no index is available, flagging those rows `estimated`.
+ * Inbound links for a domain from a REAL backlink index (OmniData Common Crawl
+ * webgraph or DataForSEO). When no index is configured it returns
+ * `success:false` (unavailable) rather than fabricating data — callers should
+ * surface "backlinks unavailable", never a misleading 0.
  */
 export async function getBacklinksFree(
   domain: string,
@@ -56,36 +48,16 @@ export async function getBacklinksFree(
     }
   }
 
-  // 2) Fallback: deprecated `link:` operator — flagged estimated.
-  const res = await searchGoogleOrganicRouter(
-    `link:${cleanDomain}`,
-    "United States",
-    cleanDomain,
-    []
-  );
-
-  if (!res.success || !res.data) {
-    return { success: false, error: res.error || "Backlink discovery failed" };
-  }
-
-  const seen = new Set<string>();
-  const items: BacklinkItem[] = [];
-
-  for (const result of res.data.organicResults) {
-    const linkDomain = hostnameFromUrl(result.url);
-    if (!linkDomain || linkDomain.includes(cleanDomain)) continue;
-    if (seen.has(linkDomain)) continue;
-    seen.add(linkDomain);
-
-    items.push({
-      url: result.url,
-      domain: linkDomain,
-      rank: Math.max(100 - result.position * 4, 15),
-      estimated: true,
-    });
-
-    if (items.length >= limit) break;
-  }
-
-  return { success: true, data: items, creditsUsed: res.creditsUsed };
+  // 2) No real backlink index available.
+  //
+  // We deliberately DO NOT fall back to Google's deprecated `link:` operator: it
+  // returns almost nothing and forces a fabricated "rank" from SERP position,
+  // i.e. invented authority presented as data. An expert (and refund-safety)
+  // demands we say "unavailable" instead of emitting noise. Connect OmniData
+  // (keyless Common Crawl webgraph) or DataForSEO for real referring domains.
+  return {
+    success: false,
+    error:
+      "No backlink index configured. Enable OmniData (keyless Common Crawl webgraph) or DataForSEO for real referring-domain data.",
+  };
 }

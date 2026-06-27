@@ -29,6 +29,11 @@ export interface CommandCenterSummary {
   channelMix?: Array<{ channel: string; value: number; percent: number }>;
   dataSource?: string;
   isEstimated?: boolean;
+  /** Revenue is only real when GA4 (the revenue source) actually returned data. */
+  revenueAvailable?: boolean;
+  /** Paid-ad equivalent is always a modeled CPC estimate, never measured spend. */
+  paidAdsEquivalentEstimated?: boolean;
+  confidence?: number;
 }
 
 export async function buildCommandCenter(
@@ -78,6 +83,13 @@ export async function buildCommandCenter(
     .map((m) => ({ channel: m.channel, value: m.value, percent: Math.round((m.value / grand) * 1000) / 10 }))
     .sort((a, b) => b.value - a.value);
 
+  const sourceAvailability = (current.source_availability as Record<string, boolean> | null) || null;
+  // Revenue is trustworthy only when GA4 reported it this period. If GA4 wasn't a
+  // working source, revenue is unavailable (shown as "—"), never a confident $0.
+  const revenueAvailable = sourceAvailability
+    ? sourceAvailability.revenue === true
+    : (current.data_source as string) === "measured" && (current.revenue || 0) > 0;
+
   return {
     available: true,
     period: { start: current.period_start, end: current.period_end },
@@ -86,6 +98,9 @@ export async function buildCommandCenter(
     channelMix,
     dataSource: (current.data_source as string) || "mixed",
     isEstimated: Boolean(current.is_estimated),
+    revenueAvailable,
+    paidAdsEquivalentEstimated: true,
+    confidence: typeof current.confidence === "number" ? current.confidence : undefined,
   };
 }
 

@@ -216,8 +216,8 @@ export interface VisibilityResult {
   last_checked_at?: string;
   evidence_url?: string;
   is_estimated?: boolean;
-  /** grounded = live search UI / retrieval with citations; model_knowledge = parametric LLM answer. */
-  measurement_mode?: "grounded" | "model_knowledge";
+  /** grounded = live search UI / retrieval with citations; model_knowledge = parametric LLM answer; unavailable = engine could not be measured this run. */
+  measurement_mode?: "grounded" | "model_knowledge" | "unavailable";
   sentiment?: "positive" | "neutral" | "negative" | "unknown";
   /** 0-1: how strongly the brand was recommended across samples. */
   recommendation_strength?: number;

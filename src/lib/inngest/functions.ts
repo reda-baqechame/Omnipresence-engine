@@ -21,6 +21,7 @@ import {
   gatherLedgerEvidence,
 } from "@/lib/engines/guarantee";
 import { runCadenceReview, gatherOperationalGuarantees } from "@/lib/engines/continuous-loop";
+import { calculateVisibilityMetrics } from "@/lib/engines/visibility-scanner";
 import { runAllRankChecks } from "@/lib/engines/rank-tracker-service";
 import { snapshotProjectBacklinks } from "@/lib/engines/backlink-monitor";
 import { processScheduledContent } from "@/lib/engines/content-publish-scheduler";
@@ -457,15 +458,38 @@ export const guaranteeVerificationCron = inngest.createFunction(
           .select("*", { count: "exact", head: true })
           .eq("project_id", contract.project_id);
 
-        // Tier 2 KPIs from real measured sources: latest score breakdown
-        // (citation/mention rate derived from visibility runs) + AI referrals.
-        const breakdown = (score?.breakdown || {}) as Record<string, number>;
+        // Tier 2 KPIs from REAL measured sources only. citation_rate /
+        // mention_rate are computed from the latest visibility run's rows (not a
+        // score-breakdown field that doesn't exist). If there's no measured
+        // visibility run, we deliberately OMIT those keys so the guarantee marks
+        // them "cannot verify" rather than auto-failing on a fabricated 0.
         const metrics: Record<string, number> = {
           omnipresence_score: Number(score?.omnipresence_score ?? 0),
-          citation_rate: Number(breakdown.citation_rate ?? 0),
-          visibility_mention_rate: Number(breakdown.mention_rate ?? score?.ai_visibility ?? 0) / 100,
           ai_referral_traffic: aiReferrals ?? 0,
         };
+
+        const { data: latestRun } = await supabase
+          .from("visibility_results")
+          .select("run_id, created_at")
+          .eq("project_id", contract.project_id)
+          .order("created_at", { ascending: false })
+          .limit(1)
+          .maybeSingle();
+
+        if (latestRun?.run_id) {
+          const { data: runRows } = await supabase
+            .from("visibility_results")
+            .select("brand_mentioned, brand_cited, competitor_mentions, data_source, raw_response")
+            .eq("project_id", contract.project_id)
+            .eq("run_id", latestRun.run_id);
+          if (runRows && runRows.length > 0) {
+            const m = calculateVisibilityMetrics(runRows as never);
+            if (m.measuredRate > 0) {
+              metrics.citation_rate = m.citationRate;
+              metrics.visibility_mention_rate = m.mentionRate;
+            }
+          }
+        }
 
         // Tier 1 deterministic deliverables + operational guarantees + ledger.
         const [{ deliverables, tier1Met }, evidence, operationalGuarantees] = await Promise.all([

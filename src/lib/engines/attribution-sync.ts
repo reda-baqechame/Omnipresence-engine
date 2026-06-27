@@ -73,6 +73,7 @@ export async function syncProjectAttribution(
       aiReferralTraffic += ga4Data.aiReferrals;
       leads += ga4Data.leads;
       revenue += ga4Data.revenue;
+      sourceAvailability.google_analytics = ga4Data.available;
     }
   }
 
@@ -88,7 +89,13 @@ export async function syncProjectAttribution(
     const plausibleData = await syncPlausible(plausibleConn.access_token, siteId);
     organicTraffic += plausibleData.visitors;
     aiReferralTraffic += plausibleData.aiReferrals;
+    sourceAvailability.plausible = plausibleData.available;
   }
+
+  // Revenue & leads only come from GA4. If GA4 isn't a working source this run,
+  // the $ figure is NOT measured — flag it so the ROI view shows "—" instead of
+  // a refund-triggering confident $0.
+  const revenueAvailable = sourceAvailability.google_analytics === true;
 
   const { data: coverageLive } = await supabase
     .from("coverage_items")
@@ -125,7 +132,7 @@ export async function syncProjectAttribution(
 
   await supabase.from("attribution_metrics").insert({
     ...metric,
-    source_availability: sourceAvailability,
+    source_availability: { ...sourceAvailability, revenue: revenueAvailable },
     data_source: anyConnectedAvailable ? "measured" : "unavailable",
     is_estimated: anyConnectedFailed || connectedSources.length === 0,
     confidence: connectedSources.length
