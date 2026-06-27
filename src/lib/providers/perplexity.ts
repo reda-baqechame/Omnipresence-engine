@@ -1,6 +1,12 @@
 import type { ProviderResult, SearchResult } from "./types";
 import { fetchWithTimeout } from "./http";
 
+/** True only when a real (non-placeholder) Perplexity key is configured. */
+export function hasPerplexityCapability(): boolean {
+  const k = process.env.PERPLEXITY_API_KEY;
+  return Boolean(k && k.trim() && !k.startsWith("your-"));
+}
+
 export async function searchPerplexity(
   query: string,
   brandDomain: string,
@@ -15,7 +21,7 @@ export async function searchPerplexity(
   }>
 > {
   const apiKey = process.env.PERPLEXITY_API_KEY;
-  if (!apiKey) {
+  if (!hasPerplexityCapability()) {
     return { success: false, error: "Perplexity API key not configured" };
   }
 
@@ -95,7 +101,7 @@ export async function queryPerplexitySonar(
   }>
 > {
   const apiKey = process.env.PERPLEXITY_API_KEY;
-  if (!apiKey) {
+  if (!hasPerplexityCapability()) {
     return { success: false, error: "Perplexity API key not configured" };
   }
 

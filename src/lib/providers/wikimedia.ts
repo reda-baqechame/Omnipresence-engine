@@ -18,6 +18,12 @@ export interface WikipediaArticle {
 export interface WikiInterest {
   article?: string;
   exists: boolean;
+  /**
+   * Whether the pageviews measurement actually succeeded. false means the
+   * pageviews API failed/was unreachable — `totalViews:0` is then "unknown",
+   * NOT a measured zero. Lets callers avoid showing a false "0 interest".
+   */
+  available: boolean;
   /** Total pageviews across the lookback window. */
   totalViews: number;
   /** Daily timeline (date -> views). */
@@ -62,7 +68,7 @@ function yyyymmdd(d: Date): string {
 export async function getWikiInterest(name: string, days = 90): Promise<WikiInterest> {
   const article = await findWikipediaArticle(name);
   if (!article.exists) {
-    return { exists: false, totalViews: 0, timeline: [] };
+    return { exists: false, available: true, totalViews: 0, timeline: [] };
   }
 
   const end = new Date();
@@ -73,14 +79,18 @@ export async function getWikiInterest(name: string, days = 90): Promise<WikiInte
   )}/${yyyymmdd(end)}`;
 
   const data = await fetchJson<{ items?: Array<{ timestamp: string; views: number }> }>(url);
-  const items = data?.items || [];
+  if (data === null) {
+    // Article exists, but the pageviews API failed — don't report a false 0.
+    return { article: article.title, exists: true, available: false, totalViews: 0, timeline: [] };
+  }
+  const items = data.items || [];
   const timeline = items.map((i) => ({
     date: `${i.timestamp.slice(0, 4)}-${i.timestamp.slice(4, 6)}-${i.timestamp.slice(6, 8)}`,
     views: i.views,
   }));
   const totalViews = timeline.reduce((sum, p) => sum + p.views, 0);
 
-  return { article: article.title, exists: true, totalViews, timeline };
+  return { article: article.title, exists: true, available: true, totalViews, timeline };
 }
 
 /** Lightweight existence check used by entity/AEO authority signals. */

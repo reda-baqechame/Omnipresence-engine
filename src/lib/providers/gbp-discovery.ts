@@ -9,7 +9,7 @@ export async function discoverGbpAccountLocation(accessToken: string): Promise<{
   try {
     const accountsRes = await fetch(
       "https://mybusinessaccountmanagement.googleapis.com/v1/accounts",
-      { headers: { Authorization: `Bearer ${accessToken}` } }
+      { headers: { Authorization: `Bearer ${accessToken}` }, signal: AbortSignal.timeout(15000) }
     );
     if (!accountsRes.ok) return {};
     const accountsData = (await accountsRes.json()) as {
@@ -21,7 +21,7 @@ export async function discoverGbpAccountLocation(accessToken: string): Promise<{
     const accountId = accountName.replace("accounts/", "");
     const locRes = await fetch(
       `https://mybusinessbusinessinformation.googleapis.com/v1/${accountName}/locations?readMask=name,title`,
-      { headers: { Authorization: `Bearer ${accessToken}` } }
+      { headers: { Authorization: `Bearer ${accessToken}` }, signal: AbortSignal.timeout(15000) }
     );
     if (!locRes.ok) return { accountId };
     const locData = (await locRes.json()) as {

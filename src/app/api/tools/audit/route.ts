@@ -8,7 +8,12 @@ export async function POST(request: NextRequest) {
   const limited = guardPublicEndpoint(request, "tools-audit", 10, 60 * 60 * 1000);
   if (limited) return limited;
 
-  const { domain } = await request.json();
+  let domain: string | undefined;
+  try {
+    ({ domain } = await request.json());
+  } catch {
+    return apiError("Invalid JSON body");
+  }
   if (!domain) return apiError("Domain required");
 
   try {

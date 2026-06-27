@@ -32,6 +32,7 @@ export async function scheduleViaAyrshare(
         scheduleDate: post.scheduleDate,
         mediaUrls: post.mediaUrls,
       }),
+      signal: AbortSignal.timeout(20000),
     });
 
     if (!response.ok) {

@@ -52,6 +52,15 @@ export async function researchKeywordsLive(seed: string): Promise<{
   return getKeywordSuggestionsLive(seed);
 }
 
+/** Lightweight keyword-intent heuristic (used only for estimated fallbacks). */
+function inferIntent(keyword: string): "transactional" | "commercial" | "informational" | "navigational" {
+  const k = keyword.toLowerCase();
+  if (/\b(buy|price|pricing|cost|cheap|deal|discount|coupon|order|shop|for sale)\b/.test(k)) return "transactional";
+  if (/\b(best|top|review|reviews|vs|versus|compare|comparison|alternative)\b/.test(k)) return "commercial";
+  if (/\b(login|sign in|download|official|website|app)\b/.test(k)) return "navigational";
+  return "informational";
+}
+
 export async function keywordDifficultyLive(keyword: string) {
   const data = await intelligencePost<{ tasks: Array<{ result: Array<Record<string, unknown>> }> }>(
     "/keywords/difficulty/live",
@@ -80,7 +89,7 @@ export async function keywordDifficultyLive(keyword: string) {
     return {
       keyword,
       difficulty: Math.min(100, Math.round(avgPos * 8 + (serp.data.aiOverview?.present ? 15 : 0))),
-      intent: "informational",
+      intent: inferIntent(keyword),
       top_domains: top.map((r) => {
         try {
           return new URL(r.url).hostname.replace(/^www\./, "");
@@ -90,6 +99,9 @@ export async function keywordDifficultyLive(keyword: string) {
       }).filter(Boolean),
       serp_features: serp.data.aiOverview?.present ? ["ai_overview"] : [],
       has_ai_overview: Boolean(serp.data.aiOverview?.present),
+      // Synthesized from SERP authority, not a measured KD — label honestly.
+      data_source: "estimated" as const,
+      is_estimated: true,
     };
   }
 

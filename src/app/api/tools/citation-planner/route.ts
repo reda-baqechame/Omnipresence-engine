@@ -6,7 +6,12 @@ export async function POST(request: NextRequest) {
   const limited = guardPublicEndpoint(request, "tools-citation-planner", 20, 60 * 60 * 1000);
   if (limited) return limited;
 
-  const { brand, industry, location } = await request.json();
+  let brand: string | undefined, industry: string | undefined, location: string | undefined;
+  try {
+    ({ brand, industry, location } = await request.json());
+  } catch {
+    return apiError("Invalid JSON body");
+  }
   if (!brand || !industry) return apiError("brand and industry required");
 
   const loc = location ? String(location).slice(0, 80) : "your area";

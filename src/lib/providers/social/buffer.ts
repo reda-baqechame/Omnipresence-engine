@@ -34,6 +34,7 @@ export async function scheduleViaBuffer(
         "Content-Type": "application/json",
       },
       body: JSON.stringify(body),
+      signal: AbortSignal.timeout(20000),
     });
 
     if (!response.ok) {

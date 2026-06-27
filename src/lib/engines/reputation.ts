@@ -113,6 +113,7 @@ export async function monitorBrandMentions(
   });
 
   // Persist (best-effort upsert).
+  const nowIso = new Date().toISOString();
   await supabase.from("brand_mentions").upsert(
     mentions.map((m) => ({
       project_id: input.projectId,
@@ -123,6 +124,10 @@ export async function monitorBrandMentions(
       sentiment_score: m.sentiment_score,
       is_unlinked: m.is_unlinked,
       mention_type: m.mention_type,
+      data_source: "measured",
+      confidence: 0.9,
+      last_checked_at: nowIso,
+      is_estimated: false,
     })),
     { onConflict: "project_id,url" }
   );
@@ -208,6 +213,7 @@ export async function monitorBrandNews(
   });
 
   if (mentions.length) {
+    const newsNowIso = new Date().toISOString();
     await supabase.from("brand_mentions").upsert(
       mentions.map((m) => ({
         project_id: input.projectId,
@@ -218,6 +224,10 @@ export async function monitorBrandNews(
         sentiment_score: m.sentiment_score,
         is_unlinked: m.is_unlinked,
         mention_type: "news",
+        data_source: "measured",
+        confidence: 0.9,
+        last_checked_at: newsNowIso,
+        is_estimated: false,
       })),
       { onConflict: "project_id,url" }
     );

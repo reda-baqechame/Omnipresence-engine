@@ -1,10 +1,14 @@
 import type { ProviderResult, CrawlResult } from "./types";
 
-export async function scrapePage(url: string): Promise<ProviderResult<CrawlResult>> {
-  const apiKey = process.env.FIRECRAWL_API_KEY;
+/** True only when a real (non-placeholder) Firecrawl key is configured. */
+export function hasFirecrawlCapability(): boolean {
+  const k = process.env.FIRECRAWL_API_KEY;
+  return Boolean(k && k.trim() && !k.startsWith("your-"));
+}
 
-  if (apiKey) {
-    return scrapeWithFirecrawl(url, apiKey);
+export async function scrapePage(url: string): Promise<ProviderResult<CrawlResult>> {
+  if (hasFirecrawlCapability()) {
+    return scrapeWithFirecrawl(url, process.env.FIRECRAWL_API_KEY!);
   }
 
   return scrapeWithFetch(url);
@@ -26,6 +30,7 @@ async function scrapeWithFirecrawl(
         formats: ["html", "markdown"],
         onlyMainContent: false,
       }),
+      signal: AbortSignal.timeout(30000),
     });
 
     if (!response.ok) {
@@ -191,7 +196,7 @@ export async function crawlSite(
   const apiKey = process.env.FIRECRAWL_API_KEY;
   const url = domain.startsWith("http") ? domain : `https://${domain}`;
 
-  if (apiKey) {
+  if (hasFirecrawlCapability()) {
     try {
       const response = await fetch("https://api.firecrawl.dev/v1/crawl", {
         method: "POST",
@@ -204,6 +209,7 @@ export async function crawlSite(
           limit: maxPages,
           scrapeOptions: { formats: ["html"] },
         }),
+        signal: AbortSignal.timeout(30000),
       });
 
       if (!response.ok) {
@@ -216,6 +222,7 @@ export async function crawlSite(
 
       const statusRes = await fetch(`https://api.firecrawl.dev/v1/crawl/${data.id}`, {
         headers: { Authorization: `Bearer ${apiKey}` },
+        signal: AbortSignal.timeout(30000),
       });
       const statusData = (await statusRes.json()) as {
         data: Array<{ metadata: Record<string, string>; html?: string }>;

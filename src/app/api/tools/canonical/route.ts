@@ -7,7 +7,12 @@ export async function POST(request: NextRequest) {
   const limited = guardPublicEndpoint(request, "tools-canonical", 15, 60 * 60 * 1000);
   if (limited) return limited;
 
-  const { domain, path } = await request.json();
+  let domain: string | undefined, path: string | undefined;
+  try {
+    ({ domain, path } = await request.json());
+  } catch {
+    return apiError("Invalid JSON body");
+  }
   if (!domain) return apiError("Domain required");
 
   let normalized: string;

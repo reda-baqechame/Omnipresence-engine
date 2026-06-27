@@ -65,7 +65,15 @@ export async function runProjectScan(
     ...(await runTechnicalAudit(p.domain)),
     ...(await analyzePassageReadiness(p.domain)),
   ];
-  const findingRows = technicalFindings.map((f) => ({ ...f, project_id: projectId }));
+  const scanAuditedAt = new Date().toISOString();
+  const findingRows = technicalFindings.map((f) => ({
+    ...f,
+    project_id: projectId,
+    data_source: "measured",
+    provider: "site_crawl",
+    is_estimated: false,
+    last_checked_at: scanAuditedAt,
+  }));
   await computeAndRecordFindingDiff(
     supabase,
     projectId,
@@ -198,7 +206,14 @@ export async function runProjectScan(
 
   await supabase.from("authority_opportunities").delete().eq("project_id", projectId);
   if (authorityOpportunities.length > 0) {
-    await supabase.from("authority_opportunities").insert(authorityOpportunities as never[]);
+    const authRows = (authorityOpportunities as Array<Record<string, unknown>>).map((o) => ({
+      ...o,
+      data_source: o.data_source ?? (demo ? "simulated" : "measured"),
+      provider: o.provider ?? (demo ? "demo" : "serp"),
+      is_estimated: o.is_estimated ?? demo,
+      last_checked_at: o.last_checked_at ?? scanAuditedAt,
+    }));
+    await supabase.from("authority_opportunities").insert(authRows as never[]);
   }
 
   const score = calculateOmniPresenceScore({

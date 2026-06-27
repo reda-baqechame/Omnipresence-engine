@@ -129,10 +129,23 @@ function shortUrl(u: string): string {
   }
 }
 
-/** Behavioral conversion-readiness on a 0-100 scale (higher = healthier UX). */
-function computeConversionSignal(insights: ClarityInsights): number | undefined {
-  const meaningful = insights.urls.filter((u) => u.sessions >= MIN_SESSIONS_FOR_SIGNAL);
-  if (insights.totalSessions < MIN_SESSIONS_FOR_SIGNAL || meaningful.length === 0) return undefined;
+/** Normalized per-URL behavior row (matches persisted `behavior_metrics`). */
+export interface BehaviorSignalRow {
+  sessions: number;
+  rageClicks: number;
+  quickbacks: number;
+  scrollDepthPct?: number | null;
+}
+
+/**
+ * Behavioral conversion-readiness on a 0-100 scale (higher = healthier UX).
+ * Pure function over normalized rows so the scan pipeline can recompute it
+ * from persisted `behavior_metrics` without re-fetching Clarity.
+ */
+export function conversionSignalFromRows(rows: BehaviorSignalRow[]): number | undefined {
+  const meaningful = rows.filter((u) => u.sessions >= MIN_SESSIONS_FOR_SIGNAL);
+  const totalSessions = rows.reduce((s, u) => s + u.sessions, 0);
+  if (totalSessions < MIN_SESSIONS_FOR_SIGNAL || meaningful.length === 0) return undefined;
 
   let weightedRage = 0;
   let weightedQuickback = 0;
@@ -161,6 +174,19 @@ function computeConversionSignal(insights: ClarityInsights): number | undefined 
   score -= Math.min(30, quickbackRate * 60); // 50% quickback => -30
   score -= Math.max(0, (50 - scroll) * 0.4); // scroll 50% neutral
   return Math.max(0, Math.min(100, Math.round(score)));
+}
+
+/** Behavioral conversion-readiness on a 0-100 scale (higher = healthier UX). */
+function computeConversionSignal(insights: ClarityInsights): number | undefined {
+  if (insights.totalSessions < MIN_SESSIONS_FOR_SIGNAL) return undefined;
+  return conversionSignalFromRows(
+    insights.urls.map((u) => ({
+      sessions: u.sessions,
+      rageClicks: u.rageClicks,
+      quickbacks: u.quickbacks,
+      scrollDepthPct: u.scrollDepthPct,
+    }))
+  );
 }
 
 export async function runBehaviorAnalytics(

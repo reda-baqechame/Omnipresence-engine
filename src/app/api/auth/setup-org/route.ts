@@ -8,7 +8,12 @@ export async function POST(request: NextRequest) {
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) return apiUnauthorized();
 
-  const { orgName } = await request.json();
+  let orgName: unknown;
+  try {
+    ({ orgName } = await request.json());
+  } catch {
+    return apiError("Invalid JSON body");
+  }
   if (!orgName || typeof orgName !== "string" || orgName.trim().length < 2) {
     return apiError("Organization name is required");
   }

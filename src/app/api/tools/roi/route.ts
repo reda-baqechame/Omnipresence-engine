@@ -7,7 +7,12 @@ export async function POST(request: NextRequest) {
   const limited = guardPublicEndpoint(request, "tools-roi", 20, 60 * 60 * 1000);
   if (limited) return limited;
 
-  const { organicSessions, aiReferralSessions, monthlyAdSpend, industry } = await request.json();
+  let organicSessions: unknown, aiReferralSessions: unknown, monthlyAdSpend: unknown, industry: unknown;
+  try {
+    ({ organicSessions, aiReferralSessions, monthlyAdSpend, industry } = await request.json());
+  } catch {
+    return apiError("Invalid JSON body");
+  }
 
   if (monthlyAdSpend === undefined && organicSessions === undefined) {
     return apiError("monthlyAdSpend or organicSessions required");

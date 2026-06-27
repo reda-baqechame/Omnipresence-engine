@@ -30,6 +30,7 @@ export async function createGBPLocalPost(
           topicType: post.topicType || "STANDARD",
           callToAction: post.callToAction,
         }),
+        signal: AbortSignal.timeout(20000),
       }
     );
 

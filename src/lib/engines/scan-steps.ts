@@ -16,6 +16,7 @@ import { calculateAeoReadiness } from "@/lib/engines/aeo-readiness";
 import { getAuthorityRating } from "@/lib/engines/authority-rating";
 import { getPageSpeed, pageSpeedToRetrievalScore } from "@/lib/providers/pagespeed";
 import { hasWikipediaPresence, hasWikidataEntity } from "@/lib/providers/wikimedia";
+import { conversionSignalFromRows } from "@/lib/engines/behavior-analytics";
 import { recordScanBaseline } from "@/lib/engines/results-ledger";
 import { lockGuaranteeBaseline } from "@/lib/engines/guarantee";
 import { syncTechnicalFindingsToOpsQueue } from "@/lib/engines/on-page-queue";
@@ -271,6 +272,27 @@ export async function stepScoreAndRoadmap(
   const domainAuthority = authRes?.rating;
   const pageSpeedScore = psRes?.success && psRes.data ? pageSpeedToRetrievalScore(psRes.data) : undefined;
 
+  // Blend in measured behavioral health (Microsoft Clarity) when the project
+  // has persisted per-URL metrics — recomputed from the same formula as the
+  // weekly cron so the conversion signal actually moves the score.
+  let behaviorSignal: number | undefined;
+  if (!demo) {
+    const { data: behaviorRows } = await supabase
+      .from("behavior_metrics")
+      .select("sessions, rage_clicks, quickbacks, scroll_depth_pct")
+      .eq("project_id", project.id);
+    if (behaviorRows && behaviorRows.length) {
+      behaviorSignal = conversionSignalFromRows(
+        behaviorRows.map((r) => ({
+          sessions: r.sessions ?? 0,
+          rageClicks: r.rage_clicks ?? 0,
+          quickbacks: r.quickbacks ?? 0,
+          scrollDepthPct: r.scroll_depth_pct,
+        }))
+      );
+    }
+  }
+
   const score = calculateOmniPresenceScore({
     visibilityResults: visibilityResults || [],
     technicalFindings: technicalFindings.map((f) => ({ ...f, project_id: project.id, is_resolved: false, id: "", created_at: "" })),
@@ -281,6 +303,7 @@ export async function stepScoreAndRoadmap(
     monthlyTraffic: project.current_monthly_traffic ?? undefined,
     domainAuthority,
     pageSpeedScore,
+    behaviorSignal,
   });
 
   await supabase.from("scores").insert({ project_id: project.id, ...score });

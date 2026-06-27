@@ -16,7 +16,13 @@ export async function POST(request: NextRequest) {
   const limited = guardPublicEndpoint(request, "public-audit", 5, 60 * 60 * 1000);
   if (limited) return limited;
 
-  const { domain, brandName, industry, email, location, competitors } = await request.json();
+  let body: { domain?: string; brandName?: string; industry?: string; email?: string; location?: string; competitors?: string[] };
+  try {
+    body = await request.json();
+  } catch {
+    return apiError("Invalid JSON body");
+  }
+  const { domain, brandName, industry, email, location, competitors } = body;
 
   if (!domain || !email) {
     return apiError("Domain and email required");

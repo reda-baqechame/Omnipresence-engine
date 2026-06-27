@@ -158,6 +158,10 @@ export async function runRankCheckForProject(
     share_of_voice: shareOfVoice,
     brand_in_ai_overview: brandInAiOverview,
     checked_at: checkedAt,
+    data_source: "measured",
+    confidence: 0.95,
+    provider: "serp",
+    is_estimated: false,
   });
 
   await supabase

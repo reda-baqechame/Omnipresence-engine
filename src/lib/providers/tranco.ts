@@ -1,4 +1,5 @@
 import type { ProviderResult } from "./types";
+import { logProviderError } from "@/lib/observability/log";
 
 /**
  * Tranco domain authority — free, research-grade domain ranking list.
@@ -64,12 +65,10 @@ async function fetchDomainAuthority(
     );
 
     if (!res.ok) {
-      // Unreachable or rate-limited: degrade gracefully to "unlisted".
-      return {
-        success: true,
-        data: { domain: clean, authorityScore: 0, source: "unlisted" },
-        creditsUsed: 0,
-      };
+      // Service error / rate-limit is NOT the same as "genuinely unlisted":
+      // report unavailable so callers fall through to other authority sources
+      // rather than locking in a false 0-authority signal.
+      return { success: false, error: `Tranco ${res.status}`, creditsUsed: 0 };
     }
 
     const data = (await res.json()) as {
@@ -99,10 +98,11 @@ async function fetchDomainAuthority(
       creditsUsed: 0,
     };
   } catch (error) {
-    // Never break a scan over an optional authority signal.
+    // Network failure/timeout: unavailable (not a measured 0). Callers treat
+    // success:false as "unknown authority" and fall through to other sources.
+    logProviderError("tranco", error, { domain: clean });
     return {
-      success: true,
-      data: { domain: clean, authorityScore: 0, source: "unlisted" },
+      success: false,
       error: error instanceof Error ? error.message : "Tranco request failed",
       creditsUsed: 0,
     };
