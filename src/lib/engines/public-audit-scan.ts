@@ -44,6 +44,8 @@ export interface PublicAuditIntelligence {
     surface: string;
   }>;
   backlinkCount: number;
+  /** False when no backlink index/provider is configured — render as "unavailable", not 0. */
+  backlinksAvailable: boolean;
   serpPresence: boolean;
 }
 
@@ -91,6 +93,7 @@ export async function runPublicAuditIntelligence(input: {
       coverageGaps: [],
       coverageItems: [],
       backlinkCount: 0,
+      backlinksAvailable: false,
       serpPresence: false,
     };
   }
@@ -180,6 +183,7 @@ export async function runPublicAuditIntelligence(input: {
       surface: c.surface,
     })),
     backlinkCount: backlinks.success ? (backlinks.data?.length ?? 0) : 0,
+    backlinksAvailable: backlinks.success,
     serpPresence,
   };
 }

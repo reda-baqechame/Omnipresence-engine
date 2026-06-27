@@ -50,24 +50,56 @@ const WEIGHTS = {
 export function calculateOmniPresenceScore(inputs: ScoreInputs): Omit<OmniPresenceScore, "id" | "project_id" | "created_at"> {
   const pool = scorePool(inputs.visibilityResults);
   const coverage = verifiedCoverage(inputs.coverageItems);
-  const aiVisibility = calculateAIVisibility(pool);
-  const searchVisibility = calculateSearchVisibility(pool);
-  const localVisibility = calculateLocalVisibility(coverage, inputs.hasGbp);
-  const socialPresence = calculateSocialPresence(coverage);
-  const directoryCoverage = calculateDirectoryCoverage(coverage);
-  const authorityMentions = calculateAuthorityMentions(inputs.authorityOpportunities, pool, inputs.domainAuthority);
-  const technicalReadiness = calculateTechnicalReadiness(inputs.technicalFindings, inputs.pageSpeedScore);
-  const conversionReadiness = calculateConversionReadiness(inputs.hasConversionTracking, inputs.monthlyTraffic);
 
-  const omnipresenceScore =
-    aiVisibility * WEIGHTS.ai_visibility +
-    searchVisibility * WEIGHTS.search_visibility +
-    localVisibility * WEIGHTS.local_visibility +
-    socialPresence * WEIGHTS.social_presence +
-    directoryCoverage * WEIGHTS.directory_coverage +
-    authorityMentions * WEIGHTS.authority_mentions +
-    technicalReadiness * WEIGHTS.technical_readiness +
-    conversionReadiness * WEIGHTS.conversion_readiness;
+  // Which surfaces did we actually measure? A dimension we couldn't measure must
+  // NOT be scored as 0 — that produces a false "Invisible" verdict (e.g. a
+  // confident omnipresence:0 for a giant brand when no SERP key is configured),
+  // which is exactly what makes an expert distrust the tool. Instead we
+  // re-normalize the weights over the dimensions that have real data.
+  const aiResults = pool.filter((r) =>
+    ["chatgpt", "perplexity", "gemini", "claude", "google_ai_overview", "bing_copilot"].includes(r.engine)
+  );
+  const searchResults = pool.filter((r) => ["google_organic", "bing_organic"].includes(r.engine));
+  const localItems = coverage.filter((c) =>
+    ["google_business", "bing_places", "apple_business", "yelp"].includes(c.surface)
+  );
+  const socialItems = coverage.filter((c) =>
+    ["linkedin", "x_twitter", "facebook", "instagram", "tiktok", "youtube"].includes(c.surface)
+  );
+  const dirItems = coverage.filter((c) =>
+    ["g2", "capterra", "trustpilot", "directory", "review_site"].includes(c.surface)
+  );
+  const hasAuthoritySignal =
+    inputs.authorityOpportunities.length > 0 ||
+    (typeof inputs.domainAuthority === "number" && inputs.domainAuthority > 0) ||
+    pool.some((r) => r.source_domains.length > 0);
+
+  const dimensions = {
+    ai_visibility: { value: calculateAIVisibility(pool), available: aiResults.length > 0 },
+    search_visibility: { value: calculateSearchVisibility(pool), available: searchResults.length > 0 },
+    local_visibility: { value: calculateLocalVisibility(coverage, inputs.hasGbp), available: localItems.length > 0 || inputs.hasGbp },
+    social_presence: { value: calculateSocialPresence(coverage), available: socialItems.length > 0 },
+    directory_coverage: { value: calculateDirectoryCoverage(coverage), available: dirItems.length > 0 },
+    authority_mentions: { value: calculateAuthorityMentions(inputs.authorityOpportunities, pool, inputs.domainAuthority), available: hasAuthoritySignal },
+    // The technical audit always runs for real (keyless), so it's always measured.
+    technical_readiness: { value: calculateTechnicalReadiness(inputs.technicalFindings, inputs.pageSpeedScore), available: true },
+    conversion_readiness: { value: calculateConversionReadiness(inputs.hasConversionTracking, inputs.monthlyTraffic), available: true },
+  } as const;
+
+  // Weighted average over ONLY the available dimensions (re-normalized).
+  let weightedSum = 0;
+  let availableWeight = 0;
+  const availability: Record<string, boolean> = {};
+  for (const [key, dim] of Object.entries(dimensions)) {
+    availability[key] = dim.available;
+    if (dim.available) {
+      const w = WEIGHTS[key as keyof typeof WEIGHTS];
+      weightedSum += dim.value * w;
+      availableWeight += w;
+    }
+  }
+  const omnipresenceScore = availableWeight > 0 ? weightedSum / availableWeight : 0;
+  const dimensionCoverage = Math.round((availableWeight / 1) * 100) / 100; // weights sum to 1
 
   const measuredInputs = inputs.visibilityResults.filter(
     (r) => isCountableVisibility(resultDataQuality(r))
@@ -80,20 +112,24 @@ export function calculateOmniPresenceScore(inputs: ScoreInputs): Omit<OmniPresen
 
   return {
     omnipresence_score: Math.round(omnipresenceScore * 100) / 100,
-    ai_visibility: Math.round(aiVisibility * 100) / 100,
-    search_visibility: Math.round(searchVisibility * 100) / 100,
-    local_visibility: Math.round(localVisibility * 100) / 100,
-    social_presence: Math.round(socialPresence * 100) / 100,
-    directory_coverage: Math.round(directoryCoverage * 100) / 100,
-    authority_mentions: Math.round(authorityMentions * 100) / 100,
-    technical_readiness: Math.round(technicalReadiness * 100) / 100,
-    conversion_readiness: Math.round(conversionReadiness * 100) / 100,
+    ai_visibility: Math.round(dimensions.ai_visibility.value * 100) / 100,
+    search_visibility: Math.round(dimensions.search_visibility.value * 100) / 100,
+    local_visibility: Math.round(dimensions.local_visibility.value * 100) / 100,
+    social_presence: Math.round(dimensions.social_presence.value * 100) / 100,
+    directory_coverage: Math.round(dimensions.directory_coverage.value * 100) / 100,
+    authority_mentions: Math.round(dimensions.authority_mentions.value * 100) / 100,
+    technical_readiness: Math.round(dimensions.technical_readiness.value * 100) / 100,
+    conversion_readiness: Math.round(dimensions.conversion_readiness.value * 100) / 100,
     data_source: groundedInputs > 0 ? "measured" : measuredInputs > 0 ? "model_knowledge" : allSimulated ? "simulated" : "unavailable",
     confidence: totalInputs > 0 ? Math.round((measuredInputs / totalInputs) * 100) / 100 : 0,
     measured_inputs: measuredInputs,
     total_inputs: totalInputs,
     breakdown: {
       weights: WEIGHTS,
+      // How much of the scoring surface we could actually measure (0-1). A score
+      // built on 0.2 coverage is honest about being partial, not a false zero.
+      dimension_coverage: dimensionCoverage,
+      dimension_availability: availability,
       visibilityResultCount: inputs.visibilityResults.length,
       measuredVisibilityCount: measuredInputs,
       technicalFindingCount: inputs.technicalFindings.length,
@@ -121,7 +157,8 @@ function calculateAIVisibility(results: VisibilityResult[]): number {
       ? brandMentionTotal / (brandMentionTotal + competitorMentionTotal)
       : brandMentionTotal > 0 ? 1 : 0;
 
-  return (mentionRate * 40 + citationRate * 40 + competitiveRatio * 20) * 100;
+  // Rates are 0-1; weights sum to 100 → result is already on the 0-100 scale.
+  return mentionRate * 40 + citationRate * 40 + competitiveRatio * 20;
 }
 
 function calculateSearchVisibility(results: VisibilityResult[]): number {
@@ -141,7 +178,7 @@ function calculateLocalVisibility(coverage: CoverageItem[], hasGbp: boolean): nu
   const presentRate = localItems.filter((c) => c.is_present).length / localItems.length;
   const optimizedRate = localItems.filter((c) => c.is_optimized).length / localItems.length;
 
-  return (presentRate * 60 + optimizedRate * 40) * 100;
+  return presentRate * 60 + optimizedRate * 40;
 }
 
 function calculateSocialPresence(coverage: CoverageItem[]): number {
@@ -152,7 +189,7 @@ function calculateSocialPresence(coverage: CoverageItem[]): number {
   const presentRate = socialItems.filter((c) => c.is_present).length / socialItems.length;
   const optimizedRate = socialItems.filter((c) => c.is_optimized).length / socialItems.length;
 
-  return (presentRate * 70 + optimizedRate * 30) * 100;
+  return presentRate * 70 + optimizedRate * 30;
 }
 
 function calculateDirectoryCoverage(coverage: CoverageItem[]): number {
