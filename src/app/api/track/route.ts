@@ -19,7 +19,24 @@ export async function POST(request: NextRequest) {
   const limited = guardPublicEndpoint(request, "track", 120, 60_000);
   if (limited) return limited;
 
-  const { projectId, referrer, path, sessionId } = await request.json();
+  let payload: {
+    projectId?: unknown;
+    referrer?: unknown;
+    path?: unknown;
+    sessionId?: unknown;
+  };
+  try {
+    payload = await request.json();
+  } catch {
+    // Malformed body from a public beacon → clean 400, not a noisy 500.
+    return NextResponse.json({ error: "Invalid JSON body" }, { status: 400 });
+  }
+  const { projectId, referrer, path, sessionId } = payload as {
+    projectId?: string;
+    referrer?: string;
+    path?: string;
+    sessionId?: string;
+  };
 
   if (!projectId || typeof projectId !== "string" || !UUID_RE.test(projectId)) {
     return NextResponse.json({ error: "valid projectId required" }, { status: 400 });
