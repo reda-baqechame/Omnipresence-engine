@@ -1,4 +1,5 @@
 import { queryLLMForVisibility } from "@/lib/providers/ai-gateway";
+import { hasOllamaCapability, getOllamaModel } from "@/lib/providers/ollama";
 import {
   searchLLMMentions,
   type LLMPlatform,
@@ -265,7 +266,7 @@ async function sampleLLMVisibility(
   _domainLower: string,
   _brandToken: string
 ): Promise<VisibilityScanResult | null> {
-  const provider = engine === "chatgpt" ? "openai" : engine === "gemini" ? "gemini" : "claude";
+  const provider: "openai" | "gemini" | "claude" = engine === "chatgpt" ? "openai" : engine === "gemini" ? "gemini" : "claude";
   const runs: Array<ReturnType<typeof mapAIResult> & { text: string }> = [];
 
   for (let i = 0; i < AI_SAMPLE_RUNS; i++) {
@@ -278,6 +279,25 @@ async function sampleLLMVisibility(
     );
     if (res.success && res.data) {
       runs.push({ ...mapAIResult(res.data), text: res.data.rawResponse || "" });
+    }
+  }
+
+  // Free graceful fallback: if no paid LLM key produced a sample, probe a
+  // self-hosted open model (Ollama). Still model_knowledge (parametric).
+  let usedOllama = false;
+  if (runs.length === 0 && hasOllamaCapability()) {
+    for (let i = 0; i < AI_SAMPLE_RUNS; i++) {
+      const res = await queryLLMForVisibility(
+        "ollama",
+        prompt.text,
+        config.brandName,
+        config.brandDomain,
+        config.competitors
+      );
+      if (res.success && res.data) {
+        runs.push({ ...mapAIResult(res.data), text: res.data.rawResponse || "" });
+        usedOllama = true;
+      }
     }
   }
 
@@ -326,9 +346,11 @@ async function sampleLLMVisibility(
       mention_rate: mentionRate,
       citation_rate: citationRate,
       data_source: "model_knowledge",
-      data_source_detail: "llm_direct",
+      data_source_detail: usedOllama ? `ollama:${getOllamaModel()}` : "llm_direct",
       measurement_mode: "model_knowledge",
-      label: `Model-knowledge (${runs.length}-run sample, no browsing)`,
+      label: usedOllama
+        ? `Model-knowledge (open model ${getOllamaModel()}, ${runs.length}-run sample, no browsing)`
+        : `Model-knowledge (${runs.length}-run sample, no browsing)`,
     },
     data_source: "model_knowledge",
   };

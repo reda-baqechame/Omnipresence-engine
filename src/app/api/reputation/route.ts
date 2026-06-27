@@ -4,6 +4,7 @@ import { verifyProjectAccess } from "@/lib/security/project-access";
 import { apiError, apiForbidden, apiUnauthorized } from "@/lib/security/api-response";
 import {
   monitorBrandMentions,
+  monitorBrandNews,
   analyzeAiBrandSentiment,
   auditBrandSerp,
 } from "@/lib/engines/reputation";
@@ -37,7 +38,7 @@ export async function POST(request: NextRequest) {
   const body = await request.json();
   const { projectId, action } = body as {
     projectId: string;
-    action: "monitor" | "ai_sentiment" | "brand_serp";
+    action: "monitor" | "news" | "ai_sentiment" | "brand_serp";
   };
   if (!projectId) return apiError("projectId required");
 
@@ -46,7 +47,7 @@ export async function POST(request: NextRequest) {
 
   const { data: project } = await supabase
     .from("projects")
-    .select("name, domain, industry, competitors")
+    .select("name, domain, industry, competitors, organization_id")
     .eq("id", projectId)
     .single();
   if (!project) return apiError("Project not found", 404);
@@ -57,6 +58,11 @@ export async function POST(request: NextRequest) {
   if (action === "monitor") {
     return NextResponse.json(
       await monitorBrandMentions(supabase, { projectId, brand, domain: project.domain, competitors })
+    );
+  }
+  if (action === "news") {
+    return NextResponse.json(
+      await monitorBrandNews(supabase, { projectId, organizationId: project.organization_id, brand, domain: project.domain })
     );
   }
   if (action === "ai_sentiment") {

@@ -4,9 +4,10 @@ import {
 } from "@/lib/providers/dataforseo";
 import { searchGoogleOrganicBrave } from "@/lib/providers/brave-search";
 import { searchGoogleOrganicSerper } from "@/lib/providers/serper";
+import { searchGoogleOrganicSearxng, hasSearxngCapability } from "@/lib/providers/searxng";
 import type { ProviderResult, SERPResult } from "./types";
 
-export type SerpProviderId = "serper" | "brave" | "omnidata" | "dataforseo";
+export type SerpProviderId = "serper" | "brave" | "searxng" | "omnidata" | "dataforseo";
 
 function hasEnv(key: string): boolean {
   const v = process.env[key];
@@ -21,12 +22,13 @@ function hasDataForSeoBackend(): boolean {
 export function getActiveSerpProvider(): SerpProviderId | null {
   if (hasEnv("SERPER_API_KEY")) return "serper";
   if (hasEnv("BRAVE_SEARCH_API_KEY")) return "brave";
+  if (hasSearxngCapability()) return "searxng";
   if (isOmniDataActive()) return "omnidata";
   if (hasEnv("DATAFORSEO_LOGIN") && hasEnv("DATAFORSEO_PASSWORD")) return "dataforseo";
   return null;
 }
 
-/** Priority: Serper (cheap) → Brave (free tier) → OmniData/DataForSEO (self-hosted or paid). */
+/** Priority: Serper (cheap) → Brave (free tier) → SearXNG (keyless self-host) → OmniData/DataForSEO (self-hosted or paid). */
 export async function searchGoogleOrganicRouter(
   keyword: string,
   location = "United States",
@@ -47,6 +49,11 @@ export async function searchGoogleOrganicRouter(
       id: "brave",
       enabled: hasEnv("BRAVE_SEARCH_API_KEY"),
       search: () => searchGoogleOrganicBrave(keyword, location, brandDomain, competitors),
+    },
+    {
+      id: "searxng",
+      enabled: hasSearxngCapability(),
+      search: () => searchGoogleOrganicSearxng(keyword, location, brandDomain, competitors),
     },
     {
       id: isOmniDataActive() ? "omnidata" : "dataforseo",

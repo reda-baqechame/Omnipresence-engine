@@ -3,6 +3,8 @@ import { z } from "zod";
 import { searchGoogleOrganicRouter } from "@/lib/providers/serp-router";
 import { fetchLiveCommunityMentions } from "@/lib/engines/community-mentions";
 import { generateStructured } from "@/lib/providers/ai-gateway";
+import { searchGdeltNews } from "@/lib/providers/gdelt";
+import { searchGoogleNews } from "@/lib/providers/news-rss";
 
 /**
  * Brand & reputation monitoring (Phase 14). Aggregates web + community mentions
@@ -134,6 +136,159 @@ export async function monitorBrandMentions(
       unlinked: mentions.filter((m) => m.is_unlinked).length,
     },
   };
+}
+
+// ---------- Brand & news monitoring (GDELT + Google News, keyless) ----------
+
+export interface NewsMention {
+  platform: "news" | "gdelt";
+  url: string;
+  title: string;
+  source?: string;
+  sentiment: Sentiment;
+  sentiment_score?: number;
+  is_unlinked: boolean;
+  publishedAt?: string;
+}
+
+/**
+ * Continuous brand/news monitoring across GDELT + Google News. Dedups, scores
+ * sentiment, persists to `brand_mentions`, and turns recurring source domains
+ * (that mention the brand without linking) into digital-PR outreach tasks.
+ */
+export async function monitorBrandNews(
+  supabase: SupabaseClient,
+  input: { projectId: string; organizationId?: string; brand: string; domain: string }
+): Promise<{ available: boolean; reason?: string; data_source: "measured" | "unavailable"; mentions: NewsMention[]; summary: { total: number; negative: number; sources: number } }> {
+  const clean = input.domain.replace(/^https?:\/\//, "").replace(/^www\./, "").split("/")[0];
+  const query = `"${input.brand}"`;
+
+  const [gdelt, news] = await Promise.all([
+    searchGdeltNews(query, { timespanDays: 30, maxRecords: 50 }),
+    searchGoogleNews(query, { max: 40 }),
+  ]);
+
+  if (!gdelt.available && !news.available) {
+    return {
+      available: false,
+      reason: gdelt.reason || news.reason || "News providers unavailable.",
+      data_source: "unavailable",
+      mentions: [],
+      summary: { total: 0, negative: 0, sources: 0 },
+    };
+  }
+
+  const collected: { platform: "news" | "gdelt"; url: string; title: string; source?: string; publishedAt?: string }[] = [];
+  for (const a of gdelt.articles) collected.push({ platform: "gdelt", url: a.url, title: a.title, source: a.domain, publishedAt: a.seenDate });
+  for (const n of news.items) collected.push({ platform: "news", url: n.url, title: n.title, source: n.source, publishedAt: n.publishedAt });
+
+  // Dedup by url, skip the brand's own domain.
+  const seen = new Set<string>();
+  const unique = collected.filter((c) => {
+    if (seen.has(c.url)) return false;
+    seen.add(c.url);
+    let host = "";
+    try { host = new URL(c.url).hostname.replace(/^www\./, ""); } catch { host = ""; }
+    return !host.includes(clean);
+  }).slice(0, 60);
+
+  const sentiments = await scoreSentiments(unique);
+  const mentions: NewsMention[] = unique.map((c, i) => {
+    const s = sentiments.get(i);
+    return {
+      platform: c.platform,
+      url: c.url,
+      title: c.title,
+      source: c.source,
+      sentiment: s?.sentiment ?? "unknown",
+      sentiment_score: s?.score,
+      is_unlinked: true, // news articles rarely link to the brand domain
+      publishedAt: c.publishedAt,
+    };
+  });
+
+  if (mentions.length) {
+    await supabase.from("brand_mentions").upsert(
+      mentions.map((m) => ({
+        project_id: input.projectId,
+        platform: m.platform,
+        url: m.url,
+        title: m.title,
+        sentiment: m.sentiment,
+        sentiment_score: m.sentiment_score,
+        is_unlinked: m.is_unlinked,
+        mention_type: "news",
+      })),
+      { onConflict: "project_id,url" }
+    );
+  }
+
+  // Digital-PR outreach tasks: one per recurring source domain (capped).
+  if (input.organizationId && mentions.length) {
+    await syncOutreachTasks(supabase, input.projectId, input.organizationId, mentions, clean);
+  }
+
+  const sources = new Set(mentions.map((m) => m.source).filter(Boolean));
+  return {
+    available: true,
+    data_source: "measured",
+    mentions,
+    summary: {
+      total: mentions.length,
+      negative: mentions.filter((m) => m.sentiment === "negative").length,
+      sources: sources.size,
+    },
+  };
+}
+
+async function syncOutreachTasks(
+  supabase: SupabaseClient,
+  projectId: string,
+  organizationId: string,
+  mentions: NewsMention[],
+  brandDomain: string
+): Promise<void> {
+  // Group by source domain; prioritize domains that mention us more than once.
+  const byDomain = new Map<string, { count: number; sample: string }>();
+  for (const m of mentions) {
+    let host = m.source || "";
+    if (!host) { try { host = new URL(m.url).hostname.replace(/^www\./, ""); } catch { host = ""; } }
+    host = host.replace(/^www\./, "");
+    if (!host || host.includes(brandDomain)) continue;
+    const prev = byDomain.get(host);
+    byDomain.set(host, { count: (prev?.count || 0) + 1, sample: prev?.sample || m.url });
+  }
+
+  const candidates = [...byDomain.entries()]
+    .sort((a, b) => b[1].count - a[1].count)
+    .slice(0, 15);
+  if (!candidates.length) return;
+
+  const { data: existing } = await supabase
+    .from("execution_tasks")
+    .select("source_id")
+    .eq("project_id", projectId)
+    .eq("source_module", "reputation");
+  const existingIds = new Set((existing || []).map((e) => e.source_id));
+
+  const rows = candidates
+    .filter(([host]) => !existingIds.has(`unlinked:${host}`))
+    .map(([host, info]) => ({
+      project_id: projectId,
+      organization_id: organizationId,
+      title: `Earn a link from ${host}`,
+      description: `${host} mentioned the brand ${info.count}× without linking. Reach out to convert the unlinked mention into a backlink. Example: ${info.sample}`,
+      source_module: "reputation" as const,
+      source_id: `unlinked:${host}`,
+      category: "digital_pr",
+      priority: info.count > 1 ? "medium" : "low",
+      impact: info.count > 1 ? 45 : 25,
+      effort: 2,
+      status: "todo" as const,
+    }));
+  if (rows.length) {
+    await supabase.from("execution_tasks").insert(rows);
+  }
 }
 
 // ---------- AI brand-sentiment correction ----------

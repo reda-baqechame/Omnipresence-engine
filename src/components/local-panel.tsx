@@ -47,6 +47,14 @@ export function LocalPanel({ projectId }: { projectId: string }) {
   const [city, setCity] = useState("");
   const [page, setPage] = useState<{ title: string; markdown: string; jsonLd: unknown } | null>(null);
   const [nap, setNap] = useState<{ available: boolean; reason?: string; canonical?: { name?: string; address?: string; phone?: string }; directories: { name: string; url: string; action: string }[] } | null>(null);
+  const [osm, setOsm] = useState<{
+    available: boolean;
+    reason?: string;
+    center?: { displayName: string };
+    competitors: Array<{ name: string; category: string; website?: string }>;
+    citationSources: { name: string; url: string; action: string }[];
+  } | null>(null);
+  const [osmCategory, setOsmCategory] = useState("");
 
   useEffect(() => {
     fetch(`/api/local?projectId=${projectId}`)
@@ -90,6 +98,11 @@ export function LocalPanel({ projectId }: { projectId: string }) {
     if (!service.trim() || !city.trim()) return;
     setLoading("page");
     setPage(await post("local_page", { service, city }));
+    setLoading("");
+  }
+  async function runOsm() {
+    setLoading("osm");
+    setOsm(await post("osm_discovery", { category: osmCategory || undefined }));
     setLoading("");
   }
 
@@ -210,6 +223,57 @@ export function LocalPanel({ projectId }: { projectId: string }) {
             </div>
           ) : (
             <p className="text-sm text-yellow-400">{nap.reason}</p>
+          )
+        )}
+      </div>
+
+      {/* Keyless local discovery via OpenStreetMap */}
+      <div className="bg-card border border-border rounded-xl p-4">
+        <div className="flex items-center justify-between mb-2">
+          <div>
+            <h3 className="font-semibold">Keyless local discovery (OpenStreetMap)</h3>
+            <p className="text-xs text-muted-foreground">Geocodes your business (NAP) and finds nearby competitors — zero API keys.</p>
+          </div>
+        </div>
+        <div className="flex flex-wrap gap-2 mb-3">
+          <input value={osmCategory} onChange={(e) => setOsmCategory(e.target.value)} placeholder="Category filter (e.g. dentist, plumber) — optional" className="flex-1 min-w-[200px] bg-background border border-input rounded-lg px-3 py-2 text-sm" />
+          <button type="button" onClick={runOsm} disabled={loading === "osm"} className="bg-primary text-primary-foreground px-4 py-2 rounded-lg text-sm disabled:opacity-50">
+            {loading === "osm" ? "Discovering…" : "Discover via OSM"}
+          </button>
+        </div>
+        {osm && (
+          osm.available ? (
+            <div className="space-y-3 text-sm">
+              {osm.center?.displayName && (
+                <div className="text-muted-foreground">Anchor: <span className="text-foreground">{osm.center.displayName}</span></div>
+              )}
+              {osm.competitors.length > 0 && (
+                <div>
+                  <div className="font-medium mb-1">Nearby competitors ({osm.competitors.length})</div>
+                  <ul className="space-y-1 max-h-56 overflow-auto">
+                    {osm.competitors.slice(0, 40).map((c, i) => (
+                      <li key={`${c.name}-${i}`} className="flex justify-between gap-2">
+                        <span>{c.name} <span className="text-muted-foreground text-xs">· {c.category}</span></span>
+                        {c.website && <a href={c.website} target="_blank" rel="noopener noreferrer" className="text-primary text-xs hover:underline">site</a>}
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+              <div>
+                <div className="font-medium mb-1">Local citation checklist</div>
+                <ul className="space-y-1">
+                  {osm.citationSources.map((d) => (
+                    <li key={d.name} className="flex justify-between gap-2">
+                      <a href={d.url} target="_blank" rel="noopener noreferrer" className="text-primary hover:underline">{d.name}</a>
+                      <span className="text-muted-foreground text-xs">{d.action}</span>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            </div>
+          ) : (
+            <p className="text-sm text-yellow-400">{osm.reason}</p>
           )
         )}
       </div>

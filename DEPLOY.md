@@ -54,6 +54,38 @@ Or import the GitHub repo in the Vercel dashboard.
 
 **Live production:** [https://omnipresence-engine.vercel.app](https://omnipresence-engine.vercel.app) (GitHub-connected; set env vars below for full functionality).
 
+## 2b. Railway deploy (recommended for the keyless data moat)
+
+Vercel's serverless functions cap execution time, so the always-on, heavy-compute
+layer (OmniData scraping, headless Chromium, transformers.js embeddings, SearXNG,
+Ollama, LanguageTool) cannot run there by default. Railway runs long-lived
+containers, so deploy the full 100X stack there.
+
+Create one Railway project with these services:
+
+| Service | Source | Notes |
+| --- | --- | --- |
+| **app** | repo root `Dockerfile` + `railway.json` | Next.js (`npm run start`). Healthcheck `/api/health`. |
+| **omnidata** | `services/omnidata/Dockerfile` + `railway.json` | Keyless SERP/backlinks/crawl/embeddings. On by default. |
+| **redis** | Railway Redis plugin | Set `REDIS_URL` on omnidata + worker. |
+| **searxng** *(optional)* | `searxng/searxng` image | Keyless meta-search SERP. Set `SEARXNG_URL` on app + omnidata. |
+| **ollama** *(optional)* | `ollama/ollama` image | Open-model AI visibility. Set `OLLAMA_BASE_URL` on app. |
+| **posthog / languagetool** *(optional)* | official images | First-party analytics + grammar/style. |
+
+Wire-up:
+
+1. On **app**, set everything from `.env.example` plus `OMNIDATA_BASE_URL=http://omnidata.railway.internal:8787`.
+2. Add a **persistent volume** to **omnidata** mounted at `/data` (Common Crawl webgraph index).
+3. Railway sets `PORT` automatically; `next start` and OmniData both bind to it.
+4. The fail-fast env guard activates on `RAILWAY_ENVIRONMENT`, so a misconfigured deploy fails loudly at boot instead of silently serving errors.
+
+Local all-in-one equivalent:
+
+```bash
+docker compose up -d                  # app + OmniData + worker + Redis
+docker compose --profile keyless up   # also start SearXNG + Ollama
+```
+
 ### Required environment variables
 
 Copy from `.env.example`. Minimum for a working deploy:

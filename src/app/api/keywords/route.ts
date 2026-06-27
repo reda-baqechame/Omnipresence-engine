@@ -13,6 +13,7 @@ import { apiError, apiForbidden, apiUnauthorized } from "@/lib/security/api-resp
 import { getValidOAuthToken } from "@/lib/oauth/tokens";
 import { fetchGscTopQueries } from "@/lib/engines/gsc-queries";
 import { deriveGscAnchor, type VolumeAnchor } from "@/lib/engines/keyword-volume";
+import { buildKeywordUniverse } from "@/lib/engines/keyword-universe";
 
 export async function GET(request: NextRequest) {
   const supabase = await createClient();
@@ -46,7 +47,8 @@ export async function POST(request: NextRequest) {
     seed?: string;
     seeds?: string[];
     keyword?: string;
-    action?: "research" | "bulk_research" | "content_gaps" | "backlink_gaps" | "difficulty";
+    action?: "research" | "bulk_research" | "content_gaps" | "backlink_gaps" | "difficulty" | "universe";
+    depth?: "shallow" | "deep";
   };
 
   if (!projectId) return apiError("projectId required");
@@ -66,6 +68,12 @@ export async function POST(request: NextRequest) {
   if (action === "difficulty" && keyword) {
     const result = await scoreSingleKeyword(keyword);
     return NextResponse.json({ result, live: Boolean(result) });
+  }
+
+  if (action === "universe") {
+    const universeSeed = (seed || project.industry || project.domain.replace(/^www\./, "").split(".")[0]).trim();
+    const universe = await buildKeywordUniverse({ seed: universeSeed, depth: (body as { depth?: "shallow" | "deep" }).depth });
+    return NextResponse.json(universe);
   }
 
   if (action === "bulk_research") {

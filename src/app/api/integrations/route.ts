@@ -7,7 +7,7 @@ import {
 import { verifyProjectAccess } from "@/lib/security/project-access";
 import { apiError, apiForbidden, apiUnauthorized } from "@/lib/security/api-response";
 
-const VALID_PROVIDERS = new Set(["wordpress", "webflow", "shopify", "buffer", "ayrshare", "gbp"]);
+const VALID_PROVIDERS = new Set(["wordpress", "webflow", "shopify", "buffer", "ayrshare", "gbp", "clarity"]);
 
 export async function GET(request: NextRequest) {
   const supabase = await createClient();

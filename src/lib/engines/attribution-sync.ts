@@ -2,6 +2,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import { calculateAttribution, syncGoogleSearchConsole, syncBingWebmaster, syncGoogleAnalytics, syncPlausible } from "@/lib/engines/attribution";
 import { fetchBingAIPerformance } from "@/lib/providers/bing-webmaster";
 import { getValidOAuthToken } from "@/lib/oauth/tokens";
+import { syncPostHog, hasPostHogCapability } from "@/lib/providers/posthog";
 
 export async function syncProjectAttribution(
   supabase: SupabaseClient,
@@ -90,6 +91,30 @@ export async function syncProjectAttribution(
     organicTraffic += plausibleData.visitors;
     aiReferralTraffic += plausibleData.aiReferrals;
     sourceAvailability.plausible = plausibleData.available;
+  }
+
+  // First-party analytics (self-hosted PostHog, GA4-free). Per-project config may
+  // be stored in oauth_connections.metadata; otherwise the global Railway instance.
+  const { data: posthogConn } = await supabase
+    .from("oauth_connections")
+    .select("access_token, metadata")
+    .eq("project_id", projectId)
+    .eq("provider", "posthog")
+    .maybeSingle();
+
+  if (hasPostHogCapability() || posthogConn?.access_token) {
+    const meta = (posthogConn?.metadata as { project_id?: string; host?: string } | null) || {};
+    const phData = await syncPostHog(30, {
+      apiKey: posthogConn?.access_token || undefined,
+      projectId: meta.project_id,
+      host: meta.host,
+    });
+    if (phData.available) {
+      organicTraffic += phData.searchVisits;
+      aiReferralTraffic += phData.aiReferrals;
+      socialClicks += phData.socialClicks;
+    }
+    sourceAvailability.posthog = phData.available;
   }
 
   // Revenue & leads only come from GA4. If GA4 isn't a working source this run,

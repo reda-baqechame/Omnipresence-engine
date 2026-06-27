@@ -23,7 +23,14 @@ export type ProviderId =
   | "supabase"
   | "posthog"
   | "stripe"
-  | "clearbit";
+  | "clearbit"
+  | "searxng"
+  | "ollama"
+  | "youtube"
+  | "clarity"
+  | "languagetool"
+  | "google_kg"
+  | "posthog_query";
 
 export interface ProviderStatus {
   id: ProviderId;
@@ -82,6 +89,14 @@ export function getProviderStatuses(): ProviderStatus[] {
       category: "infra",
     },
     { id: "clearbit", name: "Clearbit Reveal", configured: hasEnv("CLEARBIT_REVEAL_KEY"), required: false, category: "data" },
+    // 100X free / keyless data moat (all optional, graceful fallback).
+    { id: "searxng", name: "SearXNG (keyless SERP)", configured: hasEnv("SEARXNG_URL"), required: false, category: "data" },
+    { id: "ollama", name: "Ollama (open-model AI)", configured: hasEnv("OLLAMA_BASE_URL"), required: false, category: "ai" },
+    { id: "youtube", name: "YouTube Data API", configured: hasEnv("YOUTUBE_API_KEY"), required: false, category: "data" },
+    { id: "clarity", name: "Microsoft Clarity", configured: hasEnv("CLARITY_API_TOKEN"), required: false, category: "data" },
+    { id: "languagetool", name: "LanguageTool (self-host)", configured: hasEnv("LANGUAGETOOL_URL"), required: false, category: "data" },
+    { id: "google_kg", name: "Google Knowledge Graph", configured: hasEnv("GOOGLE_KG_API_KEY"), required: false, category: "data" },
+    { id: "posthog_query", name: "PostHog Query API", configured: hasEnv("POSTHOG_API_KEY") && hasEnv("POSTHOG_PROJECT_ID"), required: false, category: "data" },
   ];
 }
 
@@ -169,6 +184,33 @@ export function getCapabilitiesSummary() {
       globalDomainRank: true, // rank.to keyless aggregated-traffic rank
       competitiveMatrix: true, // unified popularity + authority + tech + CWV
       realUserCwv: true, // CrUX field data (reliable with PAGESPEED_API_KEY)
+    },
+    // 100X Free Data Moat — keyless-always-on vs token/self-host gated.
+    freeDataMoat100x: {
+      // Keyless, always on:
+      gdeltNews: true,
+      googleNewsRss: true,
+      multiSourceAutocomplete: true,
+      keywordUniverse: true,
+      editorialQa: true, // readability/keyphrases/language (LanguageTool optional)
+      htmlValidity: true, // W3C Nu checker
+      accessibilityAudit: true, // WCAG heuristics
+      richResultsCheck: true,
+      osmLocal: true, // Nominatim + Overpass
+      mentionFirehose: true, // SE/GitHub/Mastodon/Bluesky/Wikipedia keyless
+      wikidataDbpedia: true,
+      lookerStudioConnector: true,
+      // Token / self-host gated (graceful fallback when unset):
+      clarityBehavior: hasEnv("CLARITY_API_TOKEN"),
+      videoSeo: hasEnv("YOUTUBE_API_KEY"),
+      cwvHistory: hasEnv("CRUX_API_KEY") || hasEnv("PAGESPEED_API_KEY"),
+      searxngSerp: hasEnv("SEARXNG_URL"),
+      ollamaAi: hasEnv("OLLAMA_BASE_URL"),
+      posthogAnalytics: hasEnv("POSTHOG_API_KEY") && hasEnv("POSTHOG_PROJECT_ID"),
+      languageToolSelfHost: hasEnv("LANGUAGETOOL_URL"),
+      googleKnowledgeGraph: hasEnv("GOOGLE_KG_API_KEY"),
+      productHunt: hasEnv("PRODUCTHUNT_TOKEN"),
+      githubHigherRate: hasEnv("GITHUB_TOKEN"),
     },
   };
 }

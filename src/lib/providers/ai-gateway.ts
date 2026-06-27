@@ -15,7 +15,7 @@ const AI_BOTS = [
 export { AI_BOTS };
 
 export async function queryLLMForVisibility(
-  provider: "openai" | "gemini" | "claude",
+  provider: "openai" | "gemini" | "claude" | "ollama",
   prompt: string,
   brandName: string,
   brandDomain: string,
@@ -27,7 +27,14 @@ export async function queryLLMForVisibility(
     let responseText = "";
     let citedUrls: string[] = [];
 
-    if (provider === "openai") {
+    if (provider === "ollama") {
+      const { generateWithOllama } = await import("@/lib/providers/ollama");
+      const out = await generateWithOllama(systemPrompt, prompt);
+      if (!out.available) {
+        return { success: false, error: out.reason || "Ollama unavailable" };
+      }
+      responseText = out.text;
+    } else if (provider === "openai") {
       const { generateText } = await import("ai");
       const { openai } = await import("@ai-sdk/openai");
       const result = await generateText({

@@ -1,4 +1,6 @@
 import { runSiteCrawl, type CrawlPageResult } from "@/lib/engines/site-crawler";
+import { embedTexts, hasEmbeddingsCapability } from "@/lib/providers/embeddings";
+import { cosineSimilarity } from "@/lib/engines/semantic";
 
 export interface InternalLinkOpportunity {
   sourceUrl: string;
@@ -173,12 +175,48 @@ export function analyzeOrphansAndDepth(pages: CrawlPageResult[], domain: string)
   return { orphans, deepPages, maxDepth };
 }
 
+/**
+ * Optional semantic re-rank: blend keyless embedding similarity between the
+ * source and target page titles into the lexical relevance score. Pages that
+ * are topically related (not just sharing words) rank higher. Degrades to the
+ * lexical-only score when embeddings aren't configured.
+ */
+export async function applySemanticBoost(
+  opportunities: InternalLinkOpportunity[],
+  pages: CrawlPageResult[]
+): Promise<InternalLinkOpportunity[]> {
+  if (!hasEmbeddingsCapability() || opportunities.length === 0) return opportunities;
+
+  const titleByUrl = new Map(pages.map((p) => [p.url, p.title || ""]));
+  const refs = [...new Set(opportunities.flatMap((o) => [o.sourceUrl, o.targetUrl]))]
+    .filter((u) => (titleByUrl.get(u) || "").trim());
+  if (refs.length < 2) return opportunities;
+
+  const res = await embedTexts(refs.map((u) => titleByUrl.get(u) || ""));
+  if (!res.available || res.embeddings.length !== refs.length) return opportunities;
+
+  const vecByUrl = new Map<string, number[]>();
+  refs.forEach((u, i) => vecByUrl.set(u, res.embeddings[i]));
+
+  return opportunities
+    .map((o) => {
+      const a = vecByUrl.get(o.sourceUrl);
+      const b = vecByUrl.get(o.targetUrl);
+      if (!a || !b) return o;
+      const sim = cosineSimilarity(a, b); // 0-1
+      const boosted = Math.min(100, Math.round(o.relevanceScore * 0.6 + sim * 100 * 0.4));
+      return { ...o, relevanceScore: boosted };
+    })
+    .sort((x, y) => y.relevanceScore - x.relevanceScore);
+}
+
 export async function analyzeInternalLinks(
   domain: string,
   maxPages = 40
 ): Promise<{ opportunities: InternalLinkOpportunity[]; pagesCrawled: number; orphans: OrphanAnalysis }> {
   const crawl = await runSiteCrawl(domain, maxPages);
-  const opportunities = findInternalLinkOpportunities(crawl.pages);
+  let opportunities = findInternalLinkOpportunities(crawl.pages);
+  opportunities = await applySemanticBoost(opportunities, crawl.pages);
   const orphans = analyzeOrphansAndDepth(crawl.pages, domain);
   return { opportunities, pagesCrawled: crawl.pages.length, orphans };
 }

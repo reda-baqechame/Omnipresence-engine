@@ -2,6 +2,12 @@ import type { BrandProfile, Project } from "@/types/database";
 import type { EntityProfile } from "@/types/database";
 import { assertPublicDomain } from "@/lib/security/domain";
 import { findWikipediaArticle } from "@/lib/providers/wikimedia";
+import {
+  googleKnowledgeGraph,
+  getWikidataDetails,
+  dbpediaLookup,
+  hasGoogleKgCapability,
+} from "@/lib/providers/knowledge-graph";
 
 export interface EntityBuildResult {
   profile: Omit<EntityProfile, "id" | "created_at" | "updated_at">;
@@ -75,10 +81,99 @@ export async function reconcileEntitySources(
     // optional
   }
 
+  // Enrich from Wikidata claims (official website, sameAs) when we have a QID.
+  if (wikidataQid) {
+    try {
+      const wd = await getWikidataDetails(wikidataQid);
+      if (wd.available && wd.details) {
+        for (const link of wd.details.sameAs) {
+          if (link.startsWith("http")) extras[`wd_${Object.keys(extras).length}`] = link;
+        }
+      }
+    } catch {
+      // optional
+    }
+  }
+
+  // DBpedia resource (entity grounding for AI engines).
+  try {
+    const db = await dbpediaLookup(brand.brand_name || project.name);
+    if (db.available && db.results[0]) extras.dbpedia = db.results[0].uri;
+  } catch {
+    // optional
+  }
+
   crunchbaseUrl = `https://www.crunchbase.com/organization/${(brand.brand_name || project.name).toLowerCase().replace(/[^a-z0-9]+/g, "-")}`;
   extras.crunchbase = crunchbaseUrl;
 
   return { wikidataQid, crunchbaseUrl, g2Url, wikipediaUrl, sameAsExtras: extras };
+}
+
+/**
+ * Entity-gap detection vs competitors: which knowledge-graph surfaces the brand
+ * is missing that competitors occupy (Wikidata QID, Google KG panel, Wikipedia,
+ * DBpedia). Keyless except Google KG (free key). Refund-safe: reports
+ * availability per source.
+ */
+export interface EntityPresence {
+  name: string;
+  inWikidata: boolean;
+  inGoogleKg: boolean;
+  inWikipedia: boolean;
+  inDbpedia: boolean;
+  kgScore: number;
+}
+
+export async function probeEntityPresence(name: string): Promise<EntityPresence> {
+  const [wd, kg, wiki, db] = await Promise.all([
+    fetch(`https://www.wikidata.org/w/api.php?action=wbsearchentities&search=${encodeURIComponent(name)}&language=en&format=json&origin=*`, { signal: AbortSignal.timeout(8000) })
+      .then((r) => (r.ok ? r.json() : { search: [] }))
+      .then((d: { search?: unknown[] }) => (d.search?.length ?? 0) > 0)
+      .catch(() => false),
+    googleKnowledgeGraph(name).catch(() => ({ available: false, entities: [] as Array<{ score: number }> })),
+    findWikipediaArticle(name).then((a) => a.exists).catch(() => false),
+    dbpediaLookup(name).then((d) => d.available).catch(() => false),
+  ]);
+
+  return {
+    name,
+    inWikidata: wd,
+    inGoogleKg: kg.available && kg.entities.length > 0,
+    inWikipedia: wiki,
+    inDbpedia: db,
+    kgScore: kg.available && kg.entities[0] ? Math.round(kg.entities[0].score) : 0,
+  };
+}
+
+export interface EntityGapReport {
+  available: boolean;
+  googleKgConfigured: boolean;
+  brand: EntityPresence;
+  competitors: EntityPresence[];
+  gaps: string[];
+}
+
+export async function detectEntityGaps(input: {
+  brand: string;
+  competitors: string[];
+}): Promise<EntityGapReport> {
+  const brand = await probeEntityPresence(input.brand);
+  const competitors = await Promise.all(input.competitors.slice(0, 5).map((c) => probeEntityPresence(c)));
+
+  const gaps: string[] = [];
+  const compHas = (key: keyof EntityPresence) => competitors.some((c) => Boolean(c[key]));
+  if (!brand.inWikidata && compHas("inWikidata")) gaps.push("Create a Wikidata item — competitors have one (entities feed AI grounding).");
+  if (!brand.inWikipedia && compHas("inWikipedia")) gaps.push("Pursue a Wikipedia article (needs notable third-party coverage) — competitors are listed.");
+  if (!brand.inGoogleKg && compHas("inGoogleKg")) gaps.push("No Google Knowledge Graph entity — strengthen Organization schema + sameAs and authoritative citations.");
+  if (!brand.inDbpedia && compHas("inDbpedia")) gaps.push("Absent from DBpedia — typically follows a Wikipedia presence.");
+
+  return {
+    available: true,
+    googleKgConfigured: hasGoogleKgCapability(),
+    brand,
+    competitors,
+    gaps,
+  };
 }
 
 export async function buildEntityProfile(

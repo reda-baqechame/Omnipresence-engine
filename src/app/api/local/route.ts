@@ -8,6 +8,7 @@ import {
   captureReviewSnapshot,
   checkNapConsistency,
   generateLocalLandingPage,
+  runOsmLocalDiscovery,
 } from "@/lib/engines/local-seo";
 
 export async function GET(request: NextRequest) {
@@ -44,14 +45,15 @@ export async function POST(request: NextRequest) {
   if (!user) return apiUnauthorized();
 
   const body = await request.json();
-  const { projectId, action, keyword, gridSize, radiusKm, service, city } = body as {
+  const { projectId, action, keyword, gridSize, radiusKm, service, city, category } = body as {
     projectId: string;
-    action: "gbp_audit" | "map_grid" | "reviews" | "nap" | "local_page";
+    action: "gbp_audit" | "map_grid" | "reviews" | "nap" | "local_page" | "osm_discovery";
     keyword?: string;
     gridSize?: number;
     radiusKm?: number;
     service?: string;
     city?: string;
+    category?: string;
   };
   if (!projectId) return apiError("projectId required");
 
@@ -84,6 +86,10 @@ export async function POST(request: NextRequest) {
 
   if (action === "nap") {
     return NextResponse.json(await checkNapConsistency(base));
+  }
+
+  if (action === "osm_discovery") {
+    return NextResponse.json(await runOsmLocalDiscovery({ ...base, category }));
   }
 
   if (action === "local_page") {

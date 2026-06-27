@@ -3,6 +3,7 @@ import { scrapePage } from "@/lib/providers/firecrawl";
 import { AI_BOTS } from "@/lib/providers/ai-gateway";
 import { runSiteCrawl, crawlFindingsToTechnical } from "@/lib/engines/site-crawler";
 import { getPageSpeed } from "@/lib/providers/pagespeed";
+import { runQualityAudit } from "@/lib/engines/quality-audit";
 import type { FindingSeverity } from "@/types/database";
 
 export interface TechnicalAuditFinding {
@@ -63,6 +64,14 @@ export async function runTechnicalAudit(
 
   // Core Web Vitals / page speed (retrieval timeout risk for AI engines)
   findings.push(...await checkPageSpeed(baseUrl));
+
+  // Accessibility (WCAG heuristics), HTML validity (W3C), Rich Results eligibility — all keyless.
+  try {
+    const quality = await runQualityAudit(baseUrl);
+    if (quality.available) findings.push(...quality.findings);
+  } catch {
+    // Quality audit is best-effort; never block the core audit.
+  }
 
   // Multi-page crawl (PageRank + SimHash dedupe)
   try {

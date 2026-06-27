@@ -18,6 +18,7 @@ import { getKeywordMetrics, hasKeywordPlanner } from "../engines/keyword-planner
 import { getTrends } from "../engines/trends.js";
 import { detectTechStack } from "../engines/techstack.js";
 import { runPopularity } from "../engines/popularity.js";
+import { embedTexts, isEmbeddingsReady } from "../engines/embeddings.js";
 import { dfsResponse } from "./response.js";
 
 const router = Router();
@@ -231,6 +232,23 @@ router.get("/v3/rank_tracker/history/:key", async (req, res) => {
 
 router.get("/health", (_req, res) => {
   res.json({ ok: true, service: "omnidata", version: "0.5.0" });
+});
+
+// Local semantic embeddings (keyless transformers.js).
+router.post("/v3/embeddings/batch", async (req, res) => {
+  const item = (req.body as Array<{ texts?: string[] }>)?.[0];
+  const texts = item?.texts || [];
+  if (!Array.isArray(texts) || texts.length === 0) {
+    res.status(400).json(dfsResponse([], 40000));
+    return;
+  }
+  const result = await embedTexts(texts.slice(0, 64));
+  res.json(dfsResponse([{ result: [result] }]));
+});
+
+router.get("/v3/embeddings/status", async (_req, res) => {
+  const ready = await isEmbeddingsReady();
+  res.json(dfsResponse([{ result: [{ embeddings_ready: ready }] }]));
 });
 
 router.get("/v3/backlinks/webgraph/status", async (_req, res) => {

@@ -47,6 +47,7 @@ export function ReputationPanel({ projectId }: { projectId: string }) {
   const [loading, setLoading] = useState("");
   const [ai, setAi] = useState<{ available: boolean; reason?: string; result?: AiSentiment } | null>(null);
   const [serp, setSerp] = useState<BrandSerp | null>(null);
+  const [news, setNews] = useState<{ available: boolean; reason?: string; summary?: { total: number; negative: number; sources: number } } | null>(null);
 
   useEffect(() => {
     fetch(`/api/reputation?projectId=${projectId}`)
@@ -69,6 +70,16 @@ export function ReputationPanel({ projectId }: { projectId: string }) {
     setMentions(d.mentions || []);
     setLoading("");
   }
+  async function runNews() {
+    setLoading("news");
+    const d = await post("news");
+    setNews(d);
+    if (d.mentions) {
+      const refreshed = await fetch(`/api/reputation?projectId=${projectId}`).then((r) => r.json());
+      setMentions(refreshed.mentions || []);
+    }
+    setLoading("");
+  }
   async function runAi() {
     setLoading("ai");
     setAi(await post("ai_sentiment"));
@@ -88,10 +99,19 @@ export function ReputationPanel({ projectId }: { projectId: string }) {
       <div className="bg-card border border-border rounded-xl p-4">
         <div className="flex items-center justify-between mb-2">
           <h3 className="font-semibold">Mention monitoring</h3>
-          <button type="button" onClick={runMonitor} disabled={loading === "monitor"} className="bg-primary text-primary-foreground px-3 py-1.5 rounded-lg text-sm disabled:opacity-50">
-            {loading === "monitor" ? "Scanning…" : "Scan mentions"}
-          </button>
+          <div className="flex gap-2">
+            <button type="button" onClick={runNews} disabled={loading === "news"} className="border border-border px-3 py-1.5 rounded-lg text-sm disabled:opacity-50">
+              {loading === "news" ? "Fetching news…" : "Scan news (GDELT)"}
+            </button>
+            <button type="button" onClick={runMonitor} disabled={loading === "monitor"} className="bg-primary text-primary-foreground px-3 py-1.5 rounded-lg text-sm disabled:opacity-50">
+              {loading === "monitor" ? "Scanning…" : "Scan mentions"}
+            </button>
+          </div>
         </div>
+        {news && !news.available && <p className="text-sm text-yellow-400 mb-2">{news.reason}</p>}
+        {news?.available && news.summary && (
+          <p className="text-sm text-muted-foreground mb-2">News: {news.summary.total} articles across {news.summary.sources} sources ({news.summary.negative} negative).</p>
+        )}
         {mentions.length > 0 ? (
           <>
             <div className="flex gap-6 text-sm mb-3">

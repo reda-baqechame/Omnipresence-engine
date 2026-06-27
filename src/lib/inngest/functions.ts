@@ -33,6 +33,10 @@ import {
 import { runDailyOnPageAutomation } from "@/lib/engines/on-page-queue";
 import { analyzeInternalLinks } from "@/lib/engines/internal-linking";
 import { buildMonthlyCampaign } from "@/lib/engines/link-building";
+import { runBehaviorAnalytics } from "@/lib/engines/behavior-analytics";
+import { monitorBrandNews } from "@/lib/engines/reputation";
+import { getCruxHistory, hasCruxHistoryCapability } from "@/lib/providers/crux-history";
+import { fetchFirehoseMentions } from "@/lib/engines/community-mentions";
 import { logProviderError } from "@/lib/observability/log";
 import type { Project } from "@/types/database";
 
@@ -611,6 +615,169 @@ export const weeklyBacklinkMonitor = inngest.createFunction(
   }
 );
 
+export const weeklyBehaviorSync = inngest.createFunction(
+  { id: "weekly-behavior-sync", retries: 1, triggers: [{ cron: "0 7 * * 4" }] },
+  async ({ step }) => {
+    const supabase = await createServiceClient();
+
+    // Only projects that connected Microsoft Clarity.
+    const projects = await step.run("fetch-clarity-projects", async () => {
+      const { data: integ } = await supabase
+        .from("project_integrations")
+        .select("project_id")
+        .eq("provider", "clarity")
+        .eq("is_active", true);
+      const ids = [...new Set((integ || []).map((i) => i.project_id))];
+      if (!ids.length) return [];
+      const { data } = await supabase
+        .from("projects")
+        .select("id, organization_id")
+        .in("id", ids);
+      return data || [];
+    });
+
+    let synced = 0;
+    for (const project of projects) {
+      await step.run(`behavior-${project.id}`, async () => {
+        try {
+          const r = await runBehaviorAnalytics(supabase, {
+            projectId: project.id,
+            organizationId: project.organization_id,
+          });
+          return r.available ? r.issues.length : 0;
+        } catch (error) {
+          logProviderError("cron:behavior", error, { projectId: project.id });
+          return 0;
+        }
+      });
+      synced++;
+    }
+
+    return { synced, total: projects.length };
+  }
+);
+
+export const dailyBrandNewsMonitor = inngest.createFunction(
+  { id: "daily-brand-news-monitor", retries: 1, triggers: [{ cron: "0 8 * * *" }] },
+  async ({ step }) => {
+    const supabase = await createServiceClient();
+    const projects = await step.run("fetch-projects", async () => {
+      const { data } = await supabase
+        .from("projects")
+        .select("id, name, domain, organization_id")
+        .eq("status", "active");
+      return data || [];
+    });
+
+    let monitored = 0;
+    for (const project of projects) {
+      await step.run(`news-${project.id}`, async () => {
+        try {
+          const r = await monitorBrandNews(supabase, {
+            projectId: project.id,
+            organizationId: project.organization_id,
+            brand: project.name || project.domain,
+            domain: project.domain,
+          });
+          return r.available ? r.summary.total : 0;
+        } catch (error) {
+          logProviderError("cron:brand-news", error, { projectId: project.id });
+          return 0;
+        }
+      });
+      monitored++;
+    }
+    return { monitored };
+  }
+);
+
+export const weeklyCwvHistorySync = inngest.createFunction(
+  { id: "weekly-cwv-history-sync", retries: 1, triggers: [{ cron: "0 6 * * 5" }] },
+  async ({ step }) => {
+    if (!hasCruxHistoryCapability()) return { synced: 0, skipped: "No CrUX/PageSpeed key" };
+    const supabase = await createServiceClient();
+    const projects = await step.run("fetch-projects", async () => {
+      const { data } = await supabase.from("projects").select("id, domain").eq("status", "active");
+      return data || [];
+    });
+
+    let synced = 0;
+    for (const project of projects) {
+      await step.run(`cwv-${project.id}`, async () => {
+        try {
+          const res = await getCruxHistory(project.domain);
+          if (!res.available || !res.points.length) return 0;
+          await supabase.from("cwv_history").upsert(
+            res.points.map((p) => ({
+              project_id: project.id,
+              collected_on: p.date,
+              lcp_ms: p.lcpMs ?? null,
+              inp_ms: p.inpMs ?? null,
+              cls: p.cls ?? null,
+              data_source: "measured",
+            })),
+            { onConflict: "project_id,collected_on" }
+          );
+          return res.points.length;
+        } catch (error) {
+          logProviderError("cron:cwv-history", error, { projectId: project.id });
+          return 0;
+        }
+      });
+      synced++;
+    }
+    return { synced, total: projects.length };
+  }
+);
+
+export const weeklyMentionFirehose = inngest.createFunction(
+  { id: "weekly-mention-firehose", retries: 1, triggers: [{ cron: "0 9 * * 6" }] },
+  async ({ step }) => {
+    const supabase = await createServiceClient();
+    const projects = await step.run("fetch-projects", async () => {
+      const { data } = await supabase
+        .from("projects")
+        .select("id, name, competitors")
+        .eq("status", "active");
+      return data || [];
+    });
+
+    let inserted = 0;
+    for (const project of projects) {
+      await step.run(`firehose-${project.id}`, async () => {
+        try {
+          if (!project.name) return 0;
+          const { rows } = await fetchFirehoseMentions(project.name, (project.competitors || []) as string[]);
+          if (!rows.length) return 0;
+          const { data: existing } = await supabase
+            .from("community_mentions")
+            .select("url")
+            .eq("project_id", project.id);
+          const seen = new Set((existing || []).map((e) => e.url));
+          const newRows = rows.filter((r) => !seen.has(r.url));
+          if (newRows.length) {
+            await supabase.from("community_mentions").insert(
+              newRows.map((r) => ({
+                project_id: project.id,
+                platform: r.platform,
+                url: r.url,
+                keyword: r.keyword,
+                mention_type: r.mention_type || "brand",
+              }))
+            );
+            inserted += newRows.length;
+          }
+          return newRows.length;
+        } catch (error) {
+          logProviderError("cron:mention-firehose", error, { projectId: project.id });
+          return 0;
+        }
+      });
+    }
+    return { inserted, total: projects.length };
+  }
+);
+
 export const scheduledContentPublish = inngest.createFunction(
   { id: "scheduled-content-publish", retries: 1, triggers: [{ cron: "0 * * * *" }] },
   async ({ step }) => {
@@ -837,6 +1004,10 @@ export const functions = [
   weeklyRankCheck,
   dailyRankCheck,
   weeklyBacklinkMonitor,
+  weeklyBehaviorSync,
+  dailyBrandNewsMonitor,
+  weeklyCwvHistorySync,
+  weeklyMentionFirehose,
   scheduledContentPublish,
   weeklyIntelligenceSync,
   dailyOnPageAutomation,

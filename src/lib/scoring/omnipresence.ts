@@ -34,6 +34,8 @@ export interface ScoreInputs {
   domainAuthority?: number;
   /** 0-100 PageSpeed retrieval-health score (optional) */
   pageSpeedScore?: number;
+  /** 0-100 behavioral conversion-readiness signal from Clarity (optional) */
+  behaviorSignal?: number;
 }
 
 const WEIGHTS = {
@@ -83,7 +85,7 @@ export function calculateOmniPresenceScore(inputs: ScoreInputs): Omit<OmniPresen
     authority_mentions: { value: calculateAuthorityMentions(inputs.authorityOpportunities, pool, inputs.domainAuthority), available: hasAuthoritySignal },
     // The technical audit always runs for real (keyless), so it's always measured.
     technical_readiness: { value: calculateTechnicalReadiness(inputs.technicalFindings, inputs.pageSpeedScore), available: true },
-    conversion_readiness: { value: calculateConversionReadiness(inputs.hasConversionTracking, inputs.monthlyTraffic), available: true },
+    conversion_readiness: { value: calculateConversionReadiness(inputs.hasConversionTracking, inputs.monthlyTraffic, inputs.behaviorSignal), available: true },
   } as const;
 
   // Weighted average over ONLY the available dimensions (re-normalized).
@@ -249,14 +251,22 @@ function calculateTechnicalReadiness(findings: TechnicalFinding[], pageSpeedScor
 
 function calculateConversionReadiness(
   hasTracking: boolean,
-  monthlyTraffic?: number
+  monthlyTraffic?: number,
+  behaviorSignal?: number
 ): number {
   let score = 0;
   if (hasTracking) score += 50;
   if (monthlyTraffic && monthlyTraffic > 1000) score += 30;
   else if (monthlyTraffic && monthlyTraffic > 100) score += 15;
   score += 20; // Base for having a website
-  return Math.min(score, 100);
+  score = Math.min(score, 100);
+
+  // Blend in measured behavioral health (Clarity) when available: real UX
+  // friction is a stronger conversion-readiness signal than tracking presence.
+  if (typeof behaviorSignal === "number") {
+    return Math.round(score * 0.5 + behaviorSignal * 0.5);
+  }
+  return score;
 }
 
 export function getScoreLabel(score: number): { label: string; color: string } {

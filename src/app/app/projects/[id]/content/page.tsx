@@ -2,6 +2,8 @@ import { notFound } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { ContentBoard } from "@/components/content-board";
 import { BlogPipelinePanel } from "@/components/blog-pipeline-panel";
+import { ContentOptimizerPanel } from "@/components/content-optimizer-panel";
+import { VideoSeoPanel } from "@/components/video-seo-panel";
 import { getProject } from "@/lib/projects";
 
 export default async function ContentPage({
@@ -28,6 +30,8 @@ export default async function ContentPage({
           Generate brand-aware content assets. All community drafts require human review before publishing.
         </p>
       </div>
+      <ContentOptimizerPanel projectId={id} />
+      <VideoSeoPanel projectId={id} />
       <BlogPipelinePanel assets={contentAssets || []} />
       <ContentBoard projectId={id} assets={contentAssets || []} />
     </div>

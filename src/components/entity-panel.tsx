@@ -20,6 +20,13 @@ export function EntityPanel({ projectId }: { projectId: string }) {
   const [napLoading, setNapLoading] = useState(false);
   const [schemaLoading, setSchemaLoading] = useState(false);
   const [copied, setCopied] = useState<string | null>(null);
+  const [gapsLoading, setGapsLoading] = useState(false);
+  const [gaps, setGaps] = useState<{
+    googleKgConfigured: boolean;
+    brand: { name: string; inWikidata: boolean; inGoogleKg: boolean; inWikipedia: boolean; inDbpedia: boolean };
+    competitors: Array<{ name: string; inWikidata: boolean; inGoogleKg: boolean; inWikipedia: boolean; inDbpedia: boolean }>;
+    gaps: string[];
+  } | null>(null);
 
   useEffect(() => {
     fetch(`/api/entity?projectId=${projectId}`)
@@ -53,6 +60,17 @@ export function EntityPanel({ projectId }: { projectId: string }) {
     const data = await res.json();
     setNapFindings(data.findings || []);
     setNapLoading(false);
+  }
+
+  async function detectGaps() {
+    setGapsLoading(true);
+    const res = await fetch("/api/entity", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ projectId, action: "entity_gaps" }),
+    });
+    setGaps(await res.json());
+    setGapsLoading(false);
   }
 
   async function generateSchema() {
@@ -218,6 +236,59 @@ export function EntityPanel({ projectId }: { projectId: string }) {
             <p className="text-xs text-muted-foreground">
               Deploy uses your connected CMS credentials. Paste the snippet manually if you publish elsewhere.
             </p>
+          </div>
+        )}
+      </div>
+
+      <div className="bg-card border border-border rounded-xl p-6">
+        <div className="flex items-center justify-between mb-3">
+          <div>
+            <h3 className="font-semibold">Entity gaps vs competitors</h3>
+            <p className="text-xs text-muted-foreground">Knowledge-graph presence across Wikidata, Google KG, Wikipedia, DBpedia.</p>
+          </div>
+          <button
+            onClick={detectGaps}
+            disabled={gapsLoading}
+            className="text-sm bg-secondary px-3 py-1.5 rounded-lg hover:bg-secondary/80 disabled:opacity-50"
+          >
+            {gapsLoading ? "Probing…" : "Detect gaps"}
+          </button>
+        </div>
+        {gaps && (
+          <div className="space-y-3 text-sm">
+            {!gaps.googleKgConfigured && (
+              <p className="text-xs text-muted-foreground">Set <code>GOOGLE_KG_API_KEY</code> (free) to include Google Knowledge Graph panel detection.</p>
+            )}
+            <div className="overflow-auto">
+              <table className="w-full text-xs">
+                <thead className="text-muted-foreground">
+                  <tr>
+                    <th className="text-left p-1.5">Entity</th>
+                    <th className="p-1.5">Wikidata</th>
+                    <th className="p-1.5">Google KG</th>
+                    <th className="p-1.5">Wikipedia</th>
+                    <th className="p-1.5">DBpedia</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {[{ ...gaps.brand, isBrand: true }, ...gaps.competitors.map((c) => ({ ...c, isBrand: false }))].map((e) => (
+                    <tr key={e.name} className="border-t border-border/50">
+                      <td className="p-1.5">{e.name} {e.isBrand && <span className="text-primary">(you)</span>}</td>
+                      {(["inWikidata", "inGoogleKg", "inWikipedia", "inDbpedia"] as const).map((k) => (
+                        <td key={k} className={`p-1.5 text-center ${e[k] ? "text-green-400" : "text-red-400"}`}>{e[k] ? "✓" : "✗"}</td>
+                      ))}
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+            {gaps.gaps.length > 0 ? (
+              <ul className="list-disc pl-5 space-y-1 text-yellow-400">
+                {gaps.gaps.map((g) => <li key={g}>{g}</li>)}
+              </ul>
+            ) : (
+              <p className="text-green-400">No entity gaps — you match or lead competitors across knowledge graphs.</p>
+            )}
           </div>
         )}
       </div>

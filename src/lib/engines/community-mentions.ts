@@ -1,8 +1,21 @@
 import { searchGoogleOrganicRouter } from "@/lib/providers/serp-router";
 import { logProviderError } from "@/lib/observability/log";
+import { fetchMentionFirehose } from "@/lib/providers/social-mentions";
+
+export type CommunityPlatform =
+  | "reddit"
+  | "quora"
+  | "hacker_news"
+  | "github"
+  | "stackexchange"
+  | "producthunt"
+  | "mastodon"
+  | "bluesky"
+  | "wikipedia"
+  | "other";
 
 export interface CommunityMentionRow {
-  platform: "reddit" | "quora" | "hacker_news" | "github" | "other";
+  platform: CommunityPlatform;
   url: string;
   keyword?: string;
   mention_type?: "brand" | "competitor" | "category";
@@ -205,6 +218,44 @@ export async function fetchLiveCommunityMentions(
     }
   }
   return { rows, redditAvailable };
+}
+
+/**
+ * Phase 14: aggregate the broader social/community firehose (Stack Exchange,
+ * Product Hunt, GitHub, Mastodon, Bluesky, Wikipedia) for a brand + competitors.
+ * Each source degrades independently; results are normalized + deduped.
+ */
+export async function fetchFirehoseMentions(
+  brand: string,
+  competitors: string[] = []
+): Promise<{ rows: CommunityMentionRow[]; byPlatform: Record<string, number>; available: boolean }> {
+  const queries = [brand, ...competitors.slice(0, 3)].filter(Boolean);
+  const firehoses = await Promise.all(queries.map((q) => fetchMentionFirehose(q)));
+
+  const rows: CommunityMentionRow[] = [];
+  const seen = new Set<string>();
+  for (let i = 0; i < firehoses.length; i++) {
+    const q = queries[i];
+    const isBrandQuery = i === 0;
+    for (const m of firehoses[i].mentions) {
+      if (seen.has(m.url)) continue;
+      seen.add(m.url);
+      rows.push({
+        platform: m.platform,
+        url: m.url,
+        title: m.title,
+        keyword: q,
+        mention_type: isBrandQuery ? "brand" : "competitor",
+        competitor: isBrandQuery ? undefined : q,
+        source: "live",
+      });
+    }
+  }
+
+  const byPlatform: Record<string, number> = {};
+  for (const r of rows) byPlatform[r.platform] = (byPlatform[r.platform] || 0) + 1;
+
+  return { rows, byPlatform, available: rows.length > 0 };
 }
 
 export function parseMentionsCsv(csv: string): CommunityMentionRow[] {

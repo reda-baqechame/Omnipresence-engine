@@ -25,16 +25,17 @@ export function logProductionWarnings(): void {
 }
 
 /**
- * Fail fast on UNRECOVERABLE misconfiguration, but only on a real Vercel
- * runtime (not during `next build` and not in CI, which lack VERCEL). This
- * turns "cryptic error deep in a request handler" into a loud boot failure for
- * the two blockers that make the whole app non-functional, while leaving
- * optional-provider gaps as warnings.
+ * Fail fast on UNRECOVERABLE misconfiguration, but only on a real managed
+ * runtime (Vercel or Railway) and not during `next build` / CI (which lack
+ * those markers). This turns "cryptic error deep in a request handler" into a
+ * loud boot failure for the two blockers that make the whole app
+ * non-functional, while leaving optional-provider gaps as warnings.
  */
 function enforceFatalEnv(blockers: string[]): void {
-  const onVercelRuntime =
-    process.env.VERCEL === "1" && process.env.NEXT_PHASE !== "phase-production-build";
-  if (!onVercelRuntime) return;
+  const onManagedRuntime =
+    (process.env.VERCEL === "1" || Boolean(process.env.RAILWAY_ENVIRONMENT)) &&
+    process.env.NEXT_PHASE !== "phase-production-build";
+  if (!onManagedRuntime) return;
 
   const fatal = blockers.filter((b) => b === "supabase" || b === "oauth_secret");
   if (fatal.length) {

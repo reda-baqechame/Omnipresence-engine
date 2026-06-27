@@ -5,6 +5,9 @@ const nextConfig: NextConfig = {
   turbopack: {
     root: path.join(__dirname),
   },
+  // Keep large/keyless server-only packages external so they load from
+  // node_modules at runtime instead of being bundled into route chunks.
+  serverExternalPackages: ["wink-nlp", "wink-eng-lite-web-model"],
   experimental: {
     serverActions: {
       bodySizeLimit: "4mb",

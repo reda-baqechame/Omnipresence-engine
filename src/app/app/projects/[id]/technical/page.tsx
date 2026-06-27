@@ -2,6 +2,8 @@ import { notFound } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { FindingCard } from "@/components/finding-card";
 import { OnPagePanel } from "@/components/on-page-panel";
+import { DeepCrawlPanel } from "@/components/deep-crawl-panel";
+import { CwvHistoryPanel } from "@/components/cwv-history-panel";
 import { ExportButtons } from "@/components/export-buttons";
 import { getProject } from "@/lib/projects";
 import { AI_BOTS } from "@/lib/providers/ai-gateway";
@@ -106,6 +108,10 @@ export default async function TechnicalPage({
           ) : null}
         </div>
       )}
+
+      <DeepCrawlPanel projectId={id} />
+
+      <CwvHistoryPanel projectId={id} />
 
       <OnPagePanel projectId={id} />
 

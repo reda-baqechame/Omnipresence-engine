@@ -1,0 +1,16 @@
+node_modules
+.next
+.git
+.github
+.vercel
+.cursor
+npm-debug.log*
+*.local
+.env
+.env.*
+!.env.example
+services/omnidata/node_modules
+services/omnidata/dist
+coverage
+*.md
+!README.md

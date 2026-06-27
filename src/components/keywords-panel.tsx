@@ -49,6 +49,12 @@ export function KeywordsPanel({ projectId, industry = "" }: KeywordsPanelProps) 
   const [bulkStatus, setBulkStatus] = useState("");
   const [loading, setLoading] = useState("");
   const [live, setLive] = useState<boolean | null>(null);
+  const [universe, setUniverse] = useState<{
+    total: number;
+    byIntent: Record<string, number>;
+    questions: string[];
+    keywords: Array<{ keyword: string; intent: string; sources: string[]; rising: boolean }>;
+  } | null>(null);
 
   async function load() {
     const res = await fetch(`/api/keywords?projectId=${projectId}`);
@@ -105,6 +111,18 @@ export function KeywordsPanel({ projectId, industry = "" }: KeywordsPanelProps) 
     setLoading("");
   }
 
+  async function runUniverse() {
+    setLoading("universe");
+    const res = await fetch("/api/keywords", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ projectId, action: "universe", seed: seed || industry }),
+    });
+    const data = await res.json();
+    setUniverse(data.available ? data : null);
+    setLoading("");
+  }
+
   async function runContentGaps() {
     setLoading("gaps");
     const res = await fetch("/api/keywords", {
@@ -155,6 +173,15 @@ export function KeywordsPanel({ projectId, industry = "" }: KeywordsPanelProps) 
           </button>
           <button
             type="button"
+            onClick={runUniverse}
+            disabled={loading === "universe"}
+            className="border border-border px-4 py-2 rounded-lg text-sm disabled:opacity-50"
+            title="Keyless multi-source autocomplete + question/related expansion"
+          >
+            {loading === "universe" ? "Building…" : "Keyword universe"}
+          </button>
+          <button
+            type="button"
             onClick={runContentGaps}
             disabled={loading === "gaps"}
             className="border border-border px-4 py-2 rounded-lg text-sm disabled:opacity-50"
@@ -201,6 +228,49 @@ export function KeywordsPanel({ projectId, industry = "" }: KeywordsPanelProps) 
           </div>
         </div>
       </div>
+
+      {universe && (
+        <div className="bg-card border border-border rounded-xl p-4 space-y-3">
+          <div className="flex items-center justify-between">
+            <h4 className="font-semibold">Keyword universe ({universe.total})</h4>
+            <div className="flex gap-2 text-xs text-muted-foreground">
+              {Object.entries(universe.byIntent).map(([intent, n]) => (
+                <span key={intent} className="rounded bg-secondary/40 px-2 py-0.5 capitalize">{intent}: {n}</span>
+              ))}
+            </div>
+          </div>
+          {universe.questions.length > 0 && (
+            <div>
+              <p className="text-xs font-medium text-muted-foreground mb-1">People-also-ask style questions</p>
+              <div className="flex flex-wrap gap-1.5">
+                {universe.questions.slice(0, 20).map((q) => (
+                  <span key={q} className="rounded-full bg-secondary/40 px-2.5 py-1 text-xs">{q}</span>
+                ))}
+              </div>
+            </div>
+          )}
+          <div className="max-h-72 overflow-auto">
+            <table className="w-full text-sm">
+              <thead className="bg-secondary/40 text-muted-foreground sticky top-0">
+                <tr>
+                  <th className="text-left p-2">Keyword</th>
+                  <th className="text-left p-2">Intent</th>
+                  <th className="text-left p-2">Sources</th>
+                </tr>
+              </thead>
+              <tbody>
+                {universe.keywords.slice(0, 200).map((k) => (
+                  <tr key={k.keyword} className="border-t border-border/50">
+                    <td className="p-2">{k.keyword} {k.rising && <span className="text-green-400 text-xs">↑rising</span>}</td>
+                    <td className="p-2 text-muted-foreground capitalize">{k.intent}</td>
+                    <td className="p-2 text-xs text-muted-foreground">{k.sources.length}× {k.sources.slice(0, 3).join(", ")}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
 
       {opportunities.length > 0 && (
         <div className="bg-card border border-border rounded-xl overflow-hidden">

@@ -1,5 +1,6 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { searchPlaces, hasPlacesProvider, type PlaceResult } from "@/lib/providers/serper-places";
+import { geocode, findNearbyBusinesses, type NearbyBusiness } from "@/lib/providers/osm";
 
 /**
  * Local SEO engine (Phase 12): GBP audit, map-grid rank tracking (Local Falcon
@@ -319,6 +320,95 @@ export async function checkNapConsistency(input: {
       ...d,
       action: "Ensure name, address, and phone exactly match your canonical NAP.",
     })),
+  };
+}
+
+// ---------- Keyless local discovery (OpenStreetMap) ----------
+
+export interface OsmLocalResult {
+  available: boolean;
+  reason?: string;
+  source: "openstreetmap";
+  center?: { lat: number; lng: number; displayName: string };
+  napFromOsm?: { name?: string; address?: string };
+  competitors: NearbyBusiness[];
+  citationSources: { name: string; url: string; action: string }[];
+}
+
+const KEYLESS_CITATION_SOURCES = [
+  { name: "Google Business Profile", url: "https://business.google.com" },
+  { name: "Bing Places", url: "https://www.bingplaces.com" },
+  { name: "Apple Business Connect", url: "https://businessconnect.apple.com" },
+  { name: "OpenStreetMap", url: "https://www.openstreetmap.org" },
+  { name: "Yelp", url: "https://biz.yelp.com" },
+  { name: "Facebook Pages", url: "https://facebook.com" },
+  { name: "Yellow Pages", url: "https://www.yellowpages.com" },
+  { name: "Foursquare", url: "https://foursquare.com" },
+  { name: "Nextdoor", url: "https://business.nextdoor.com" },
+];
+
+/**
+ * Keyless local intelligence via OpenStreetMap (Nominatim + Overpass).
+ * Works with zero paid keys — geocodes the business for NAP verification,
+ * discovers nearby competitor businesses, and returns a citation checklist.
+ */
+export async function runOsmLocalDiscovery(input: {
+  name: string;
+  domain: string;
+  location?: string;
+  category?: string;
+  center?: { lat: number; lng: number };
+  radiusMeters?: number;
+}): Promise<OsmLocalResult> {
+  let center = input.center;
+  let displayName = "";
+  let napFromOsm: { name?: string; address?: string } | undefined;
+
+  if (!center) {
+    const q = input.location ? `${input.name} ${input.location}` : input.name;
+    const geo = await geocode(q);
+    if (geo.available && geo.results[0]) {
+      const top = geo.results[0];
+      center = { lat: top.lat, lng: top.lng };
+      displayName = top.displayName;
+      napFromOsm = { name: input.name, address: top.displayName };
+    } else if (input.location) {
+      // Fall back to geocoding just the location to anchor the grid center.
+      const locGeo = await geocode(input.location);
+      if (locGeo.available && locGeo.results[0]) {
+        center = { lat: locGeo.results[0].lat, lng: locGeo.results[0].lng };
+        displayName = locGeo.results[0].displayName;
+      }
+    }
+  }
+
+  if (!center) {
+    return {
+      available: false,
+      reason: "Could not geocode the business or location via OpenStreetMap.",
+      source: "openstreetmap",
+      competitors: [],
+      citationSources: KEYLESS_CITATION_SOURCES.map((s) => ({ ...s, action: "Create/claim and match your NAP." })),
+    };
+  }
+
+  const nearby = await findNearbyBusinesses({
+    lat: center.lat,
+    lng: center.lng,
+    radiusMeters: input.radiusMeters,
+    category: input.category,
+  });
+
+  const brandNorm = normalize(input.name);
+  const competitors = (nearby.businesses || []).filter((b) => normalize(b.name) !== brandNorm);
+
+  return {
+    available: true,
+    source: "openstreetmap",
+    center: { ...center, displayName },
+    napFromOsm,
+    competitors,
+    citationSources: KEYLESS_CITATION_SOURCES.map((s) => ({ ...s, action: "Create/claim and match your NAP (name, address, phone)." })),
   };
 }
 

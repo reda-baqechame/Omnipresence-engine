@@ -1,0 +1,16 @@
+{
+  "timeZone": "America/New_York",
+  "dependencies": {},
+  "dataStudio": {
+    "name": "OmniPresence Engine",
+    "logoUrl": "https://raw.githubusercontent.com/omnipresence/assets/main/logo.png",
+    "company": "OmniPresence",
+    "companyUrl": "https://omnipresence.engine",
+    "addonUrl": "https://omnipresence.engine",
+    "supportUrl": "https://omnipresence.engine/support",
+    "description": "Connect OmniPresence Engine datasets (ranks, keywords, AI visibility, technical findings, mentions, tasks) to Looker Studio.",
+    "sources": ["omnipresence"]
+  },
+  "exceptionLogging": "STACKDRIVER",
+  "runtimeVersion": "V8"
+}

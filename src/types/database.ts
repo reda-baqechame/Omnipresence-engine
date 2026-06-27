@@ -498,6 +498,10 @@ export type ExecutionTaskSource =
   | "coverage_gap"
   | "authority"
   | "roadmap"
+  | "behavior"
+  | "deep_crawl"
+  | "video"
+  | "reputation"
   | "manual";
 
 export type ExecutionTaskStatus =

@@ -1,0 +1,101 @@
+# OmniPresence Engine - all-in-one self-host stack.
+#
+#   docker compose up -d                  # app + OmniData + worker + Redis (keyless data on by default)
+#   docker compose --profile keyless up   # also start SearXNG + Ollama (free SERP + open-model AI)
+#
+# Railway deploys each of these as a separate service instead; see DEPLOY.md.
+version: "3.9"
+
+services:
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    command: ["redis-server", "--appendonly", "yes"]
+    volumes:
+      - omni-redis:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  omnidata:
+    build: ./services/omnidata
+    restart: unless-stopped
+    environment:
+      REDIS_URL: redis://redis:6379
+      OMNIDATA_API_KEY: ${OMNIDATA_API_KEY:-dev-local-key}
+      OMNIDATA_SIGNING_SECRET: ${OMNIDATA_SIGNING_SECRET:-}
+      OMNIDATA_ENABLE_SCRAPE: ${OMNIDATA_ENABLE_SCRAPE:-true}
+      SERPER_API_KEY: ${SERPER_API_KEY:-}
+      BRAVE_SEARCH_API_KEY: ${BRAVE_SEARCH_API_KEY:-}
+      SEARXNG_URL: ${SEARXNG_URL:-http://searxng:8080}
+      WEBGRAPH_DB_PATH: /data/webgraph.duckdb
+      PORT: "8787"
+    volumes:
+      - omni-data:/data
+    depends_on:
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://localhost:8787/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+
+  omnidata-worker:
+    build: ./services/omnidata
+    restart: unless-stopped
+    command: ["node", "dist/worker.js"]
+    environment:
+      REDIS_URL: redis://redis:6379
+      OMNIDATA_ENABLE_SCRAPE: ${OMNIDATA_ENABLE_SCRAPE:-true}
+      WEBGRAPH_DB_PATH: /data/webgraph.duckdb
+    volumes:
+      - omni-data:/data
+    depends_on:
+      redis:
+        condition: service_healthy
+
+  app:
+    build: .
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    env_file:
+      - .env
+    environment:
+      PORT: "3000"
+      # OmniData on by default so SERP/backlinks/crawl run without paid vendors.
+      OMNIDATA_BASE_URL: ${OMNIDATA_BASE_URL:-http://omnidata:8787}
+      OMNIDATA_API_KEY: ${OMNIDATA_API_KEY:-dev-local-key}
+    depends_on:
+      omnidata:
+        condition: service_started
+
+  # --- Optional keyless services (Phase 8) — `--profile keyless` ---
+  searxng:
+    image: searxng/searxng:latest
+    profiles: ["keyless"]
+    restart: unless-stopped
+    environment:
+      SEARXNG_BASE_URL: ${SEARXNG_URL:-http://searxng:8080}
+    ports:
+      - "8080:8080"
+    volumes:
+      - searxng-config:/etc/searxng
+
+  ollama:
+    image: ollama/ollama:latest
+    profiles: ["keyless"]
+    restart: unless-stopped
+    ports:
+      - "11434:11434"
+    volumes:
+      - ollama-models:/root/.ollama
+
+volumes:
+  omni-redis:
+  omni-data:
+  searxng-config:
+  ollama-models:
