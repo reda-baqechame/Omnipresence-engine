@@ -24,6 +24,7 @@ const TABS = [
   { href: "/reputation", label: "Reputation" },
   { href: "/trends", label: "Trends" },
   { href: "/internal-links", label: "Internal Links" },
+  { href: "/indexation", label: "Indexation" },
   { href: "/coverage", label: "Coverage" },
   { href: "/distribution", label: "Distribution" },
   { href: "/authority", label: "Authority" },
