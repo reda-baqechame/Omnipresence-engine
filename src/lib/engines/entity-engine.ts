@@ -1,6 +1,7 @@
 import type { BrandProfile, Project } from "@/types/database";
 import type { EntityProfile } from "@/types/database";
 import { assertPublicDomain } from "@/lib/security/domain";
+import { findWikipediaArticle } from "@/lib/providers/wikimedia";
 
 export interface EntityBuildResult {
   profile: Omit<EntityProfile, "id" | "created_at" | "updated_at">;
@@ -44,17 +45,12 @@ export async function reconcileEntitySources(
     // optional
   }
 
+  // Use the shared Wikimedia helper (handles UA, timeouts, URL normalization).
   try {
-    const wikiRes = await fetch(
-      `https://en.wikipedia.org/w/api.php?action=opensearch&search=${name}&limit=1&format=json&origin=*`,
-      { signal: AbortSignal.timeout(8000) }
-    );
-    if (wikiRes.ok) {
-      const wiki = (await wikiRes.json()) as [string, string[], string[], string[]];
-      if (wiki[3]?.[0]) {
-        wikipediaUrl = wiki[3][0];
-        extras.wikipedia = wikipediaUrl;
-      }
+    const article = await findWikipediaArticle(brand.brand_name || project.name);
+    if (article.exists && article.url) {
+      wikipediaUrl = article.url;
+      extras.wikipedia = wikipediaUrl;
     }
   } catch {
     // optional

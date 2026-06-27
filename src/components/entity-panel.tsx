@@ -13,15 +13,25 @@ interface NapFinding {
 export function EntityPanel({ projectId }: { projectId: string }) {
   const [profile, setProfile] = useState<Record<string, unknown> | null>(null);
   const [wikidataDraft, setWikidataDraft] = useState("");
+  const [sameAsJsonLd, setSameAsJsonLd] = useState("");
+  const [schemaSnippet, setSchemaSnippet] = useState("");
   const [napFindings, setNapFindings] = useState<NapFinding[]>([]);
   const [loading, setLoading] = useState(false);
   const [napLoading, setNapLoading] = useState(false);
+  const [schemaLoading, setSchemaLoading] = useState(false);
+  const [copied, setCopied] = useState<string | null>(null);
 
   useEffect(() => {
     fetch(`/api/entity?projectId=${projectId}`)
       .then((r) => r.json())
       .then((d) => setProfile(d.profile));
   }, [projectId]);
+
+  function copy(text: string, key: string) {
+    navigator.clipboard.writeText(text);
+    setCopied(key);
+    setTimeout(() => setCopied(null), 1500);
+  }
 
   async function buildEntity() {
     setLoading(true);
@@ -33,6 +43,7 @@ export function EntityPanel({ projectId }: { projectId: string }) {
     const data = await res.json();
     setProfile(data.profile);
     setWikidataDraft(data.wikidataDraft || "");
+    setSameAsJsonLd(data.sameAsJsonLd || "");
     setLoading(false);
   }
 
@@ -45,12 +56,26 @@ export function EntityPanel({ projectId }: { projectId: string }) {
   }
 
   async function generateSchema() {
-    await fetch("/api/schema", {
+    setSchemaLoading(true);
+    const res = await fetch("/api/schema", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ projectId }),
     });
-    alert("Schema generated and saved to deployments.");
+    const data = await res.json();
+    setSchemaSnippet(data.schema?.htmlSnippet || "");
+    setSchemaLoading(false);
+  }
+
+  async function deploySchema(platform: "wordpress" | "webflow") {
+    if (!schemaSnippet) return;
+    const res = await fetch("/api/schema/deploy", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ projectId, platform, htmlSnippet: schemaSnippet }),
+    });
+    const data = await res.json();
+    alert(data.ok ? `Deployed to ${platform}.` : `Deploy failed: ${data.error || "unknown"}`);
   }
 
   const sameAs = (profile?.same_as_map || {}) as Record<string, string>;
@@ -133,19 +158,68 @@ export function EntityPanel({ projectId }: { projectId: string }) {
         )}
       </div>
 
+      {sameAsJsonLd && (
+        <div className="bg-card border border-border rounded-xl p-6">
+          <div className="flex items-center justify-between mb-3">
+            <h3 className="font-semibold">Copyable sameAs JSON-LD</h3>
+            <button
+              onClick={() => copy(sameAsJsonLd, "sameas")}
+              className="text-sm bg-secondary px-3 py-1.5 rounded-lg hover:bg-secondary/80"
+            >
+              {copied === "sameas" ? "Copied!" : "Copy"}
+            </button>
+          </div>
+          <pre className="text-xs bg-secondary p-4 rounded-lg overflow-auto max-h-64">{sameAsJsonLd}</pre>
+        </div>
+      )}
+
       <div className="bg-card border border-border rounded-xl p-6">
         <div className="flex items-center justify-between mb-3">
           <h3 className="font-semibold">Schema Deployment</h3>
           <button
             onClick={generateSchema}
-            className="text-sm bg-secondary px-3 py-1.5 rounded-lg hover:bg-secondary/80"
+            disabled={schemaLoading}
+            className="text-sm bg-secondary px-3 py-1.5 rounded-lg hover:bg-secondary/80 disabled:opacity-50"
           >
-            Generate JSON-LD
+            {schemaLoading ? "Generating..." : "Generate JSON-LD"}
           </button>
         </div>
         <p className="text-sm text-muted-foreground">
-          Generates Organization, WebSite, Article, and FAQPage schema with sameAs links.
+          Generates Organization (with reconciled sameAs + Wikidata ID), WebSite, Article, Person,
+          and FAQPage schema.
         </p>
+
+        {schemaSnippet && (
+          <div className="mt-4 space-y-3">
+            <div className="flex items-center justify-between">
+              <span className="text-sm font-medium">Generated JSON-LD</span>
+              <div className="flex gap-2">
+                <button
+                  onClick={() => copy(schemaSnippet, "schema")}
+                  className="text-xs bg-secondary px-3 py-1.5 rounded-lg hover:bg-secondary/80"
+                >
+                  {copied === "schema" ? "Copied!" : "Copy"}
+                </button>
+                <button
+                  onClick={() => deploySchema("wordpress")}
+                  className="text-xs border border-border px-3 py-1.5 rounded-lg hover:bg-secondary"
+                >
+                  Deploy to WordPress
+                </button>
+                <button
+                  onClick={() => deploySchema("webflow")}
+                  className="text-xs border border-border px-3 py-1.5 rounded-lg hover:bg-secondary"
+                >
+                  Deploy to Webflow
+                </button>
+              </div>
+            </div>
+            <pre className="text-xs bg-secondary p-4 rounded-lg overflow-auto max-h-64">{schemaSnippet}</pre>
+            <p className="text-xs text-muted-foreground">
+              Deploy uses your connected CMS credentials. Paste the snippet manually if you publish elsewhere.
+            </p>
+          </div>
+        )}
       </div>
 
       {wikidataDraft && (

@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { verifyProjectAccess } from "@/lib/security/project-access";
 import { apiForbidden, apiNotFound, apiUnauthorized } from "@/lib/security/api-response";
-import { buildEntityProfile } from "@/lib/engines/entity-engine";
+import { buildEntityProfile, generateSameAsJsonLd } from "@/lib/engines/entity-engine";
 import { checkNapConsistency } from "@/lib/engines/nap-checker";
 import type { BrandProfile, Project } from "@/types/database";
 
@@ -76,5 +76,6 @@ export async function POST(request: NextRequest) {
     profile: built.profile,
     wikidataDraft: built.wikidataDraft,
     napIssues: built.napIssues,
+    sameAsJsonLd: generateSameAsJsonLd(built.profile.same_as_map || {}),
   });
 }

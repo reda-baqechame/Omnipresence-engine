@@ -9,6 +9,12 @@ export interface SchemaGenerationInput {
   pageTitle: string;
   pageContent?: string;
   types?: string[];
+  /** Reconciled sameAs URLs from the entity profile (Wikidata/Wikipedia/G2/Crunchbase/etc). */
+  entitySameAs?: string[];
+  /** Wikidata QID (e.g. Q12345) for entity disambiguation via @id + identifier. */
+  wikidataQid?: string;
+  /** sameAs URLs for the founder/author Person entity. */
+  personSameAs?: string[];
 }
 
 export interface GeneratedSchema {
@@ -21,16 +27,39 @@ export interface GeneratedSchema {
 export async function generatePageSchema(
   input: SchemaGenerationInput
 ): Promise<GeneratedSchema> {
-  const sameAs = Object.values(input.brand.social_profiles || {}).filter(Boolean);
+  // Merge social profiles with the reconciled entity sameAs (Wikidata/Wikipedia/
+  // G2/Crunchbase/etc) so the Organization carries its full verified identity —
+  // the single most-cited 2026 GEO lever — not just social links.
+  const sameAs = Array.from(
+    new Set(
+      [
+        ...Object.values(input.brand.social_profiles || {}),
+        ...(input.entitySameAs || []),
+      ].filter((v): v is string => Boolean(v))
+    )
+  );
   const types = input.types || ["Organization", "WebSite", "FAQPage", "Article"];
+
+  const wikidataQid = input.wikidataQid?.trim();
+  const wikidataUrl = wikidataQid ? `https://www.wikidata.org/wiki/${wikidataQid}` : undefined;
 
   const orgBlock = {
     "@context": "https://schema.org",
     "@type": "Organization",
+    ...(wikidataUrl ? { "@id": wikidataUrl } : {}),
     name: input.brand.brand_name || input.project.name,
     url: `https://${input.project.domain}`,
     description: input.brand.brand_voice,
     sameAs,
+    ...(wikidataQid
+      ? {
+          identifier: {
+            "@type": "PropertyValue",
+            propertyID: "Wikidata",
+            value: wikidataQid,
+          },
+        }
+      : {}),
     ...(input.project.location
       ? {
           address: {
@@ -40,6 +69,25 @@ export async function generatePageSchema(
         }
       : {}),
   };
+
+  // Standalone Person entity for the founder/author — Person<->Organization
+  // links materially strengthen entity understanding and E-E-A-T.
+  const personName = input.brand.author_persona;
+  const personBlock = personName
+    ? {
+        "@context": "https://schema.org",
+        "@type": "Person",
+        name: personName,
+        ...(input.personSameAs && input.personSameAs.length
+          ? { sameAs: Array.from(new Set(input.personSameAs.filter(Boolean))) }
+          : {}),
+        worksFor: {
+          "@type": "Organization",
+          name: input.brand.brand_name || input.project.name,
+          ...(wikidataUrl ? { "@id": wikidataUrl } : {}),
+        },
+      }
+    : null;
 
   const websiteBlock = {
     "@context": "https://schema.org",
@@ -80,6 +128,7 @@ export async function generatePageSchema(
   };
 
   const jsonLd: Record<string, unknown>[] = [orgBlock, websiteBlock, articleBlock];
+  if (personBlock) jsonLd.push(personBlock);
   if (faqBlock) jsonLd.push(faqBlock);
 
   const htmlSnippet = jsonLd
@@ -88,8 +137,10 @@ export async function generatePageSchema(
 
   const gtmSnippet = `<!-- Paste in GTM Custom HTML tag -->\n${htmlSnippet}`;
 
+  const schemaTypes = personBlock && !types.includes("Person") ? [...types, "Person"] : types;
+
   return {
-    schemaTypes: types,
+    schemaTypes,
     jsonLd,
     gtmSnippet,
     htmlSnippet,

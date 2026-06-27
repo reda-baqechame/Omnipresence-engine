@@ -22,12 +22,26 @@ export async function POST(request: NextRequest) {
 
   const { data: brand } = await supabase.from("brand_profiles").select("*").eq("project_id", projectId).single();
 
+  // Pull reconciled identity (Wikidata/Wikipedia/G2/Crunchbase) so the generated
+  // Organization schema carries the full sameAs graph, not just social links.
+  const { data: entity } = await supabase
+    .from("entity_profiles")
+    .select("same_as_map, wikidata_qid")
+    .eq("project_id", projectId)
+    .maybeSingle();
+
+  const entitySameAs = entity?.same_as_map
+    ? Object.values(entity.same_as_map as Record<string, string>).filter(Boolean)
+    : [];
+
   const schema = await generatePageSchema({
     project: project as Project,
     brand: (brand || {}) as BrandProfile,
     pageUrl: pageUrl || `https://${project.domain}`,
     pageTitle: pageTitle || project.name,
     pageContent,
+    entitySameAs,
+    wikidataQid: entity?.wikidata_qid || undefined,
   });
 
   const validation = await validateSchemaLocally(schema.jsonLd);
