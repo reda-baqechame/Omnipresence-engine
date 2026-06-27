@@ -215,6 +215,176 @@ export function selectPagesToRefresh(
   return candidates.sort((a, b) => b.priority - a.priority);
 }
 
+/* ----------------------------------------------------------------------------
+ * Phase 16: Anti-thin-content guardrails + gradual indexation
+ * Programmatic pages only help if each one carries unique value. These checks
+ * run BEFORE publish so we never ship spammy doorway pages (refund + penalty
+ * risk). A page must clear a quality bar; otherwise it is held for revision.
+ * -------------------------------------------------------------------------- */
+
+export interface ContentQualityChecks {
+  wordCount: number;
+  hasTable: boolean;
+  hasList: boolean;
+  internalLinkCount: number;
+  hasSchema: boolean;
+  dataPointCount: number; // numbers/statistics that signal substance
+  uniquenessRatio: number; // 0-1 vs the rest of the batch (1 = fully unique)
+}
+
+export interface ContentQualityVerdict {
+  score: number; // 0-100
+  verdict: "publish" | "revise" | "reject";
+  checks: ContentQualityChecks;
+  issues: string[];
+}
+
+const STOPWORDS = new Set([
+  "the", "a", "an", "and", "or", "but", "in", "on", "at", "to", "for", "of",
+  "with", "is", "are", "be", "this", "that", "it", "as", "by", "from", "your",
+]);
+
+function shingleSet(text: string): Set<string> {
+  const tokens = text
+    .toLowerCase()
+    .replace(/<[^>]+>/g, " ")
+    .replace(/[^a-z0-9\s]/g, " ")
+    .split(/\s+/)
+    .filter((t) => t && !STOPWORDS.has(t));
+  const shingles = new Set<string>();
+  for (let i = 0; i < tokens.length - 2; i++) {
+    shingles.add(`${tokens[i]} ${tokens[i + 1]} ${tokens[i + 2]}`);
+  }
+  return shingles;
+}
+
+function jaccard(a: Set<string>, b: Set<string>): number {
+  if (!a.size || !b.size) return 0;
+  let inter = 0;
+  for (const s of a) if (b.has(s)) inter++;
+  return inter / (a.size + b.size - inter);
+}
+
+/**
+ * Score one page's content against thin-content heuristics. `peers` are other
+ * page bodies in the same batch used to measure near-duplication (the #1
+ * programmatic failure mode).
+ */
+export function assessContentQuality(
+  body: string,
+  opts: { peers?: string[]; minWords?: number } = {}
+): ContentQualityVerdict {
+  const minWords = opts.minWords ?? 350;
+  const plain = body.replace(/<[^>]+>/g, " ");
+  const wordCount = plain.split(/\s+/).filter(Boolean).length;
+  const hasTable = /<table|\|.*\|.*\|/.test(body);
+  const hasList = /<(ul|ol)|^\s*[-*]\s+|^\s*\d+\.\s+/m.test(body);
+  const internalLinkCount = (body.match(/<a\s[^>]*href|\]\(/gi) || []).length;
+  const hasSchema = /application\/ld\+json|"@context"/.test(body);
+  const dataPointCount = (plain.match(/\b\d[\d,.]*\s?(%|percent|\$|usd|hours?|days?|years?|x\b)/gi) || []).length;
+
+  let uniquenessRatio = 1;
+  if (opts.peers && opts.peers.length) {
+    const me = shingleSet(plain);
+    let maxSim = 0;
+    for (const p of opts.peers) {
+      maxSim = Math.max(maxSim, jaccard(me, shingleSet(p.replace(/<[^>]+>/g, " "))));
+    }
+    uniquenessRatio = Math.max(0, 1 - maxSim);
+  }
+
+  const checks: ContentQualityChecks = {
+    wordCount,
+    hasTable,
+    hasList,
+    internalLinkCount,
+    hasSchema,
+    dataPointCount,
+    uniquenessRatio: Math.round(uniquenessRatio * 100) / 100,
+  };
+
+  const issues: string[] = [];
+  let score = 0;
+
+  if (wordCount >= minWords) score += 25;
+  else issues.push(`Thin: ${wordCount} words (< ${minWords})`);
+
+  if (uniquenessRatio >= 0.7) score += 25;
+  else issues.push(`Near-duplicate of sibling pages (uniqueness ${(uniquenessRatio * 100).toFixed(0)}%)`);
+
+  if (hasTable || hasList) score += 15;
+  else issues.push("No table or list — add structured value");
+
+  if (internalLinkCount >= 2) score += 15;
+  else issues.push("Fewer than 2 internal links");
+
+  if (dataPointCount >= 2) score += 10;
+  else issues.push("Few concrete data points / statistics");
+
+  if (hasSchema) score += 10;
+  else issues.push("No structured data (JSON-LD)");
+
+  const verdict: ContentQualityVerdict["verdict"] =
+    score >= 70 ? "publish" : score >= 45 ? "revise" : "reject";
+
+  return { score, verdict, checks, issues };
+}
+
+export interface IndexationBatch {
+  day: number;
+  urls: string[];
+}
+
+/**
+ * Gradual indexation plan: drip pages out over time instead of dumping
+ * thousands at once (which trips spam detection). Returns daily batches.
+ */
+export function planGradualIndexation(
+  urls: string[],
+  opts: { perDay?: number; startDay?: number } = {}
+): IndexationBatch[] {
+  const perDay = Math.max(1, opts.perDay ?? 20);
+  const startDay = opts.startDay ?? 1;
+  const batches: IndexationBatch[] = [];
+  for (let i = 0; i < urls.length; i += perDay) {
+    batches.push({ day: startDay + i / perDay, urls: urls.slice(i, i + perDay) });
+  }
+  return batches;
+}
+
+export interface LowPerformer {
+  url: string;
+  reason: string;
+  clicks: number;
+  impressions: number;
+  ageDays: number;
+}
+
+/**
+ * Identify programmatic pages to kill/noindex: after a grace period, pages with
+ * negligible impressions/clicks are dead weight that dilutes site quality.
+ */
+export function selectLowPerformersToKill(
+  rows: Array<PseoPagePerformance & { ageDays: number }>,
+  opts: { graceDays?: number; minImpressions?: number; minClicks?: number } = {}
+): LowPerformer[] {
+  const graceDays = opts.graceDays ?? 90;
+  const minImpressions = opts.minImpressions ?? 20;
+  const minClicks = opts.minClicks ?? 1;
+  const kill: LowPerformer[] = [];
+
+  for (const r of rows) {
+    if (r.ageDays < graceDays) continue;
+    if (r.impressions < minImpressions) {
+      kill.push({ url: r.url, reason: `Only ${r.impressions} impressions in ${r.ageDays}d`, clicks: r.clicks, impressions: r.impressions, ageDays: r.ageDays });
+    } else if (r.clicks < minClicks) {
+      kill.push({ url: r.url, reason: `${r.impressions} impressions but ${r.clicks} clicks in ${r.ageDays}d`, clicks: r.clicks, impressions: r.impressions, ageDays: r.ageDays });
+    }
+  }
+
+  return kill;
+}
+
 export function parseCsvLines(csv: string): string[] {
   return csv
     .split(/[\n,]/)

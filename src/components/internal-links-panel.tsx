@@ -15,10 +15,17 @@ interface InternalLinksPanelProps {
   projectId: string;
 }
 
+interface OrphanAnalysis {
+  orphans: string[];
+  deepPages: { url: string; depth: number }[];
+  maxDepth: number;
+}
+
 export function InternalLinksPanel({ projectId }: InternalLinksPanelProps) {
   const [items, setItems] = useState<LinkOpportunity[]>([]);
   const [loading, setLoading] = useState(false);
   const [message, setMessage] = useState("");
+  const [orphans, setOrphans] = useState<OrphanAnalysis | null>(null);
 
   async function load() {
     const res = await fetch(`/api/internal-links?projectId=${projectId}`);
@@ -36,6 +43,7 @@ export function InternalLinksPanel({ projectId }: InternalLinksPanelProps) {
     });
     const data = await res.json();
     setMessage(`Found ${data.found || 0} opportunities (${data.pagesCrawled || 0} pages crawled)`);
+    if (data.orphans) setOrphans(data.orphans);
     await load();
     setLoading(false);
   }
@@ -73,6 +81,38 @@ export function InternalLinksPanel({ projectId }: InternalLinksPanelProps) {
         </div>
       </div>
       {message && <p className="text-sm text-muted-foreground">{message}</p>}
+
+      {orphans && (orphans.orphans.length > 0 || orphans.deepPages.length > 0) && (
+        <div className="grid gap-4 md:grid-cols-2">
+          <div className="bg-card border border-border rounded-xl p-4">
+            <h4 className="font-semibold text-sm mb-2">
+              Orphan pages <span className="text-muted-foreground">({orphans.orphans.length})</span>
+            </h4>
+            <p className="text-xs text-muted-foreground mb-2">No internal links point here — add links so they get crawled and ranked.</p>
+            <ul className="space-y-1 text-xs max-h-48 overflow-auto">
+              {orphans.orphans.slice(0, 25).map((u) => (
+                <li key={u} className="truncate text-muted-foreground">{u}</li>
+              ))}
+              {orphans.orphans.length === 0 && <li className="text-green-400">None — every page has inbound links.</li>}
+            </ul>
+          </div>
+          <div className="bg-card border border-border rounded-xl p-4">
+            <h4 className="font-semibold text-sm mb-2">
+              Deep pages <span className="text-muted-foreground">(click depth ≥ 3, max {orphans.maxDepth})</span>
+            </h4>
+            <p className="text-xs text-muted-foreground mb-2">Too many clicks from home dilutes authority. Surface these higher.</p>
+            <ul className="space-y-1 text-xs max-h-48 overflow-auto">
+              {orphans.deepPages.slice(0, 25).map((p) => (
+                <li key={p.url} className="flex justify-between gap-2">
+                  <span className="truncate text-muted-foreground">{p.url}</span>
+                  <span className="shrink-0">depth {p.depth}</span>
+                </li>
+              ))}
+              {orphans.deepPages.length === 0 && <li className="text-green-400">All pages within 2 clicks.</li>}
+            </ul>
+          </div>
+        </div>
+      )}
 
       <div className="space-y-3">
         {items.length === 0 ? (

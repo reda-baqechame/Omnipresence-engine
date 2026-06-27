@@ -104,11 +104,81 @@ export function findInternalLinkOpportunities(
   return opportunities.sort((a, b) => b.relevanceScore - a.relevanceScore);
 }
 
+export interface OrphanAnalysis {
+  orphans: string[]; // pages with no inbound internal links
+  deepPages: { url: string; depth: number }[]; // click-depth >= 3 from homepage
+  maxDepth: number;
+}
+
+/**
+ * Detect orphan pages (no inbound internal links) and click-depth from the
+ * homepage via BFS over the crawled link graph.
+ */
+export function analyzeOrphansAndDepth(pages: CrawlPageResult[], domain: string): OrphanAnalysis {
+  const live = pages.filter((p) => p.status === 200);
+  const urls = new Set(live.map((p) => p.url));
+
+  // Inbound counts.
+  const inbound = new Map<string, number>();
+  for (const p of live) {
+    for (const link of p.links || []) {
+      if (urls.has(link) && link !== p.url) {
+        inbound.set(link, (inbound.get(link) || 0) + 1);
+      }
+    }
+  }
+
+  // Find homepage as BFS root.
+  const cleanDomain = domain.replace(/^https?:\/\//, "").replace(/^www\./, "").split("/")[0];
+  const root =
+    live.find((p) => {
+      try {
+        const u = new URL(p.url);
+        return u.pathname === "/" || u.pathname === "";
+      } catch {
+        return false;
+      }
+    })?.url ||
+    live.find((p) => p.url.includes(cleanDomain))?.url ||
+    live[0]?.url;
+
+  const depth = new Map<string, number>();
+  if (root) {
+    const adjacency = new Map(live.map((p) => [p.url, (p.links || []).filter((l) => urls.has(l))]));
+    const queue: string[] = [root];
+    depth.set(root, 0);
+    while (queue.length) {
+      const cur = queue.shift() as string;
+      const d = depth.get(cur) ?? 0;
+      for (const next of adjacency.get(cur) || []) {
+        if (!depth.has(next)) {
+          depth.set(next, d + 1);
+          queue.push(next);
+        }
+      }
+    }
+  }
+
+  const orphans = live
+    .filter((p) => p.url !== root && (inbound.get(p.url) || 0) === 0)
+    .map((p) => p.url);
+
+  const deepPages = Array.from(depth.entries())
+    .filter(([, d]) => d >= 3)
+    .map(([url, d]) => ({ url, depth: d }))
+    .sort((a, b) => b.depth - a.depth);
+
+  const maxDepth = depth.size ? Math.max(...depth.values()) : 0;
+
+  return { orphans, deepPages, maxDepth };
+}
+
 export async function analyzeInternalLinks(
   domain: string,
   maxPages = 40
-): Promise<{ opportunities: InternalLinkOpportunity[]; pagesCrawled: number }> {
+): Promise<{ opportunities: InternalLinkOpportunity[]; pagesCrawled: number; orphans: OrphanAnalysis }> {
   const crawl = await runSiteCrawl(domain, maxPages);
   const opportunities = findInternalLinkOpportunities(crawl.pages);
-  return { opportunities, pagesCrawled: crawl.pages.length };
+  const orphans = analyzeOrphansAndDepth(crawl.pages, domain);
+  return { opportunities, pagesCrawled: crawl.pages.length, orphans };
 }

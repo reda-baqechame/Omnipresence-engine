@@ -15,6 +15,7 @@ const TABS = [
   { href: "/technical", label: "Technical" },
   { href: "/entity", label: "Entity" },
   { href: "/content", label: "Content" },
+  { href: "/topical", label: "Topical Map" },
   { href: "/pseo", label: "pSEO" },
   { href: "/ranks", label: "Rankings" },
   { href: "/local", label: "Local SEO" },

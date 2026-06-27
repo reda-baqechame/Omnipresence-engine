@@ -16,6 +16,7 @@ export function PseoPanel({ projectId }: PseoPanelProps) {
   const [preview, setPreview] = useState<Array<{ topic: string; url: string }>>([]);
   const [loading, setLoading] = useState(false);
   const [message, setMessage] = useState("");
+  const [quality, setQuality] = useState<Array<{ url: string; score: number; verdict: string; issues: string[] }>>([]);
 
   async function runPreview() {
     setLoading(true);
@@ -59,7 +60,10 @@ export function PseoPanel({ projectId }: PseoPanelProps) {
       }),
     });
     const data = await res.json();
-    setMessage(`Campaign created. Generated ${data.generated} draft pages (${data.specs} total specs).`);
+    setMessage(
+      `Campaign created. ${data.generated} pages passed quality, ${data.held || 0} held for revision (${data.specs} total specs).`
+    );
+    setQuality(data.qualityReport || []);
     setLoading(false);
   }
 
@@ -80,6 +84,8 @@ export function PseoPanel({ projectId }: PseoPanelProps) {
           <select
             value={templateType}
             onChange={(e) => setTemplateType(e.target.value)}
+            aria-label="Template type"
+            title="Template type"
             className="bg-background border border-input rounded-lg px-3 py-2 text-sm"
           >
             <option value="location_page">Location pages</option>
@@ -139,6 +145,42 @@ export function PseoPanel({ projectId }: PseoPanelProps) {
         </div>
         {message && <p className="text-sm text-muted-foreground mt-3">{message}</p>}
       </div>
+
+      {quality.length > 0 && (
+        <div className="bg-card border border-border rounded-xl p-4">
+          <h4 className="font-medium mb-2">Quality gate (anti-thin-content)</h4>
+          <p className="text-xs text-muted-foreground mb-3">
+            Pages must clear the bar (unique copy, tables/lists, internal links, data points, schema) before they can be published.
+          </p>
+          <ul className="text-sm space-y-2 max-h-72 overflow-y-auto">
+            {quality.map((q) => (
+              <li key={q.url} className="border border-border/50 rounded-lg p-2">
+                <div className="flex items-center justify-between gap-2">
+                  <span className="truncate text-muted-foreground">{q.url}</span>
+                  <span
+                    className={`shrink-0 rounded px-1.5 py-0.5 text-[10px] uppercase ${
+                      q.verdict === "publish"
+                        ? "bg-green-500/15 text-green-400"
+                        : q.verdict === "revise"
+                          ? "bg-yellow-500/15 text-yellow-400"
+                          : "bg-red-500/15 text-red-400"
+                    }`}
+                  >
+                    {q.verdict} · {q.score}
+                  </span>
+                </div>
+                {q.issues.length > 0 && (
+                  <ul className="list-disc list-inside text-xs text-muted-foreground mt-1">
+                    {q.issues.map((i) => (
+                      <li key={i}>{i}</li>
+                    ))}
+                  </ul>
+                )}
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
 
       {preview.length > 0 && (
         <div className="bg-card border border-border rounded-xl p-4">

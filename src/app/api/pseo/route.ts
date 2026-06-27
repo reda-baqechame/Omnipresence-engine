@@ -5,6 +5,8 @@ import {
   estimatePseoMatrixSize,
   parseCsvLines,
   parsePseoMatrixCsv,
+  assessContentQuality,
+  planGradualIndexation,
   type PseoTemplateType,
 } from "@/lib/engines/programmatic-seo";
 import { generateContent } from "@/lib/engines/content-generator";
@@ -150,24 +152,60 @@ export async function POST(request: NextRequest) {
     .single();
 
   let generated = 0;
+  let held = 0;
+  const qualityReport: Array<{ url: string; score: number; verdict: string; issues: string[] }> = [];
   if (shouldGenerate && brandProfile) {
+    const peers: string[] = [];
+    const publishedUrls: string[] = [];
     for (const spec of specs.slice(0, 10)) {
       const content = await generateContent(spec.type, brandProfile, spec.topic);
+
+      // Anti-thin-content gate: only auto-draft pages that clear the quality bar;
+      // near-duplicate / thin pages are held as "needs_review".
+      const quality = assessContentQuality(content.content, { peers });
+      peers.push(content.content);
+      qualityReport.push({ url: spec.url, score: quality.score, verdict: quality.verdict, issues: quality.issues });
+
+      // All pages enter as "drafted" (never auto-published). Pages that fail the
+      // quality bar are flagged in metadata so the UI can hold them for revision.
+      const passed = quality.verdict === "publish";
       await supabase.from("content_assets").insert({
         project_id: projectId,
         title: content.title,
         type: spec.type,
         content: content.content,
         status: "drafted",
-        metadata: { ...spec.metadata, pseo_campaign_id: campaign.id, target_url: spec.url },
+        metadata: {
+          ...spec.metadata,
+          pseo_campaign_id: campaign.id,
+          target_url: spec.url,
+          quality_score: quality.score,
+          quality_verdict: quality.verdict,
+          quality_issues: quality.issues,
+          quality_hold: !passed,
+        },
       });
-      generated++;
+      if (passed) {
+        generated++;
+        publishedUrls.push(spec.url);
+      } else {
+        held++;
+      }
     }
+
+    // Gradual indexation plan over the pages that passed (drip, don't dump).
+    const indexationPlan = planGradualIndexation(publishedUrls, { perDay: 20 });
+
     await supabase
       .from("pseo_campaigns")
-      .update({ status: "completed", generated_count: generated, updated_at: new Date().toISOString() })
+      .update({
+        status: "completed",
+        generated_count: generated,
+        updated_at: new Date().toISOString(),
+        metadata: { estimated, held, indexation_plan: indexationPlan, quality_report: qualityReport },
+      })
       .eq("id", campaign.id);
   }
 
-  return NextResponse.json({ campaign, specs: specs.length, generated });
+  return NextResponse.json({ campaign, specs: specs.length, generated, held, qualityReport });
 }

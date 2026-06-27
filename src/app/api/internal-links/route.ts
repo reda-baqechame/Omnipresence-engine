@@ -43,7 +43,7 @@ export async function POST(request: NextRequest) {
     .single();
   if (!project) return apiError("Project not found", 404);
 
-  const { opportunities, pagesCrawled } = await analyzeInternalLinks(project.domain, maxPages ?? 40);
+  const { opportunities, pagesCrawled, orphans } = await analyzeInternalLinks(project.domain, maxPages ?? 40);
 
   const rows = opportunities.map((o) => ({
     project_id: projectId,
@@ -61,7 +61,7 @@ export async function POST(request: NextRequest) {
     });
   }
 
-  return NextResponse.json({ pagesCrawled, found: opportunities.length, opportunities });
+  return NextResponse.json({ pagesCrawled, found: opportunities.length, opportunities, orphans });
 }
 
 export async function PATCH(request: NextRequest) {
