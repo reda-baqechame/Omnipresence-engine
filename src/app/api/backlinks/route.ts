@@ -4,6 +4,7 @@ import {
   snapshotProjectBacklinks,
   getLatestBacklinkDiff,
 } from "@/lib/engines/backlink-monitor";
+import { analyzeAuthorityDistribution } from "@/lib/engines/link-intelligence";
 import { verifyProjectAccess } from "@/lib/security/project-access";
 import { apiError, apiForbidden, apiUnauthorized } from "@/lib/security/api-response";
 
@@ -21,13 +22,29 @@ export async function GET(request: NextRequest) {
   const diff = await getLatestBacklinkDiff(supabase, projectId);
   const { data: latest } = await supabase
     .from("backlink_snapshots")
-    .select("total_count, new_count, lost_count, created_at")
+    .select("total_count, new_count, lost_count, created_at, backlinks")
     .eq("project_id", projectId)
     .order("created_at", { ascending: false })
     .limit(1)
     .maybeSingle();
 
-  return NextResponse.json({ latest, diff });
+  const rows = ((latest?.backlinks as Array<{ rank?: number }> | null) || [])
+    .filter((b) => typeof b.rank === "number")
+    .map((b) => ({ rank: b.rank as number }));
+  const authority = rows.length ? analyzeAuthorityDistribution(rows) : null;
+
+  return NextResponse.json({
+    latest: latest
+      ? {
+          total_count: latest.total_count,
+          new_count: latest.new_count,
+          lost_count: latest.lost_count,
+          created_at: latest.created_at,
+        }
+      : null,
+    diff,
+    authority,
+  });
 }
 
 export async function POST(request: NextRequest) {
