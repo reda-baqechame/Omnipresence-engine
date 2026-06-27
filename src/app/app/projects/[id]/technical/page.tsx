@@ -21,6 +21,14 @@ export default async function TechnicalPage({
     .eq("project_id", id)
     .order("severity");
 
+  const { data: latestDiff } = await supabase
+    .from("finding_snapshots")
+    .select("new_count, fixed_count, regressed_count, new_titles, fixed_titles, regressed_titles, created_at")
+    .eq("project_id", id)
+    .order("created_at", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+
   const all = findings || [];
   const byCategory = all.reduce(
     (acc, f) => {
@@ -62,6 +70,38 @@ export default async function TechnicalPage({
           <div className="text-sm text-muted-foreground">AI Bot Issues</div>
         </div>
       </div>
+
+      {latestDiff && (latestDiff.new_count > 0 || latestDiff.fixed_count > 0 || latestDiff.regressed_count > 0) && (
+        <div className="bg-card border border-border rounded-xl p-4">
+          <div className="flex items-center justify-between mb-3">
+            <h3 className="font-semibold">Changes since last scan</h3>
+            <span className="text-xs text-muted-foreground">
+              {new Date(latestDiff.created_at).toLocaleString()}
+            </span>
+          </div>
+          <div className="grid grid-cols-3 gap-3 text-center">
+            <div className="rounded-lg bg-red-500/10 p-3">
+              <div className="text-2xl font-bold text-red-400">{latestDiff.new_count}</div>
+              <div className="text-xs text-muted-foreground">New issues</div>
+            </div>
+            <div className="rounded-lg bg-green-500/10 p-3">
+              <div className="text-2xl font-bold text-green-400">{latestDiff.fixed_count}</div>
+              <div className="text-xs text-muted-foreground">Fixed</div>
+            </div>
+            <div className="rounded-lg bg-orange-500/10 p-3">
+              <div className="text-2xl font-bold text-orange-400">{latestDiff.regressed_count}</div>
+              <div className="text-xs text-muted-foreground">Regressed</div>
+            </div>
+          </div>
+          {(latestDiff.regressed_titles as string[] | null)?.length ? (
+            <ul className="mt-3 text-xs text-orange-300 list-disc list-inside space-y-1">
+              {(latestDiff.regressed_titles as string[]).slice(0, 5).map((t) => (
+                <li key={t}>Regressed: {t}</li>
+              ))}
+            </ul>
+          ) : null}
+        </div>
+      )}
 
       <OnPagePanel projectId={id} />
 

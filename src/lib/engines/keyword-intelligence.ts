@@ -40,7 +40,8 @@ export interface KeywordOpportunityRow {
 export async function runKeywordResearch(
   seed: string,
   domain?: string,
-  anchor?: VolumeAnchor | null
+  anchor?: VolumeAnchor | null,
+  maxKeywords = 20
 ): Promise<{ opportunities: KeywordOpportunityRow[]; live: boolean }> {
   if (!preferLiveData() || !hasIntelligenceApi()) {
     return { opportunities: [], live: false };
@@ -52,7 +53,7 @@ export async function runKeywordResearch(
   const allKeywords = [
     ...research.suggestions.map((s) => s.keyword),
     ...research.related.map((r) => r.keyword),
-  ].slice(0, 20);
+  ].slice(0, Math.max(1, maxKeywords));
 
   let scored: Array<{
     keyword: string;
@@ -114,6 +115,48 @@ export async function runKeywordResearch(
   await applyVolumeCalibration(opportunities, research.data_source, anchor);
 
   return { opportunities: opportunities.sort((a, b) => b.opportunity_score - a.opportunity_score), live: true };
+}
+
+/**
+ * Bulk keyword research across many seeds (Phase 9). Processes seeds
+ * sequentially (keyless sources are rate-sensitive), deduping keywords across
+ * seeds so 1k+ keyword universes can be built from a handful of seeds. The
+ * optional onProgress callback lets a job row report incremental progress.
+ */
+export async function runBulkKeywordResearch(
+  seeds: string[],
+  domain?: string,
+  anchor?: VolumeAnchor | null,
+  options?: { maxPerSeed?: number; onProgress?: (processed: number, found: number) => Promise<void> | void }
+): Promise<{ opportunities: KeywordOpportunityRow[]; live: boolean; processed: number }> {
+  const maxPerSeed = options?.maxPerSeed ?? 50;
+  const cleaned = Array.from(
+    new Set(seeds.map((s) => s.trim().toLowerCase()).filter(Boolean))
+  ).slice(0, 100);
+
+  const byKeyword = new Map<string, KeywordOpportunityRow>();
+  let anyLive = false;
+  let processed = 0;
+
+  for (const seed of cleaned) {
+    const { opportunities, live } = await runKeywordResearch(seed, domain, anchor, maxPerSeed);
+    if (live) anyLive = true;
+    for (const o of opportunities) {
+      const key = o.keyword.trim().toLowerCase();
+      const existing = byKeyword.get(key);
+      // Keep the higher-opportunity / higher-confidence variant on collisions.
+      if (!existing || o.opportunity_score > existing.opportunity_score) {
+        byKeyword.set(key, o);
+      }
+    }
+    processed += 1;
+    await options?.onProgress?.(processed, byKeyword.size);
+  }
+
+  const opportunities = Array.from(byKeyword.values()).sort(
+    (a, b) => b.opportunity_score - a.opportunity_score
+  );
+  return { opportunities, live: anyLive, processed };
 }
 
 /**

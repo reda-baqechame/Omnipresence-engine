@@ -1,6 +1,7 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { runTechnicalAudit } from "@/lib/engines/technical-audit";
 import { analyzePassageReadiness } from "@/lib/engines/passage-readiness";
+import { computeAndRecordFindingDiff } from "@/lib/engines/finding-diff";
 import { extractBrandProfile } from "@/lib/engines/brand-extraction";
 import { generatePromptUniverse } from "@/lib/engines/prompt-generator";
 import { runVisibilityScan, extractCitationSources } from "@/lib/engines/visibility-scanner";
@@ -65,6 +66,11 @@ export async function runProjectScan(
     ...(await analyzePassageReadiness(p.domain)),
   ];
   const findingRows = technicalFindings.map((f) => ({ ...f, project_id: projectId }));
+  await computeAndRecordFindingDiff(
+    supabase,
+    projectId,
+    technicalFindings.map((f) => f.title)
+  ).catch(() => null);
   await supabase.from("technical_findings").delete().eq("project_id", projectId);
   if (findingRows.length > 0) await supabase.from("technical_findings").insert(findingRows);
 

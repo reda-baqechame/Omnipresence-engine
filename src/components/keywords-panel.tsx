@@ -45,6 +45,8 @@ export function KeywordsPanel({ projectId, industry = "" }: KeywordsPanelProps) 
     Array<{ source_domain: string; links_competitors: string[]; opportunity_score: number }>
   >([]);
   const [seed, setSeed] = useState(industry);
+  const [bulkSeeds, setBulkSeeds] = useState("");
+  const [bulkStatus, setBulkStatus] = useState("");
   const [loading, setLoading] = useState("");
   const [live, setLive] = useState<boolean | null>(null);
 
@@ -76,6 +78,30 @@ export function KeywordsPanel({ projectId, industry = "" }: KeywordsPanelProps) 
     const data = await res.json();
     setOpportunities(data.opportunities || []);
     setLive(data.live);
+    setLoading("");
+  }
+
+  async function runBulkResearch() {
+    const seedList = bulkSeeds
+      .split(/[\n,]+/)
+      .map((s) => s.trim())
+      .filter(Boolean);
+    if (!seedList.length) return;
+    setLoading("bulk");
+    setBulkStatus(`Researching ${seedList.length} seeds…`);
+    const res = await fetch("/api/keywords", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ projectId, action: "bulk_research", seeds: seedList }),
+    });
+    const data = await res.json();
+    setOpportunities(data.opportunities || []);
+    setLive(data.live);
+    setBulkStatus(
+      data.count != null
+        ? `Found ${data.count} keywords across ${data.processed} seeds (${data.saved} saved).`
+        : "Bulk research failed."
+    );
     setLoading("");
   }
 
@@ -149,6 +175,31 @@ export function KeywordsPanel({ projectId, industry = "" }: KeywordsPanelProps) 
             Live intelligence requires OMNIDATA_BASE_URL + SERPER_API_KEY (or deploy OmniData on VPS).
           </p>
         )}
+
+        <div className="mt-4 border-t border-border/60 pt-4">
+          <h4 className="text-sm font-medium mb-1">Bulk research</h4>
+          <p className="text-xs text-muted-foreground mb-2">
+            Paste multiple seeds (comma or newline separated). Builds a large deduped keyword universe from all seeds at once.
+          </p>
+          <textarea
+            value={bulkSeeds}
+            onChange={(e) => setBulkSeeds(e.target.value)}
+            placeholder={"seo tools\nai visibility\ncontent marketing\n..."}
+            rows={3}
+            className="w-full bg-background border border-input rounded-lg px-3 py-2 text-sm"
+          />
+          <div className="flex items-center gap-3 mt-2">
+            <button
+              type="button"
+              onClick={runBulkResearch}
+              disabled={loading === "bulk" || !bulkSeeds.trim()}
+              className="bg-primary text-primary-foreground px-4 py-2 rounded-lg text-sm disabled:opacity-50"
+            >
+              {loading === "bulk" ? "Running bulk job…" : "Run bulk research"}
+            </button>
+            {bulkStatus && <span className="text-xs text-muted-foreground">{bulkStatus}</span>}
+          </div>
+        </div>
       </div>
 
       {opportunities.length > 0 && (

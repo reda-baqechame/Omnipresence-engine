@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import {
   runKeywordResearch,
+  runBulkKeywordResearch,
   persistKeywordOpportunities,
   analyzeContentGaps,
   analyzeBacklinkGaps,
@@ -40,11 +41,12 @@ export async function POST(request: NextRequest) {
   if (!user) return apiUnauthorized();
 
   const body = await request.json();
-  const { projectId, seed, action, keyword } = body as {
+  const { projectId, seed, seeds, action, keyword } = body as {
     projectId: string;
     seed?: string;
+    seeds?: string[];
     keyword?: string;
-    action?: "research" | "content_gaps" | "backlink_gaps" | "difficulty";
+    action?: "research" | "bulk_research" | "content_gaps" | "backlink_gaps" | "difficulty";
   };
 
   if (!projectId) return apiError("projectId required");
@@ -64,6 +66,71 @@ export async function POST(request: NextRequest) {
   if (action === "difficulty" && keyword) {
     const result = await scoreSingleKeyword(keyword);
     return NextResponse.json({ result, live: Boolean(result) });
+  }
+
+  if (action === "bulk_research") {
+    const seedList = (seeds && seeds.length ? seeds : [seed].filter(Boolean) as string[])
+      .map((s) => s.trim())
+      .filter(Boolean);
+    if (!seedList.length) return apiError("seeds required for bulk_research");
+
+    const { data: job } = await supabase
+      .from("keyword_jobs")
+      .insert({
+        project_id: projectId,
+        seeds: seedList,
+        status: "running",
+        total_seeds: seedList.length,
+      })
+      .select("id")
+      .single();
+
+    try {
+      const anchor = await deriveVolumeAnchorFromGsc(supabase, projectId, project.domain);
+      const { opportunities, live, processed } = await runBulkKeywordResearch(
+        seedList,
+        project.domain,
+        anchor,
+        {
+          onProgress: async (p, found) => {
+            if (job?.id) {
+              await supabase
+                .from("keyword_jobs")
+                .update({ processed_seeds: p, keywords_found: found })
+                .eq("id", job.id);
+            }
+          },
+        }
+      );
+      const saved = await persistKeywordOpportunities(supabase, projectId, opportunities);
+      if (job?.id) {
+        await supabase
+          .from("keyword_jobs")
+          .update({
+            status: "completed",
+            processed_seeds: processed,
+            keywords_found: opportunities.length,
+            completed_at: new Date().toISOString(),
+          })
+          .eq("id", job.id);
+      }
+      return NextResponse.json({
+        jobId: job?.id || null,
+        opportunities,
+        saved,
+        live,
+        processed,
+        count: opportunities.length,
+      });
+    } catch (err) {
+      if (job?.id) {
+        await supabase
+          .from("keyword_jobs")
+          .update({ status: "failed", error: String(err), completed_at: new Date().toISOString() })
+          .eq("id", job.id);
+      }
+      return apiError("Bulk keyword research failed", 500);
+    }
   }
 
   if (action === "content_gaps") {

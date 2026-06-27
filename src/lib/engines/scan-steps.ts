@@ -28,11 +28,18 @@ import {
 import { getPromptGenerationLimit, getVisibilityScanPromptLimit } from "@/lib/plans/limits";
 import { resolveAndPersistCompetitors } from "@/lib/engines/competitor-resolver";
 import { syncExecutionTasks, verifyTaskResolution } from "@/lib/engines/execution-tasks";
+import { computeAndRecordFindingDiff } from "@/lib/engines/finding-diff";
 import type { Project } from "@/types/database";
 
 export async function stepTechnicalAudit(supabase: SupabaseClient, projectId: string, domain: string) {
   const findings = [...(await runTechnicalAudit(domain)), ...(await analyzePassageReadiness(domain))];
   const rows = findings.map((f) => ({ ...f, project_id: projectId }));
+  // Crawl diff: record new/fixed/regressed vs the prior scan BEFORE we replace.
+  await computeAndRecordFindingDiff(
+    supabase,
+    projectId,
+    findings.map((f) => f.title)
+  ).catch(() => null);
   await supabase.from("technical_findings").delete().eq("project_id", projectId);
   if (rows.length) await supabase.from("technical_findings").insert(rows);
 
