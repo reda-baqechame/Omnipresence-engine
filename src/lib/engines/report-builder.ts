@@ -72,6 +72,17 @@ export async function gatherReportData(
 
   const whiteLabel = await getOrgWhiteLabel(supabase, project.organization_id);
 
+  // Fast-upside ("striking distance") keywords: already ranking 4-20, where a
+  // small push typically yields the biggest, fastest traffic gain. Real rank data.
+  const { data: striking } = await supabase
+    .from("rank_keywords")
+    .select("keyword, last_position, target_url")
+    .eq("project_id", projectId)
+    .gte("last_position", 4)
+    .lte("last_position", 20)
+    .order("last_position", { ascending: true })
+    .limit(10);
+
   const proof = await buildProofReport(supabase, projectId).catch(() => null);
   const proofHtml = proof ? renderProofHTML(proof, whiteLabel?.color) : undefined;
 
@@ -105,6 +116,11 @@ export async function gatherReportData(
     authorityOpportunities: authority || [],
     roadmapItems: (roadmap?.items || []) as RoadmapItem[],
     visibilityResults: (visibility || []) as VisibilityResult[],
+    strikingKeywords: (striking || []).map((k) => ({
+      keyword: k.keyword as string,
+      position: k.last_position as number,
+      url: (k.target_url as string) || undefined,
+    })),
     generatedAt: new Date().toISOString(),
     proofHtml,
     adsEquivalent: adsEquivalent

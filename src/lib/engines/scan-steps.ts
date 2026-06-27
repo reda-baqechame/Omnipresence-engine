@@ -29,11 +29,21 @@ import { getPromptGenerationLimit, getVisibilityScanPromptLimit } from "@/lib/pl
 import { resolveAndPersistCompetitors } from "@/lib/engines/competitor-resolver";
 import { syncExecutionTasks, verifyTaskResolution } from "@/lib/engines/execution-tasks";
 import { computeAndRecordFindingDiff } from "@/lib/engines/finding-diff";
-import type { Project } from "@/types/database";
+import type { Project, AuthorityOpportunity } from "@/types/database";
 
 export async function stepTechnicalAudit(supabase: SupabaseClient, projectId: string, domain: string) {
   const findings = [...(await runTechnicalAudit(domain)), ...(await analyzePassageReadiness(domain))];
-  const rows = findings.map((f) => ({ ...f, project_id: projectId }));
+  const auditedAt = new Date().toISOString();
+  // Technical findings are always real measured site fetches (robots/sitemap/HTML
+  // crawl + PageSpeed), so stamp them measured with the crawl as provider.
+  const rows = findings.map((f) => ({
+    ...f,
+    project_id: projectId,
+    data_source: "measured",
+    provider: "site_crawl",
+    is_estimated: false,
+    last_checked_at: auditedAt,
+  }));
   // Crawl diff: record new/fixed/regressed vs the prior scan BEFORE we replace.
   await computeAndRecordFindingDiff(
     supabase,
@@ -222,7 +232,21 @@ export async function stepScoreAndRoadmap(
 
   await supabase.from("authority_opportunities").delete().eq("project_id", project.id);
   if (authorityOpportunities.length) {
-    await supabase.from("authority_opportunities").insert(authorityOpportunities as never[]);
+    // Stamp provenance so the UI/report can label each opportunity Live vs
+    // Estimated: SERP/backlink-derived rows are measured; AI-suggested rows
+    // (directories/podcasts/communities) are estimated.
+    const nowIso = new Date().toISOString();
+    const authorityRows = authorityOpportunities.map((o) => {
+      const oo = o as AuthorityOpportunity;
+      return {
+        ...o,
+        data_source: oo.data_source ?? (demo ? "simulated" : oo.measured ? "measured" : "estimated"),
+        provider: oo.provider ?? (demo ? "demo" : oo.measured ? "serp" : "ai_suggested"),
+        is_estimated: oo.is_estimated ?? (demo ? true : !oo.measured),
+        last_checked_at: oo.last_checked_at ?? nowIso,
+      };
+    });
+    await supabase.from("authority_opportunities").insert(authorityRows as never[]);
   }
 
   const { data: visibilityResults } = await supabase

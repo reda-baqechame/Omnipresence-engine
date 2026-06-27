@@ -25,6 +25,8 @@ export interface ReportData {
   authorityOpportunities: AuthorityOpportunity[];
   roadmapItems: RoadmapItem[];
   visibilityResults: VisibilityResult[];
+  /** Fast-upside keywords already ranking positions 4-20 (real rank data). */
+  strikingKeywords?: Array<{ keyword: string; position: number; url?: string }>;
   generatedAt: string;
   /** Pre-rendered Before/After proof section (from proof-report.renderProofHTML). */
   proofHtml?: string;
@@ -43,6 +45,32 @@ export function generateReportHTML(data: ReportData, whiteLabel?: { name: string
   const criticalFindings = data.technicalFindings.filter((f) => f.severity === "critical" || f.severity === "high");
   const missingCoverage = data.coverageItems.filter((c) => !c.is_present);
   const topOpportunities = data.authorityOpportunities.slice(0, 10);
+
+  // AI prompts where a competitor wins and the brand is absent — the single most
+  // persuasive "here's where you're losing" section. Only count measured probes.
+  const competitorWinPrompts = data.visibilityResults
+    .filter((r) => r.measurement_mode !== "unavailable" && !r.brand_mentioned)
+    .map((r) => {
+      const winners = Object.entries(r.competitor_mentions || {})
+        .filter(([, present]) => present)
+        .map(([name]) => name);
+      return winners.length ? { prompt: r.prompt_text, engine: String(r.engine), winners } : null;
+    })
+    .filter((x): x is { prompt: string; engine: string; winners: string[] } => x !== null)
+    .slice(0, 10);
+
+  // Coverage gaps broken out by surface bucket so directory / social / local /
+  // review gaps are each visible rather than lumped into one count.
+  const gapsIn = (surfaces: string[]) =>
+    missingCoverage.filter((c) => surfaces.includes(String(c.surface)));
+  const socialGaps = gapsIn(["linkedin", "x_twitter", "facebook", "instagram", "tiktok", "youtube", "reddit", "quora"]);
+  const directoryGaps = gapsIn(["directory", "other"]);
+  const localGaps = gapsIn(["google_business", "bing_places", "apple_business"]);
+  const reviewGaps = gapsIn(["g2", "capterra", "trustpilot", "yelp", "review_site"]);
+
+  // Honesty: how much of the AI-visibility read was actually measured vs unavailable.
+  const measuredPct = Math.round((visibility.measuredRate ?? 0) * 100);
+  const aiProvenance = measuredPct >= 60 ? "Live" : measuredPct > 0 ? "Partial" : "Unavailable";
 
   return `<!DOCTYPE html>
 <html lang="en">
@@ -87,6 +115,17 @@ export function generateReportHTML(data: ReportData, whiteLabel?: { name: string
     .metric { text-align: center; }
     .metric .value { font-size: 28px; font-weight: 700; color: ${color}; }
     .metric .label { font-size: 12px; color: #888; }
+    .tag { display: inline-block; font-size: 10px; font-weight: 700; padding: 2px 7px; border-radius: 10px; text-transform: uppercase; letter-spacing: 0.3px; vertical-align: middle; }
+    .tag.live { background: #dcfce7; color: #166534; }
+    .tag.partial { background: #fef9c3; color: #854d0e; }
+    .tag.estimated { background: #e0e7ff; color: #3730a3; }
+    .tag.unavailable { background: #f1f5f9; color: #64748b; }
+    .win-row { background: #fff; border-left: 4px solid #f97316; padding: 10px 14px; margin-bottom: 8px; border-radius: 0 8px 8px 0; }
+    .win-row h3 { font-size: 13px; font-weight: 600; }
+    .win-row p { font-size: 12px; color: #666; margin-top: 3px; }
+    .kw-row { display: flex; justify-content: space-between; align-items: center; padding: 8px 0; border-bottom: 1px solid #f0f0f0; font-size: 13px; }
+    .kw-pos { background: ${color}; color: #fff; border-radius: 6px; padding: 2px 9px; font-weight: 700; font-size: 12px; }
+    .legend { font-size: 11px; color: #94a3b8; margin-top: 10px; }
   </style>
 </head>
 <body>
@@ -116,13 +155,40 @@ export function generateReportHTML(data: ReportData, whiteLabel?: { name: string
     </div>
 
     <div class="section">
-      <h2>AI Visibility Metrics</h2>
+      <h2>AI Visibility Metrics <span class="tag ${aiProvenance.toLowerCase()}">${e(aiProvenance)}</span></h2>
       <div class="metrics">
         <div class="metric"><div class="value">${Math.round(visibility.mentionRate * 100)}%</div><div class="label">Mention Rate</div></div>
         <div class="metric"><div class="value">${Math.round(visibility.citationRate * 100)}%</div><div class="label">Citation Rate</div></div>
         <div class="metric"><div class="value">${Math.round(visibility.winRate * 100)}%</div><div class="label">Win Rate</div></div>
       </div>
+      <p class="legend">Based on ${measuredPct}% measured AI probes. Rates are computed only over engines we could measure this run; unmeasured engines are excluded rather than counted as zero.</p>
     </div>
+
+    ${competitorWinPrompts.length > 0 ? `
+    <div class="section">
+      <h2>AI Prompts Where Competitors Win (${competitorWinPrompts.length})</h2>
+      <p style="font-size:13px;color:#666;margin-bottom:12px;">Buyer-intent prompts where an AI engine recommended a competitor and did not mention you — your highest-priority AEO gaps.</p>
+      ${competitorWinPrompts.map((w) => `
+        <div class="win-row">
+          <h3>${e(w.prompt)} <span class="tag estimated">${e(w.engine)}</span></h3>
+          <p>Winning: ${e(w.winners.slice(0, 3).join(", "))}</p>
+        </div>
+      `).join("")}
+    </div>
+    ` : ""}
+
+    ${data.strikingKeywords && data.strikingKeywords.length > 0 ? `
+    <div class="section">
+      <h2>Fastest-Upside Keywords <span class="tag live">Live rank</span></h2>
+      <p style="font-size:13px;color:#666;margin-bottom:12px;">Already ranking positions 4-20 — small optimizations here usually deliver the fastest traffic gains.</p>
+      ${data.strikingKeywords.map((k) => `
+        <div class="kw-row">
+          <span>${e(k.keyword)}${k.url ? ` <span style="color:#94a3b8;font-size:11px;">${e(k.url)}</span>` : ""}</span>
+          <span class="kw-pos">#${e(k.position)}</span>
+        </div>
+      `).join("")}
+    </div>
+    ` : ""}
 
     <div class="section">
       <h2>Critical Issues (${criticalFindings.length})</h2>
@@ -145,6 +211,7 @@ export function generateReportHTML(data: ReportData, whiteLabel?: { name: string
         `).join("")}
       </div>
       ${missingCoverage.length > 0 ? `<p style="margin-top: 12px; font-size: 13px; color: #666;">${missingCoverage.length} platforms missing. Competitors present on ${data.coverageItems.filter((c) => c.competitor_present && !c.is_present).length} of them.</p>` : ""}
+      ${missingCoverage.length > 0 ? `<p class="legend">Gaps by surface — Social: ${socialGaps.length} · Directories: ${directoryGaps.length} · Local: ${localGaps.length} · Reviews: ${reviewGaps.length}</p>` : ""}
     </div>
 
     <div class="section">

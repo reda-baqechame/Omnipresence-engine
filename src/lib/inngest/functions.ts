@@ -540,6 +540,37 @@ export const weeklyRankCheck = inngest.createFunction(
   }
 );
 
+export const dailyRankCheck = inngest.createFunction(
+  { id: "daily-rank-check", retries: 1, triggers: [{ cron: "0 4 * * *" }] },
+  async ({ step }) => {
+    const supabase = await createServiceClient();
+
+    // Only projects that explicitly opted into daily tracking AND have keywords.
+    const projects = await step.run("fetch-daily-tracked-projects", async () => {
+      const { data: keywords } = await supabase.from("rank_keywords").select("project_id");
+      const ids = [...new Set((keywords || []).map((k) => k.project_id))];
+      if (!ids.length) return [];
+      const { data } = await supabase
+        .from("projects")
+        .select("id, domain")
+        .eq("daily_rank_tracking", true)
+        .in("id", ids);
+      return data || [];
+    });
+
+    let checked = 0;
+    for (const project of projects) {
+      await step.run(`daily-ranks-${project.id}`, async () => {
+        const results = await runAllRankChecks(supabase, project.id, project.domain);
+        return results.length;
+      });
+      checked++;
+    }
+
+    return { checked };
+  }
+);
+
 export const weeklyBacklinkMonitor = inngest.createFunction(
   { id: "weekly-backlink-monitor", retries: 1, triggers: [{ cron: "0 6 * * 3" }] },
   async ({ step }) => {
@@ -789,6 +820,7 @@ export const functions = [
   monitoringAlerts,
   guaranteeVerificationCron,
   weeklyRankCheck,
+  dailyRankCheck,
   weeklyBacklinkMonitor,
   scheduledContentPublish,
   weeklyIntelligenceSync,

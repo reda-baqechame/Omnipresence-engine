@@ -151,6 +151,7 @@ export interface Project {
   current_monthly_traffic?: number;
   status: ProjectStatus;
   last_scan_at?: string;
+  daily_rank_tracking?: boolean;
   created_at: string;
   updated_at: string;
 }
@@ -384,6 +385,8 @@ export interface TechnicalFinding {
   affected_url?: string;
   is_resolved: boolean;
   data_source?: DataQuality;
+  provider?: string;
+  error_message?: string;
   confidence?: number;
   last_checked_at?: string;
   evidence_url?: string;
@@ -447,6 +450,8 @@ export interface AuthorityOpportunity {
   competitor_present: boolean;
   measured?: boolean;
   data_source?: DataQuality;
+  provider?: string;
+  error_message?: string;
   confidence?: number;
   last_checked_at?: string;
   evidence_url?: string;
