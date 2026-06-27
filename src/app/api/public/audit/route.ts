@@ -3,7 +3,7 @@ import { runTechnicalAudit } from "@/lib/engines/technical-audit";
 import { calculateOmniPresenceScore } from "@/lib/scoring/omnipresence";
 import { createServiceClient } from "@/lib/supabase/server";
 import { sendAuditLeadEmail } from "@/lib/email/reports";
-import { assertPublicDomain, DomainValidationError } from "@/lib/security/domain";
+import { assertPublicDomain, assertDomainResolvesPublic, DomainValidationError } from "@/lib/security/domain";
 import { guardPublicEndpoint, isValidEmail } from "@/lib/security/public-guard";
 import { apiError } from "@/lib/security/api-response";
 import {
@@ -29,6 +29,9 @@ export async function POST(request: NextRequest) {
   let normalized: string;
   try {
     normalized = assertPublicDomain(domain);
+    // SSRF guard: reject hostnames that resolve to private/internal IPs before
+    // we fetch them (unauthenticated entry point).
+    await assertDomainResolvesPublic(normalized);
   } catch (error) {
     if (error instanceof DomainValidationError) return apiError(error.message);
     return apiError("Invalid domain");

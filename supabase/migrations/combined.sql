@@ -1,5 +1,5 @@
--- PresenceOS combined migration (18 files)
--- Generated 2026-06-25T22:20:19.960Z
+-- PresenceOS combined migration (36 files)
+-- Generated 2026-06-27T04:24:44.622Z
 
 -- ========== 0001_init.sql ==========
 
@@ -1046,7 +1046,7 @@ CREATE TABLE IF NOT EXISTS link_building_orders (
 CREATE TABLE IF NOT EXISTS community_mentions (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   project_id UUID NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
-  platform TEXT NOT NULL CHECK (platform IN ('reddit', 'quora', 'hacker_news', 'github', 'other')),
+  platform TEXT NOT NULL CHECK (platform IN ('reddit', 'quora', 'other')),
   url TEXT NOT NULL,
   keyword TEXT,
   mention_type TEXT DEFAULT 'brand',
@@ -1127,6 +1127,10 @@ CREATE POLICY aeo_readiness_access ON aeo_readiness FOR ALL USING (
 
 -- ========== 0019_phase11.sql ==========
 
+-- Phase 11: Free Data Moat
+-- Extend community mention platforms to include Hacker News and GitHub so the
+-- keyless community engine can persist those real mentions.
+
 ALTER TABLE community_mentions DROP CONSTRAINT IF EXISTS community_mentions_platform_check;
 ALTER TABLE community_mentions
   ADD CONSTRAINT community_mentions_platform_check
@@ -1136,7 +1140,11 @@ ALTER TABLE community_mentions
 -- ========== 0020_provenance.sql ==========
 
 -- Phase 1: Trust Spine — data provenance + confirmed competitor domains.
+-- Every user-facing metric gets first-class provenance so the UI can label each
+-- number Live / Estimated / Model-knowledge / Demo / Unavailable, and a failed
+-- provider is never persisted as a confident zero.
 
+-- Provenance columns (all idempotent) --------------------------------------
 ALTER TABLE visibility_results
   ADD COLUMN IF NOT EXISTS data_source TEXT,
   ADD COLUMN IF NOT EXISTS confidence NUMERIC,
@@ -1189,6 +1197,9 @@ ALTER TABLE attribution_metrics
   ADD COLUMN IF NOT EXISTS is_estimated BOOLEAN DEFAULT false,
   ADD COLUMN IF NOT EXISTS source_availability JSONB;
 
+-- Confirmed competitor domains ---------------------------------------------
+-- Replaces brand-name + ".com" guessing with SERP-resolved, confidence-scored,
+-- human-confirmable competitor domains.
 CREATE TABLE IF NOT EXISTS competitors (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   project_id UUID NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
@@ -1214,17 +1225,22 @@ CREATE POLICY competitors_org ON competitors FOR ALL USING (
 
 -- ========== 0021_ai_measurement.sql ==========
 
--- Phase 2: Honest AI Measurement — grounded vs model_knowledge + rich signals.
+-- Phase 2: Honest AI Measurement.
+-- Distinguish grounded (live search UI / retrieval with citations) from
+-- model_knowledge (an LLM's parametric answer with no browsing), and capture the
+-- richer signals experts need: sentiment, recommendation strength, whether the
+-- brand's OWN site was cited vs third-party, answer position, and the sampling
+-- stability (sample_count + variance) behind each yes/no.
 
 ALTER TABLE visibility_results
-  ADD COLUMN IF NOT EXISTS measurement_mode TEXT,
-  ADD COLUMN IF NOT EXISTS sentiment TEXT,
-  ADD COLUMN IF NOT EXISTS recommendation_strength NUMERIC,
-  ADD COLUMN IF NOT EXISTS owned_cited BOOLEAN,
-  ADD COLUMN IF NOT EXISTS third_party_cited BOOLEAN,
-  ADD COLUMN IF NOT EXISTS answer_position INT,
-  ADD COLUMN IF NOT EXISTS sample_count INT,
-  ADD COLUMN IF NOT EXISTS variance NUMERIC;
+  ADD COLUMN IF NOT EXISTS measurement_mode TEXT,          -- grounded | model_knowledge
+  ADD COLUMN IF NOT EXISTS sentiment TEXT,                 -- positive | neutral | negative | unknown
+  ADD COLUMN IF NOT EXISTS recommendation_strength NUMERIC, -- 0-1 (how strongly recommended)
+  ADD COLUMN IF NOT EXISTS owned_cited BOOLEAN,            -- brand's own domain was cited
+  ADD COLUMN IF NOT EXISTS third_party_cited BOOLEAN,      -- a third-party source cited the brand
+  ADD COLUMN IF NOT EXISTS answer_position INT,            -- ordinal position of the brand in the answer
+  ADD COLUMN IF NOT EXISTS sample_count INT,               -- number of samples behind this result
+  ADD COLUMN IF NOT EXISTS variance NUMERIC;               -- 0-1 variance of brand mention across samples
 
 
 -- ========== 0022_agency.sql ==========
@@ -1240,7 +1256,10 @@ CREATE INDEX IF NOT EXISTS idx_organizations_wl_domain ON organizations(white_la
 
 -- ========== 0023_execution_tasks.sql ==========
 
--- Phase 4: Execution Task Engine — unified tracked actions with rescan verification.
+-- Phase 4: Execution Task Engine
+-- One unified, tracked action model bridging technical findings, content/keyword
+-- gaps, coverage gaps, authority opportunities, and roadmap items into tasks with
+-- verified outcomes on re-scan.
 
 CREATE TABLE IF NOT EXISTS execution_tasks (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -1248,7 +1267,10 @@ CREATE TABLE IF NOT EXISTS execution_tasks (
   organization_id UUID NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
   title TEXT NOT NULL,
   description TEXT,
+  -- where this task came from: technical_finding | content_gap | keyword_opportunity
+  -- | coverage_gap | authority | roadmap | manual
   source_module TEXT NOT NULL DEFAULT 'manual',
+  -- loose reference to the originating row (no FK: source rows can be wiped on re-scan)
   source_id TEXT,
   category TEXT,
   priority TEXT NOT NULL DEFAULT 'medium' CHECK (priority IN ('critical', 'high', 'medium', 'low')),
@@ -1261,6 +1283,7 @@ CREATE TABLE IF NOT EXISTS execution_tasks (
   evidence JSONB DEFAULT '{}',
   generated_asset_id UUID,
   result_metric JSONB DEFAULT '{}',
+  -- rescan verification linkage
   finding_resolved BOOLEAN,
   before_metric JSONB,
   after_metric JSONB,
@@ -1288,7 +1311,9 @@ CREATE TRIGGER trg_execution_tasks_updated
 
 -- ========== 0024_rank_depth.sql ==========
 
--- Phase 8: Expert rank tracking depth.
+-- Phase 8: Expert rank tracking depth
+-- device + geo dimensions, surfaced SERP features, competitor overlay,
+-- share-of-voice, cannibalization, brand-in-AI-Overview, and rank-drop alerts.
 
 ALTER TABLE rank_keywords
   ADD COLUMN IF NOT EXISTS device TEXT NOT NULL DEFAULT 'desktop',
@@ -1298,6 +1323,7 @@ ALTER TABLE rank_keywords
   ADD COLUMN IF NOT EXISTS share_of_voice NUMERIC,
   ADD COLUMN IF NOT EXISTS brand_in_ai_overview BOOLEAN;
 
+-- Allow the same keyword to be tracked per-device.
 ALTER TABLE rank_keywords DROP CONSTRAINT IF EXISTS rank_keywords_project_id_keyword_location_key;
 CREATE UNIQUE INDEX IF NOT EXISTS idx_rank_keywords_unique
   ON rank_keywords(project_id, keyword, location, device);
@@ -1333,7 +1359,8 @@ CREATE POLICY rank_alerts_all ON rank_alerts FOR ALL
 
 -- ========== 0025_scale.sql ==========
 
--- Phase 9: Keyword + audit scale.
+-- Phase 9: Keyword + audit scale
+-- Crawl/finding diff snapshots (new/fixed/regressed) + async bulk keyword jobs.
 
 CREATE TABLE IF NOT EXISTS finding_snapshots (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -1380,6 +1407,7 @@ CREATE POLICY keyword_jobs_all ON keyword_jobs FOR ALL
 
 -- Phase 11: Alerts, annotations & public API.
 
+-- Annotations: correlate movement to actions ("published X", "shipped fix").
 CREATE TABLE IF NOT EXISTS annotations (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   project_id UUID NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
@@ -1398,6 +1426,7 @@ DROP POLICY IF EXISTS annotations_all ON annotations;
 CREATE POLICY annotations_all ON annotations FOR ALL
   USING (project_id IN (SELECT id FROM projects WHERE organization_id IN (SELECT get_user_org_ids())));
 
+-- API keys for the public API (batch + read endpoints). Only the hash is stored.
 CREATE TABLE IF NOT EXISTS api_keys (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   organization_id UUID NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
@@ -1423,6 +1452,7 @@ CREATE POLICY api_keys_all ON api_keys FOR ALL
 
 -- Phase 12: Local SEO domination.
 
+-- Map-grid (Local Falcon style) scan results: one row per grid scan, cells in JSONB.
 CREATE TABLE IF NOT EXISTS local_grid_scans (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   project_id UUID NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
@@ -1445,6 +1475,7 @@ DROP POLICY IF EXISTS local_grid_all ON local_grid_scans;
 CREATE POLICY local_grid_all ON local_grid_scans FOR ALL
   USING (project_id IN (SELECT id FROM projects WHERE organization_id IN (SELECT get_user_org_ids())));
 
+-- Review velocity snapshots per platform.
 CREATE TABLE IF NOT EXISTS review_snapshots (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   project_id UUID NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
@@ -1550,6 +1581,7 @@ DROP POLICY IF EXISTS crawler_log_reports_all ON crawler_log_reports;
 CREATE POLICY crawler_log_reports_all ON crawler_log_reports FOR ALL
   USING (project_id IN (SELECT id FROM projects WHERE organization_id IN (SELECT get_user_org_ids())));
 
+-- Per-URL index status tracking on the existing indexing log.
 ALTER TABLE url_indexing_log
   ADD COLUMN IF NOT EXISTS index_status TEXT,
   ADD COLUMN IF NOT EXISTS last_checked_at TIMESTAMPTZ;
@@ -1563,7 +1595,7 @@ CREATE TABLE IF NOT EXISTS distribution_jobs (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   project_id UUID NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
   asset_id UUID REFERENCES content_assets(id) ON DELETE SET NULL,
-  destination TEXT NOT NULL,
+  destination TEXT NOT NULL, -- wordpress | webflow | shopify | ghost | linkedin | x | reddit | quora | youtube | newsletter | gbp | directory
   stage TEXT NOT NULL DEFAULT 'drafted'
     CHECK (stage IN ('drafted','approved','scheduled','published','indexed','ranking','cited','getting_leads','needs_refresh','failed')),
   scheduled_at TIMESTAMPTZ,
@@ -1625,6 +1657,10 @@ ALTER TABLE projects
 -- ========== 0034_operating.sql ==========
 
 -- Phase 22: Onboarding, guarantee & continuous optimization loop.
+-- operating_plans: onboarding output (business model + master competitor list +
+--   keyword universe + 90-day plan) generated from the objective wizard.
+-- operating_reviews: daily/weekly/monthly/quarterly cadence digests (gainers/
+--   losers, decay, regressions, citation gaps) with tasks created.
 
 CREATE TABLE IF NOT EXISTS operating_plans (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -1660,5 +1696,46 @@ ALTER TABLE operating_reviews ENABLE ROW LEVEL SECURITY;
 DROP POLICY IF EXISTS operating_reviews_all ON operating_reviews;
 CREATE POLICY operating_reviews_all ON operating_reviews FOR ALL
   USING (project_id IN (SELECT id FROM projects WHERE organization_id IN (SELECT get_user_org_ids())));
+
+
+-- ========== 0035_provenance_provider.sql ==========
+
+-- Trust Spine completion: every provenance-bearing table also records WHICH
+-- provider produced the value and, on failure, WHY it is unavailable. This lets
+-- the UI/report show "source: X, last checked: Y" and never present a failed
+-- provider call as a confident measured value.
+
+ALTER TABLE technical_findings
+  ADD COLUMN IF NOT EXISTS provider TEXT,
+  ADD COLUMN IF NOT EXISTS error_message TEXT;
+
+ALTER TABLE visibility_results
+  ADD COLUMN IF NOT EXISTS provider TEXT,
+  ADD COLUMN IF NOT EXISTS error_message TEXT;
+
+ALTER TABLE coverage_items
+  ADD COLUMN IF NOT EXISTS provider TEXT,
+  ADD COLUMN IF NOT EXISTS error_message TEXT;
+
+ALTER TABLE authority_opportunities
+  ADD COLUMN IF NOT EXISTS provider TEXT,
+  ADD COLUMN IF NOT EXISTS error_message TEXT;
+
+ALTER TABLE scores
+  ADD COLUMN IF NOT EXISTS provider TEXT,
+  ADD COLUMN IF NOT EXISTS error_message TEXT;
+
+ALTER TABLE attribution_metrics
+  ADD COLUMN IF NOT EXISTS provider TEXT,
+  ADD COLUMN IF NOT EXISTS error_message TEXT;
+
+
+-- ========== 0036_rank_frequency.sql ==========
+
+-- Opt-in daily rank tracking. Defaults OFF so existing projects keep the
+-- weekly cadence (and weekly SERP spend); agencies/pro plans can flip this on
+-- per project for volatile money keywords.
+ALTER TABLE projects
+  ADD COLUMN IF NOT EXISTS daily_rank_tracking BOOLEAN NOT NULL DEFAULT false;
 
 

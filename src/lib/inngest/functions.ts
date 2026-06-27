@@ -33,6 +33,7 @@ import {
 import { runDailyOnPageAutomation } from "@/lib/engines/on-page-queue";
 import { analyzeInternalLinks } from "@/lib/engines/internal-linking";
 import { buildMonthlyCampaign } from "@/lib/engines/link-building";
+import { logProviderError } from "@/lib/observability/log";
 import type { Project } from "@/types/database";
 
 export const runFullScan = inngest.createFunction(
@@ -530,8 +531,13 @@ export const weeklyRankCheck = inngest.createFunction(
     let checked = 0;
     for (const project of projects) {
       await step.run(`ranks-${project.id}`, async () => {
-        const results = await runAllRankChecks(supabase, project.id, project.domain);
-        return results.length;
+        try {
+          const results = await runAllRankChecks(supabase, project.id, project.domain);
+          return results.length;
+        } catch (error) {
+          logProviderError("cron:weekly-rank", error, { projectId: project.id });
+          return 0;
+        }
       });
       checked++;
     }
@@ -561,8 +567,13 @@ export const dailyRankCheck = inngest.createFunction(
     let checked = 0;
     for (const project of projects) {
       await step.run(`daily-ranks-${project.id}`, async () => {
-        const results = await runAllRankChecks(supabase, project.id, project.domain);
-        return results.length;
+        try {
+          const results = await runAllRankChecks(supabase, project.id, project.domain);
+          return results.length;
+        } catch (error) {
+          logProviderError("cron:daily-rank", error, { projectId: project.id });
+          return 0;
+        }
       });
       checked++;
     }
@@ -587,7 +598,11 @@ export const weeklyBacklinkMonitor = inngest.createFunction(
     let snapshotted = 0;
     for (const project of projects) {
       await step.run(`backlinks-${project.id}`, async () => {
-        await snapshotProjectBacklinks(supabase, project.id, project.domain);
+        try {
+          await snapshotProjectBacklinks(supabase, project.id, project.domain);
+        } catch (error) {
+          logProviderError("cron:backlink-monitor", error, { projectId: project.id });
+        }
       });
       snapshotted++;
     }

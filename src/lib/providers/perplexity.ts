@@ -1,4 +1,5 @@
 import type { ProviderResult, SearchResult } from "./types";
+import { fetchWithTimeout } from "./http";
 
 export async function searchPerplexity(
   query: string,
@@ -19,7 +20,7 @@ export async function searchPerplexity(
   }
 
   try {
-    const response = await fetch("https://api.perplexity.ai/search", {
+    const response = await fetchWithTimeout("https://api.perplexity.ai/search", {
       method: "POST",
       headers: {
         Authorization: `Bearer ${apiKey}`,
@@ -29,6 +30,7 @@ export async function searchPerplexity(
         query,
         max_results: 10,
       }),
+      timeoutMs: 20000,
     });
 
     if (!response.ok) {
@@ -98,7 +100,7 @@ export async function queryPerplexitySonar(
   }
 
   try {
-    const response = await fetch("https://api.perplexity.ai/chat/completions", {
+    const response = await fetchWithTimeout("https://api.perplexity.ai/chat/completions", {
       method: "POST",
       headers: {
         Authorization: `Bearer ${apiKey}`,
@@ -108,6 +110,7 @@ export async function queryPerplexitySonar(
         model: "sonar",
         messages: [{ role: "user", content: prompt }],
       }),
+      timeoutMs: 25000,
     });
 
     if (!response.ok) {

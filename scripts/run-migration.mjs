@@ -67,15 +67,24 @@ try {
   if (!tableNames.has("organizations") && !appliedSet.size) {
     const combined = path.join(migrationsDir, "combined.sql");
     if (fs.existsSync(combined)) {
+      const combinedSql = fs.readFileSync(combined, "utf8");
       console.log("Fresh database — applying combined.sql…");
-      await client.query(fs.readFileSync(combined, "utf8"));
+      await client.query(combinedSql);
+      // Only mark migrations that are ACTUALLY contained in combined.sql (it can
+      // lag behind newly added files). Any newer migration falls through to the
+      // per-file loop below so its schema is never silently skipped.
+      let marked = 0;
       for (const file of files) {
-        await client.query("INSERT INTO schema_migrations (id) VALUES ($1) ON CONFLICT DO NOTHING", [
-          file,
-        ]);
+        if (combinedSql.includes(`========== ${file} ==========`)) {
+          await client.query(
+            "INSERT INTO schema_migrations (id) VALUES ($1) ON CONFLICT DO NOTHING",
+            [file]
+          );
+          appliedSet.add(file);
+          marked++;
+        }
       }
-      console.log(`Migration complete (${files.length} files via combined.sql).`);
-      process.exit(0);
+      console.log(`Applied combined.sql (${marked} migrations). Checking for newer files…`);
     }
   }
 

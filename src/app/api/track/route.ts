@@ -2,6 +2,9 @@ import { NextRequest, NextResponse } from "next/server";
 import { createServiceClient } from "@/lib/supabase/server";
 import { classifyReferrer } from "@/lib/tracking/ai-referrers";
 import { enrichVisitorFromIp } from "@/lib/engines/visitor-identity";
+import { guardPublicEndpoint } from "@/lib/security/public-guard";
+
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 function clientIp(request: NextRequest): string {
   return (
@@ -12,10 +15,14 @@ function clientIp(request: NextRequest): string {
 }
 
 export async function POST(request: NextRequest) {
+  // Public beacon: rate-limit per IP to prevent anonymous row-flooding.
+  const limited = guardPublicEndpoint(request, "track", 120, 60_000);
+  if (limited) return limited;
+
   const { projectId, referrer, path, sessionId } = await request.json();
 
-  if (!projectId) {
-    return NextResponse.json({ error: "projectId required" }, { status: 400 });
+  if (!projectId || typeof projectId !== "string" || !UUID_RE.test(projectId)) {
+    return NextResponse.json({ error: "valid projectId required" }, { status: 400 });
   }
 
   const source = classifyReferrer(referrer);
@@ -23,6 +30,18 @@ export async function POST(request: NextRequest) {
 
   try {
     const supabase = await createServiceClient();
+
+    // Only record beacons for projects that actually exist — stops attackers
+    // from seeding analytics tables with fabricated project IDs.
+    const { data: project } = await supabase
+      .from("projects")
+      .select("id")
+      .eq("id", projectId)
+      .maybeSingle();
+    if (!project) {
+      return NextResponse.json({ tracked: false }, { status: 404 });
+    }
+
     const enrichment = await enrichVisitorFromIp(ip);
 
     await supabase.from("visitor_sessions").insert({

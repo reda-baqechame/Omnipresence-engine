@@ -1,4 +1,6 @@
 import type { ProviderResult, SERPResult } from "./types";
+import { fetchWithTimeout } from "./http";
+import { logProviderError } from "@/lib/observability/log";
 
 const BRAVE_URL = "https://api.search.brave.com/res/v1/web/search";
 
@@ -43,11 +45,12 @@ export async function searchGoogleOrganicBrave(
       text_decorations: "false",
     });
 
-    const response = await fetch(`${BRAVE_URL}?${params}`, {
+    const response = await fetchWithTimeout(`${BRAVE_URL}?${params}`, {
       headers: {
         Accept: "application/json",
         "X-Subscription-Token": getBraveApiKey(),
       },
+      timeoutMs: 15000,
     });
 
     if (!response.ok) {
@@ -82,6 +85,7 @@ export async function searchGoogleOrganicBrave(
       creditsUsed: 1,
     };
   } catch (error) {
+    logProviderError("brave-search", error, { keyword });
     return {
       success: false,
       error: error instanceof Error ? error.message : "Brave Search request failed",

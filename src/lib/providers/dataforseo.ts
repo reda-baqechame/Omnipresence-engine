@@ -1,5 +1,6 @@
 import { createHmac } from "crypto";
 import type { ProviderResult, SERPResult } from "./types";
+import { fetchWithTimeout } from "./http";
 
 const OMNIDATA_URL = process.env.OMNIDATA_BASE_URL?.replace(/\/$/, "");
 const USE_OMNIDATA = Boolean(OMNIDATA_URL);
@@ -45,10 +46,11 @@ export function isOmniDataActive(): boolean {
 }
 
 async function dataForSEORequest<T>(endpoint: string, body: unknown[]): Promise<T> {
-  const response = await fetch(`${getBaseUrl()}${endpoint}`, {
+  const response = await fetchWithTimeout(`${getBaseUrl()}${endpoint}`, {
     method: "POST",
     headers: getAuthHeaders(body),
     body: JSON.stringify(body),
+    timeoutMs: 30000,
   });
 
   if (!response.ok) {

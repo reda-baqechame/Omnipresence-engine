@@ -8,11 +8,14 @@ export interface OAuthStatePayload {
 }
 
 function getSecret(): string {
-  return (
-    process.env.OAUTH_STATE_SECRET ||
-    process.env.SUPABASE_SERVICE_ROLE_KEY ||
-    "presenceos-dev-oauth-secret"
-  );
+  const secret = process.env.OAUTH_STATE_SECRET || process.env.SUPABASE_SERVICE_ROLE_KEY;
+  if (secret) return secret;
+  // Never sign OAuth state with a guessable default in production — an attacker
+  // who knows it could forge state and complete OAuth flows against a victim.
+  if (process.env.NODE_ENV === "production") {
+    throw new Error("OAUTH_STATE_SECRET is required in production");
+  }
+  return "presenceos-dev-oauth-secret";
 }
 
 export function signOAuthState(payload: Omit<OAuthStatePayload, "exp">): string {

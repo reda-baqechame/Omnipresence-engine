@@ -50,8 +50,12 @@ export async function stepTechnicalAudit(supabase: SupabaseClient, projectId: st
     projectId,
     findings.map((f) => f.title)
   ).catch(() => null);
-  await supabase.from("technical_findings").delete().eq("project_id", projectId);
-  if (rows.length) await supabase.from("technical_findings").insert(rows);
+  // Only swap findings if we have a fresh set, so a failed crawl can't wipe the
+  // last good audit and leave the project looking "clean".
+  if (rows.length) {
+    await supabase.from("technical_findings").delete().eq("project_id", projectId);
+    await supabase.from("technical_findings").insert(rows);
+  }
 
   const { data: project } = await supabase
     .from("projects")
@@ -329,8 +333,12 @@ export async function stepScoreAndRoadmap(
     readiness.nextBestActions
   );
 
-  await supabase.from("roadmaps").delete().eq("project_id", project.id);
-  await supabase.from("roadmaps").insert(roadmap);
+  // Guard: only replace the roadmap if we actually generated a new one, so a
+  // transient generation failure (empty roadmap) never wipes the prior plan.
+  if (roadmap.items?.length) {
+    await supabase.from("roadmaps").delete().eq("project_id", project.id);
+    await supabase.from("roadmaps").insert(roadmap);
+  }
 
   // Execution loop: verify which in-flight tasks were resolved by this re-scan,
   // then turn the fresh findings/gaps/roadmap into newly tracked tasks.

@@ -1,6 +1,7 @@
 /**
  * Bing Webmaster Tools API — sitemap submission + AI Performance citations
  */
+import { fetchWithTimeout } from "./http";
 
 export interface BingAIPerformance {
   citations: number;
@@ -15,7 +16,7 @@ export async function submitBingSitemap(
 ): Promise<{ success: boolean; error?: string }> {
   try {
     const encodedSite = encodeURIComponent(siteUrl);
-    const response = await fetch(
+    const response = await fetchWithTimeout(
       `https://ssl.bing.com/webmaster/api.svc/json/SubmitFeed?apikey=${accessToken}`,
       {
         method: "POST",
@@ -24,6 +25,7 @@ export async function submitBingSitemap(
           siteUrl,
           feedUrl: sitemapUrl,
         }),
+        timeoutMs: 20000,
       }
     );
     return { success: response.ok };
@@ -40,10 +42,11 @@ export async function fetchBingAIPerformance(
   siteUrl: string
 ): Promise<{ success: boolean; data?: BingAIPerformance; error?: string }> {
   try {
-    const response = await fetch(
+    const response = await fetchWithTimeout(
       `https://ssl.bing.com/webmaster/api.svc/json/GetUrlTrafficInfo?siteUrl=${encodeURIComponent(siteUrl)}`,
       {
         headers: { Authorization: `Bearer ${accessToken}` },
+        timeoutMs: 20000,
       }
     );
 
@@ -82,12 +85,13 @@ export async function submitBingUrls(
   let submitted = 0;
   for (const url of urls.slice(0, 10)) {
     try {
-      const response = await fetch(
+      const response = await fetchWithTimeout(
         "https://ssl.bing.com/webmaster/api.svc/json/SubmitUrlbatch?apikey=" + accessToken,
         {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ siteUrl, urlList: [url] }),
+          timeoutMs: 20000,
         }
       );
       if (response.ok) submitted++;

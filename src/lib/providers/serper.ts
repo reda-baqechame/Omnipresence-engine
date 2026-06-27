@@ -1,4 +1,6 @@
 import type { ProviderResult, SERPResult } from "./types";
+import { fetchWithTimeout, withRetry, isRetryableStatus } from "./http";
+import { logProviderError } from "@/lib/observability/log";
 
 const SERPER_URL = "https://google.serper.dev/search";
 
@@ -81,26 +83,34 @@ export async function searchGoogleOrganicSerper(
   competitors: string[]
 ): Promise<ProviderResult<SERPResult>> {
   try {
-    const response = await fetch(SERPER_URL, {
-      method: "POST",
-      headers: {
-        "X-API-KEY": getSerperApiKey(),
-        "Content-Type": "application/json",
+    const data = await withRetry(
+      async () => {
+        const response = await fetchWithTimeout(SERPER_URL, {
+          method: "POST",
+          headers: {
+            "X-API-KEY": getSerperApiKey(),
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            q: keyword,
+            location,
+            gl: "us",
+            hl: "en",
+            num: 20,
+          }),
+          timeoutMs: 15000,
+        });
+
+        if (!response.ok) {
+          const err = new Error(`Serper API error: ${response.status}`);
+          (err as Error & { status?: number }).status = response.status;
+          throw err;
+        }
+
+        return (await response.json()) as SerperSearchResponse;
       },
-      body: JSON.stringify({
-        q: keyword,
-        location,
-        gl: "us",
-        hl: "en",
-        num: 20,
-      }),
-    });
-
-    if (!response.ok) {
-      throw new Error(`Serper API error: ${response.status}`);
-    }
-
-    const data = (await response.json()) as SerperSearchResponse;
+      { retries: 2, shouldRetry: (e) => isRetryableStatus((e as { status?: number })?.status ?? 0) }
+    );
 
     const organicResults = (data.organic || []).map((item, index) => ({
       title: item.title || "",
@@ -133,6 +143,7 @@ export async function searchGoogleOrganicSerper(
       creditsUsed: 1,
     };
   } catch (error) {
+    logProviderError("serper", error, { keyword, location });
     return {
       success: false,
       error: error instanceof Error ? error.message : "Serper request failed",

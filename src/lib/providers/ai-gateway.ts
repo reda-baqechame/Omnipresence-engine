@@ -34,6 +34,7 @@ export async function queryLLMForVisibility(
         model: openai("gpt-4o-mini"),
         system: systemPrompt,
         prompt,
+        abortSignal: AbortSignal.timeout(45000),
       });
       responseText = result.text;
     } else if (provider === "gemini") {
@@ -43,6 +44,7 @@ export async function queryLLMForVisibility(
         model: google("gemini-2.0-flash"),
         system: systemPrompt,
         prompt,
+        abortSignal: AbortSignal.timeout(45000),
       });
       responseText = result.text;
     } else {
@@ -52,6 +54,7 @@ export async function queryLLMForVisibility(
         model: anthropic("claude-3-5-haiku-latest"),
         system: systemPrompt,
         prompt,
+        abortSignal: AbortSignal.timeout(45000),
       });
       responseText = result.text;
     }
@@ -112,6 +115,7 @@ export async function generateWithAI(
       model: openai(modelId),
       system: systemPrompt,
       prompt: userPrompt,
+      abortSignal: AbortSignal.timeout(60000),
     });
 
     return { success: true, data: result.text, creditsUsed: model === "quality" ? 5 : 1 };
@@ -137,6 +141,7 @@ export async function generateStructured<T>(
       system: systemPrompt,
       prompt: userPrompt,
       schema,
+      abortSignal: AbortSignal.timeout(60000),
     });
 
     return { success: true, data: result.object, creditsUsed: 2 };
