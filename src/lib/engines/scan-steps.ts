@@ -27,6 +27,7 @@ import {
 } from "@/lib/demo/scan-data";
 import { getPromptGenerationLimit, getVisibilityScanPromptLimit } from "@/lib/plans/limits";
 import { resolveAndPersistCompetitors } from "@/lib/engines/competitor-resolver";
+import { syncExecutionTasks, verifyTaskResolution } from "@/lib/engines/execution-tasks";
 import type { Project } from "@/types/database";
 
 export async function stepTechnicalAudit(supabase: SupabaseClient, projectId: string, domain: string) {
@@ -299,6 +300,13 @@ export async function stepScoreAndRoadmap(
 
   await supabase.from("roadmaps").delete().eq("project_id", project.id);
   await supabase.from("roadmaps").insert(roadmap);
+
+  // Execution loop: verify which in-flight tasks were resolved by this re-scan,
+  // then turn the fresh findings/gaps/roadmap into newly tracked tasks.
+  if (project.organization_id) {
+    await verifyTaskResolution(supabase, project.id).catch(() => null);
+    await syncExecutionTasks(supabase, project.id, project.organization_id).catch(() => null);
+  }
 
   await recordScanBaseline(supabase, project.id, {
     omnipresence_score: score.omnipresence_score,

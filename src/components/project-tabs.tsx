@@ -23,6 +23,7 @@ const TABS = [
   { href: "/distribution", label: "Distribution" },
   { href: "/authority", label: "Authority" },
   { href: "/roadmap", label: "Roadmap" },
+  { href: "/tasks", label: "Tasks" },
   { href: "/attribution", label: "Attribution" },
   { href: "/guarantee", label: "Guarantee" },
 ];

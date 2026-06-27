@@ -23,6 +23,7 @@ import {
   generateDemoAuthorityOpportunities,
 } from "@/lib/demo/scan-data";
 import { resolveAndPersistCompetitors } from "@/lib/engines/competitor-resolver";
+import { syncExecutionTasks, verifyTaskResolution } from "@/lib/engines/execution-tasks";
 import type {
   Project,
   TechnicalFinding,
@@ -228,6 +229,12 @@ export async function runProjectScan(
 
   await supabase.from("roadmaps").delete().eq("project_id", projectId);
   await supabase.from("roadmaps").insert(roadmap);
+
+  // Execution loop: verify resolved tasks, then sync new actions from this scan.
+  if (p.organization_id) {
+    await verifyTaskResolution(supabase, projectId).catch(() => null);
+    await syncExecutionTasks(supabase, projectId, p.organization_id).catch(() => null);
+  }
 
   await supabase.from("projects").update({
     status: "active",

@@ -486,6 +486,52 @@ export interface RoadmapItem {
   estimated_hours?: number;
 }
 
+export type ExecutionTaskSource =
+  | "technical_finding"
+  | "content_gap"
+  | "keyword_opportunity"
+  | "coverage_gap"
+  | "authority"
+  | "roadmap"
+  | "manual";
+
+export type ExecutionTaskStatus =
+  | "todo"
+  | "in_progress"
+  | "blocked"
+  | "done"
+  | "verified"
+  | "dismissed";
+
+export type TaskPriority = "critical" | "high" | "medium" | "low";
+
+export interface ExecutionTask {
+  id: string;
+  project_id: string;
+  organization_id: string;
+  title: string;
+  description?: string | null;
+  source_module: ExecutionTaskSource;
+  source_id?: string | null;
+  category?: string | null;
+  priority: TaskPriority;
+  impact: number;
+  effort: number;
+  status: ExecutionTaskStatus;
+  owner?: string | null;
+  due_date?: string | null;
+  evidence?: Record<string, unknown> | null;
+  generated_asset_id?: string | null;
+  result_metric?: Record<string, unknown> | null;
+  finding_resolved?: boolean | null;
+  before_metric?: Record<string, unknown> | null;
+  after_metric?: Record<string, unknown> | null;
+  completed_at?: string | null;
+  verified_at?: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
 export interface Roadmap {
   id: string;
   project_id: string;
