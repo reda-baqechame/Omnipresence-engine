@@ -32,6 +32,7 @@ const TABS = [
   { href: "/roadmap", label: "Roadmap" },
   { href: "/tasks", label: "Tasks" },
   { href: "/attribution", label: "Attribution" },
+  { href: "/roi", label: "ROI Center" },
   { href: "/guarantee", label: "Guarantee" },
 ];
 

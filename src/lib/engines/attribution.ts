@@ -400,6 +400,62 @@ export async function syncGoogleAnalytics(
   }
 }
 
+export interface LandingPageRevenue {
+  landingPage: string;
+  sessions: number;
+  conversions: number;
+  revenue: number;
+}
+
+/**
+ * Revenue + conversions broken down by landing page (GA4). Powers the ROI
+ * command center's "which page makes money" view.
+ */
+export async function syncGa4LandingPages(
+  accessToken: string,
+  propertyId: string,
+  startDate: string,
+  endDate: string,
+  limit = 50
+): Promise<LandingPageRevenue[]> {
+  try {
+    const response = await fetch(
+      `https://analyticsdata.googleapis.com/v1beta/${propertyId}:runReport`,
+      {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${accessToken}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          dateRanges: [{ startDate, endDate }],
+          metrics: [{ name: "sessions" }, { name: "conversions" }, { name: "totalRevenue" }],
+          dimensions: [{ name: "landingPagePlusQueryString" }],
+          orderBys: [{ metric: { metricName: "totalRevenue" }, desc: true }],
+          limit,
+        }),
+      }
+    );
+    if (!response.ok) return [];
+
+    const data = (await response.json()) as {
+      rows?: Array<{
+        dimensionValues: Array<{ value: string }>;
+        metricValues: Array<{ value: string }>;
+      }>;
+    };
+
+    return (data.rows || []).map((row) => ({
+      landingPage: row.dimensionValues[0]?.value || "(not set)",
+      sessions: parseInt(row.metricValues[0]?.value || "0", 10),
+      conversions: parseInt(row.metricValues[1]?.value || "0", 10),
+      revenue: parseFloat(row.metricValues[2]?.value || "0"),
+    }));
+  } catch {
+    return [];
+  }
+}
+
 export interface Ga4PropertyOption {
   id: string;
   displayName: string;
