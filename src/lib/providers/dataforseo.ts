@@ -114,7 +114,8 @@ export async function searchGoogleOrganic(
   keyword: string,
   location = "United States",
   brandDomain: string,
-  competitors: string[]
+  competitors: string[],
+  device: "desktop" | "mobile" = "desktop"
 ): Promise<ProviderResult<SERPResult>> {
   try {
     const data = await dataForSEORequest<{
@@ -135,8 +136,8 @@ export async function searchGoogleOrganic(
         keyword,
         location_name: location,
         language_code: "en",
-        device: "desktop",
-        os: "windows",
+        device,
+        os: device === "mobile" ? "android" : "windows",
         depth: 20,
         load_async_ai_overview: true,
       },
@@ -181,9 +182,13 @@ export async function searchGoogleOrganic(
       );
     }
 
+    const serpFeatures = Array.from(
+      new Set(items.map((i) => i.type).filter((t) => t && t !== "organic"))
+    );
+
     return {
       success: true,
-      data: { organicResults, aiOverview, brandInResults, competitorInResults },
+      data: { organicResults, aiOverview, brandInResults, competitorInResults, serpFeatures },
       creditsUsed: USE_OMNIDATA ? 0 : 1,
     };
   } catch (error) {

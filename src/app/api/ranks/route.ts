@@ -34,11 +34,19 @@ export async function GET(request: NextRequest) {
       .select("*")
       .in("keyword_id", keywordIds)
       .order("checked_at", { ascending: false })
-      .limit(200);
+      .limit(400);
     snapshots = data || [];
   }
 
-  return NextResponse.json({ keywords: keywords || [], snapshots });
+  const { data: alerts } = await supabase
+    .from("rank_alerts")
+    .select("*")
+    .eq("project_id", projectId)
+    .eq("acknowledged", false)
+    .order("created_at", { ascending: false })
+    .limit(50);
+
+  return NextResponse.json({ keywords: keywords || [], snapshots, alerts: alerts || [] });
 }
 
 export async function POST(request: NextRequest) {
@@ -47,11 +55,13 @@ export async function POST(request: NextRequest) {
   if (!user) return apiUnauthorized();
 
   const body = await request.json();
-  const { projectId, keyword, location, action } = body as {
+  const { projectId, keyword, location, device, action, alertId } = body as {
     projectId: string;
     keyword?: string;
     location?: string;
-    action?: "check_all" | "import_prompts";
+    device?: "desktop" | "mobile";
+    action?: "check_all" | "import_prompts" | "ack_alert";
+    alertId?: string;
   };
 
   if (!projectId) return apiError("projectId required");
@@ -66,6 +76,12 @@ export async function POST(request: NextRequest) {
     .single();
   if (!project) return apiError("Project not found", 404);
 
+  if (action === "ack_alert") {
+    if (!alertId) return apiError("alertId required");
+    await supabase.from("rank_alerts").update({ acknowledged: true }).eq("id", alertId).eq("project_id", projectId);
+    return NextResponse.json({ ok: true });
+  }
+
   if (action === "import_prompts") {
     const count = await importKeywordsFromPrompts(supabase, projectId);
     return NextResponse.json({ imported: count });
@@ -78,7 +94,8 @@ export async function POST(request: NextRequest) {
 
   if (!keyword?.trim()) return apiError("keyword required");
 
-  const tracked = await trackKeyword(supabase, projectId, keyword, location || "United States");
+  const dev = device === "mobile" ? "mobile" : "desktop";
+  const tracked = await trackKeyword(supabase, projectId, keyword, location || "United States", dev);
   if (!tracked) return apiError("Failed to track keyword");
 
   const result = await runRankCheckForProject(
@@ -87,7 +104,8 @@ export async function POST(request: NextRequest) {
     project.domain,
     tracked.id,
     keyword,
-    location || "United States"
+    location || "United States",
+    dev
   );
 
   return NextResponse.json({ result });

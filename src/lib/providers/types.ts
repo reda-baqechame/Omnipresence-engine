@@ -25,6 +25,8 @@ export interface SERPResult {
   };
   brandInResults: boolean;
   competitorInResults: Record<string, boolean>;
+  /** Distinct SERP feature types present (e.g. ai_overview, featured_snippet, people_also_ask). */
+  serpFeatures?: string[];
 }
 
 export interface CrawlResult {
