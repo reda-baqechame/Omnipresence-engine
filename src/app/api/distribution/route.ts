@@ -63,6 +63,48 @@ const PUBLISHERS = {
     const data = await response.json() as { id?: string };
     return { ok: true, publishedUrl: `https://webflow.com/item/${data.id}` };
   },
+  ghost: async (
+    adminUrl: string,
+    apiKey: string,
+    content: { title: string; content: string },
+    _collectionId?: string
+  ) => {
+    // Ghost Admin API uses a short-lived JWT signed (HS256) from the
+    // {id}:{secret} admin key. Built with Node crypto to avoid a JWT dependency.
+    try {
+      const [keyId, secret] = apiKey.split(":");
+      if (!keyId || !secret) return { ok: false, publishedUrl: undefined };
+      const crypto = await import("node:crypto");
+      const b64url = (buf: Buffer) =>
+        buf.toString("base64").replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+      const now = Math.floor(Date.now() / 1000);
+      const header = b64url(Buffer.from(JSON.stringify({ alg: "HS256", typ: "JWT", kid: keyId })));
+      const payload = b64url(
+        Buffer.from(JSON.stringify({ iat: now, exp: now + 300, aud: "/admin/" }))
+      );
+      const sig = b64url(
+        crypto.createHmac("sha256", Buffer.from(secret, "hex")).update(`${header}.${payload}`).digest()
+      );
+      const token = `${header}.${payload}.${sig}`;
+
+      const base = adminUrl.replace(/\/$/, "");
+      const response = await fetch(`${base}/ghost/api/admin/posts/?source=html`, {
+        method: "POST",
+        headers: {
+          Authorization: `Ghost ${token}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          posts: [{ title: content.title, html: content.content, status: "published" }],
+        }),
+      });
+      if (!response.ok) return { ok: false, publishedUrl: undefined };
+      const data = (await response.json()) as { posts?: Array<{ url?: string }> };
+      return { ok: true, publishedUrl: data.posts?.[0]?.url };
+    } catch {
+      return { ok: false, publishedUrl: undefined };
+    }
+  },
   shopify: async (
     shop: string,
     apiKey: string,

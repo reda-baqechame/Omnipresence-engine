@@ -31,6 +31,8 @@ export function DistributionPanel({ projectId, domain, assets }: DistributionPan
   const [scheduling, setScheduling] = useState(false);
   const [scheduleResult, setScheduleResult] = useState<string | null>(null);
   const [savedProviders, setSavedProviders] = useState<string[]>([]);
+  const [repurposing, setRepurposing] = useState<string | null>(null);
+  const [repurposeResult, setRepurposeResult] = useState<string | null>(null);
 
   const [gbpConnected, setGbpConnected] = useState(false);
   const [gbpLocationName, setGbpLocationName] = useState<string | null>(null);
@@ -120,6 +122,23 @@ export function DistributionPanel({ projectId, domain, assets }: DistributionPan
     setScheduling(false);
   }
 
+  async function repurposeAsset(assetId: string) {
+    setRepurposing(assetId);
+    setRepurposeResult(null);
+    const res = await fetch("/api/repurpose", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ assetId }),
+    });
+    const data = await res.json();
+    setRepurposeResult(
+      data.created
+        ? `Created ${data.created} platform drafts (LinkedIn, X, YouTube, Reddit, Quora, newsletter). Find them in the Content tab.`
+        : data.error || "Repurpose failed"
+    );
+    setRepurposing(null);
+  }
+
   return (
     <div className="space-y-8">
       <div className="grid md:grid-cols-3 gap-4">
@@ -148,11 +167,14 @@ export function DistributionPanel({ projectId, domain, assets }: DistributionPan
           <select
             value={publishPlatform}
             onChange={(e) => setPublishPlatform(e.target.value)}
+            aria-label="CMS platform"
+            title="CMS platform"
             className="bg-background border border-input rounded-lg px-3 py-2 text-sm"
           >
             <option value="wordpress">WordPress</option>
             <option value="webflow">Webflow</option>
             <option value="shopify">Shopify</option>
+            <option value="ghost">Ghost</option>
           </select>
           <input
             value={credentials.url}
@@ -197,6 +219,35 @@ export function DistributionPanel({ projectId, domain, assets }: DistributionPan
       </div>
 
       <div className="bg-card border border-border rounded-xl p-6">
+        <h3 className="font-semibold mb-4">Content Repurposing</h3>
+        <p className="text-sm text-muted-foreground mb-3">
+          Turn one strong asset into platform-native spokes — LinkedIn post, X thread, YouTube script + chapters, Reddit/Quora drafts, and a newsletter — each tracked through its lifecycle.
+        </p>
+        <div className="space-y-2">
+          {assets.slice(0, 10).map((asset) => (
+            <div key={asset.id} className="flex items-center justify-between bg-secondary rounded-lg p-3">
+              <div>
+                <div className="font-medium text-sm">{asset.title}</div>
+                <div className="text-xs text-muted-foreground">{asset.type}</div>
+              </div>
+              <button
+                type="button"
+                onClick={() => repurposeAsset(asset.id)}
+                disabled={repurposing === asset.id}
+                className="border border-border px-3 py-1 rounded-lg text-xs font-medium disabled:opacity-50"
+              >
+                {repurposing === asset.id ? "Repurposing..." : "Repurpose to 6 channels"}
+              </button>
+            </div>
+          ))}
+          {assets.length === 0 && (
+            <p className="text-sm text-muted-foreground">No content yet. Generate content in the Content tab first.</p>
+          )}
+        </div>
+        {repurposeResult && <p className="text-sm mt-2 text-green-400">{repurposeResult}</p>}
+      </div>
+
+      <div className="bg-card border border-border rounded-xl p-6">
         <h3 className="font-semibold mb-4">Social Scheduling</h3>
         <p className="text-sm text-muted-foreground mb-3">
           Schedule approved content to LinkedIn, X, and more via Ayrshare or Buffer.
@@ -205,6 +256,8 @@ export function DistributionPanel({ projectId, domain, assets }: DistributionPan
           <select
             value={socialPlatform}
             onChange={(e) => setSocialPlatform(e.target.value as "ayrshare" | "buffer")}
+            aria-label="Social platform"
+            title="Social platform"
             className="bg-background border border-input rounded-lg px-3 py-2 text-sm"
           >
             <option value="ayrshare">Ayrshare</option>
