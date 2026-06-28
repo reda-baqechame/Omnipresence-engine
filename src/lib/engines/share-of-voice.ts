@@ -164,6 +164,78 @@ export function calculateShareOfVoiceByEngine(
     .sort((a, b) => (b.sov.brand?.shareOfVoice ?? 0) - (a.sov.brand?.shareOfVoice ?? 0));
 }
 
+export interface SovMover {
+  name: string;
+  isBrand: boolean;
+  /** Share of voice this run (0-1). */
+  current: number;
+  /** Share of voice the previous run (0-1). */
+  previous: number;
+  /** current - previous, in share-of-voice points (can be negative). */
+  delta: number;
+}
+
+export interface SovComparison {
+  movers: SovMover[];
+  biggestGainer: SovMover | null;
+  biggestLoser: SovMover | null;
+  /** The brand's own SoV delta (null if the brand is absent from both runs). */
+  brandDelta: SovMover | null;
+  hasComparison: boolean;
+}
+
+/**
+ * Run-over-run Share of Voice comparison — the "biggest movers" competitive
+ * intelligence callout. Surfaces who gained and who lost the most prominence-
+ * weighted share between two runs, the single most persuasive "the market is
+ * shifting and here's your part in it" signal.
+ */
+export function compareShareOfVoice(
+  currentResults: VisibilityResult[],
+  previousResults: VisibilityResult[],
+  brandName: string,
+  competitors: string[]
+): SovComparison {
+  const cur = calculateShareOfVoice(currentResults, brandName, competitors);
+  const prev = calculateShareOfVoice(previousResults, brandName, competitors);
+
+  const EMPTY: SovComparison = {
+    movers: [],
+    biggestGainer: null,
+    biggestLoser: null,
+    brandDelta: null,
+    hasComparison: false,
+  };
+  if (cur.sampleSize === 0 || prev.sampleSize === 0) return EMPTY;
+
+  const prevShare = new Map(prev.leaderboard.map((e) => [e.name, e.shareOfVoice]));
+  const curShare = new Map(cur.leaderboard.map((e) => [e.name, e.shareOfVoice]));
+  const names = new Set<string>([...prevShare.keys(), ...curShare.keys()]);
+
+  const movers: SovMover[] = [...names]
+    .map((name) => {
+      const current = curShare.get(name) ?? 0;
+      const previous = prevShare.get(name) ?? 0;
+      const isBrand =
+        cur.leaderboard.find((e) => e.name === name)?.isBrand ??
+        prev.leaderboard.find((e) => e.name === name)?.isBrand ??
+        false;
+      return { name, isBrand, current, previous, delta: Math.round((current - previous) * 1000) / 1000 };
+    })
+    .sort((a, b) => b.delta - a.delta);
+
+  const gainers = movers.filter((m) => m.delta > 0);
+  const losers = movers.filter((m) => m.delta < 0);
+
+  return {
+    movers,
+    biggestGainer: gainers.length ? gainers[0] : null,
+    biggestLoser: losers.length ? losers[losers.length - 1] : null,
+    brandDelta: movers.find((m) => m.isBrand) ?? null,
+    hasComparison: true,
+  };
+}
+
 export interface SovTrendPoint {
   runId: string;
   /** ISO date of the run (completed_at or created_at). */

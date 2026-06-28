@@ -1,10 +1,11 @@
 import { notFound } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { calculateVisibilityMetrics } from "@/lib/engines/visibility-scanner";
-import { calculateShareOfVoice, calculateShareOfVoiceByEngine, calculateSovTrend } from "@/lib/engines/share-of-voice";
+import { calculateShareOfVoice, calculateShareOfVoiceByEngine, calculateSovTrend, compareShareOfVoice } from "@/lib/engines/share-of-voice";
 import { SovLeaderboard } from "@/components/sov-leaderboard";
 import { SovByEngineBreakdown } from "@/components/sov-by-engine";
 import { SovTrendChart } from "@/components/sov-trend-chart";
+import { SovMovers } from "@/components/sov-movers";
 import { preferLiveData } from "@/lib/config/capabilities";
 import { compareVisibilityRuns } from "@/lib/engines/visibility-delta";
 import type { VisibilityResult } from "@/types/database";
@@ -63,6 +64,15 @@ export default async function VisibilityPage({
     project.name,
     project.competitors || []
   );
+  const sovComparison =
+    completedRuns.length >= 2
+      ? compareShareOfVoice(
+          results.filter((x) => x.run_id === completedRuns[0].id),
+          results.filter((x) => x.run_id === completedRuns[1].id),
+          project.name,
+          project.competitors || []
+        )
+      : null;
   let runDelta = null;
 
   if (completedRuns.length >= 2) {
@@ -147,6 +157,8 @@ export default async function VisibilityPage({
       </div>
 
       <SovLeaderboard sov={sov} />
+
+      {sovComparison && <SovMovers comparison={sovComparison} />}
 
       <SovByEngineBreakdown data={sovByEngine} />
 

@@ -9,7 +9,7 @@ import type {
 } from "@/types/database";
 import { getScoreLabel } from "@/lib/scoring/omnipresence";
 import { calculateVisibilityMetrics } from "@/lib/engines/visibility-scanner";
-import { calculateShareOfVoice } from "@/lib/engines/share-of-voice";
+import { calculateShareOfVoice, calculateShareOfVoiceByEngine } from "@/lib/engines/share-of-voice";
 import { escapeHtml, sanitizeHexColor } from "@/lib/security/escape-html";
 
 function e(value: string | number | undefined | null): string {
@@ -50,6 +50,19 @@ export function generateReportHTML(data: ReportData, whiteLabel?: { name: string
     data.project.name,
     data.project.competitors || []
   );
+  const sovByEngine = calculateShareOfVoiceByEngine(
+    data.visibilityResults,
+    data.project.name,
+    data.project.competitors || []
+  );
+  const ENGINE_LABELS: Record<string, string> = {
+    chatgpt: "ChatGPT",
+    claude: "Claude",
+    gemini: "Gemini",
+    perplexity: "Perplexity",
+    google_ai_overview: "Google AI Overview",
+    google_organic: "Google Search",
+  };
   const criticalFindings = data.technicalFindings.filter((f) => f.severity === "critical" || f.severity === "high");
   const missingCoverage = data.coverageItems.filter((c) => !c.is_present);
   const topOpportunities = data.authorityOpportunities.slice(0, 10);
@@ -200,6 +213,24 @@ export function generateReportHTML(data: ReportData, whiteLabel?: { name: string
           </tr>`).join("")}
         </tbody>
       </table>
+      ${sovByEngine.length > 1 ? `
+      <h3 style="font-size:14px;margin:16px 0 6px;">Where you win and lose by engine</h3>
+      <table style="width:100%;border-collapse:collapse;font-size:13px;">
+        <thead><tr style="text-align:left;border-bottom:1px solid #e2e2e2;">
+          <th style="padding:6px 4px;">Engine</th><th style="padding:6px 4px;">Your share</th><th style="padding:6px 4px;">Your rank</th><th style="padding:6px 4px;">Leader</th>
+        </tr></thead>
+        <tbody>
+        ${sovByEngine.map((row) => {
+          const leader = row.sov.leaderboard[0];
+          return `<tr style="border-bottom:1px solid #f1f1f1;">
+            <td style="padding:6px 4px;">${e(ENGINE_LABELS[row.engine] || row.engine)}</td>
+            <td style="padding:6px 4px;">${Math.round((row.sov.brand?.shareOfVoice ?? 0) * 100)}%</td>
+            <td style="padding:6px 4px;">${row.sov.brandRank ? `#${row.sov.brandRank} of ${row.sov.leaderboard.length}` : "absent"}</td>
+            <td style="padding:6px 4px;">${leader ? `${e(leader.name)}${leader.isBrand ? " (you)" : ""} · ${Math.round(leader.shareOfVoice * 100)}%` : "—"}</td>
+          </tr>`;
+        }).join("")}
+        </tbody>
+      </table>` : ""}
     </div>` : ""}
 
     ${competitorWinPrompts.length > 0 ? `
