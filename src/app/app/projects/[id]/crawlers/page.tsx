@@ -3,7 +3,9 @@ import { createClient } from "@/lib/supabase/server";
 import { getProject } from "@/lib/projects";
 import { summarizeCrawlerHits, type CrawlerHit } from "@/lib/engines/agent-analytics";
 import { crawlerPurposeLabel, type CrawlerPurpose } from "@/lib/tracking/ai-crawlers";
+import { correlateCrawlsToCitations, correlationStatusLabel, type CorrelationStatus } from "@/lib/engines/crawl-citation-correlation";
 import { AgentAnalyticsIngest } from "@/components/agent-analytics-ingest";
+import type { VisibilityResult } from "@/types/database";
 
 function timeAgo(iso: string): string {
   const diff = Date.now() - new Date(iso).getTime();
@@ -17,6 +19,13 @@ function timeAgo(iso: string): string {
 }
 
 const PURPOSE_ORDER: CrawlerPurpose[] = ["ai_user_action", "ai_search", "ai_training", "search_index"];
+
+const STATUS_STYLE: Record<CorrelationStatus, string> = {
+  crawling_and_citing: "bg-green-500/10 text-green-400 border-green-500/30",
+  crawling_not_citing: "bg-yellow-500/10 text-yellow-400 border-yellow-500/30",
+  not_crawling: "bg-red-500/10 text-red-400 border-red-500/30",
+  citing_no_crawl: "bg-blue-500/10 text-blue-400 border-blue-500/30",
+};
 
 export default async function CrawlersPage({
   params,
@@ -35,8 +44,17 @@ export default async function CrawlersPage({
     .order("hit_at", { ascending: false })
     .limit(20_000);
 
+  const { data: visibility } = await supabase
+    .from("visibility_results")
+    .select("engine,brand_cited,brand_mentioned,created_at")
+    .eq("project_id", id)
+    .order("created_at", { ascending: false })
+    .limit(5_000);
+
   const hits = (data || []) as CrawlerHit[];
+  const visResults = (visibility || []) as VisibilityResult[];
   const summary = summarizeCrawlerHits(hits);
+  const correlation = correlateCrawlsToCitations(hits, visResults);
   const maxDay = Math.max(1, ...summary.byDay.map((d) => d.hits));
   const maxBot = Math.max(1, ...summary.byBot.map((b) => b.hits));
 
@@ -83,6 +101,34 @@ export default async function CrawlersPage({
                 If these engines never fetch you, they can&apos;t cite you — check robots.txt, server firewall rules, and
                 make sure your key pages are linked and fast.
               </span>
+            </div>
+          )}
+
+          {correlation.length > 0 && (
+            <div>
+              <h2 className="text-xl font-semibold mb-1">Crawl → Citation loop</h2>
+              <p className="text-sm text-muted-foreground mb-4 max-w-3xl">
+                The diagnosis no other tool gives you: joining who crawls you with who actually cites you. Engines that
+                read you but don&apos;t cite you are your highest-leverage fixes.
+              </p>
+              <div className="grid md:grid-cols-2 gap-3">
+                {correlation.map((row) => (
+                  <div key={row.vendor} className="bg-card border border-border rounded-xl p-4">
+                    <div className="flex items-center justify-between gap-2 mb-2">
+                      <span className="font-semibold">{row.engineLabel}</span>
+                      <span className={`px-2 py-0.5 rounded-full text-xs font-medium border ${STATUS_STYLE[row.status]}`}>
+                        {correlationStatusLabel(row.status)}
+                      </span>
+                    </div>
+                    <div className="flex gap-4 text-xs text-muted-foreground mb-2">
+                      <span>{row.crawls.toLocaleString()} crawls</span>
+                      <span>{row.probes} probes</span>
+                      <span>{Math.round(row.citationRate * 100)}% cited</span>
+                    </div>
+                    <p className="text-xs text-muted-foreground leading-relaxed">{row.insight}</p>
+                  </div>
+                ))}
+              </div>
             </div>
           )}
 
