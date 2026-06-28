@@ -74,6 +74,14 @@ export function generateReportHTML(data: ReportData, whiteLabel?: { name: string
   const measuredPct = Math.round((visibility.measuredRate ?? 0) * 100);
   const aiProvenance = measuredPct >= 60 ? "Live" : measuredPct > 0 ? "Partial" : "Unavailable";
 
+  // Sampling rigor: AI answers are volatile, so each LLM prompt is probed
+  // multiple times and majority-voted. Surface the max samples-per-prompt so
+  // the deliverable shows the statistical method (not a single noisy read).
+  const maxSamples = data.visibilityResults.reduce(
+    (m, r) => Math.max(m, r.sample_count ?? 1),
+    1
+  );
+
   return `<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -164,7 +172,7 @@ export function generateReportHTML(data: ReportData, whiteLabel?: { name: string
         <div class="metric"><div class="value">${Math.round(visibility.winRate * 100)}%</div><div class="label">Win Rate</div></div>
       </div>
       <p class="legend">Recommendation strength: ${Math.round((visibility.prominence ?? 0) * 100)}%${visibility.avgPosition !== null ? ` · Avg. answer position: #${visibility.avgPosition}` : ""} — how strongly (not just whether) AI engines recommend you when you appear.</p>
-      <p class="legend">Based on ${measuredPct}% measured AI probes. Rates are computed only over engines we could measure this run; unmeasured engines are excluded rather than counted as zero.</p>
+      <p class="legend">Based on ${measuredPct}% measured AI probes${maxSamples > 1 ? `, each AI prompt sampled up to ${maxSamples}× and majority-voted to control for AI response volatility` : ""}. Rates are computed only over engines we could measure this run; unmeasured engines are excluded rather than counted as zero.</p>
     </div>
 
     ${competitorWinPrompts.length > 0 ? `

@@ -32,7 +32,10 @@ export interface VisibilityScanResult extends Omit<VisibilityResult, "id" | "cre
 }
 
 const DEFAULT_ENGINES: VisibilityEngine[] = SCAN_ENGINES;
-const AI_SAMPLE_RUNS = Number(process.env.VISIBILITY_SAMPLE_RUNS || 3);
+// Samples per LLM prompt (majority-voted to tame AI response volatility).
+// Clamped to 1-10 and NaN-safe so a bad env value can never silently disable
+// LLM visibility (0 runs) or blow the budget with a runaway value.
+const AI_SAMPLE_RUNS = Math.min(10, Math.max(1, Math.floor(Number(process.env.VISIBILITY_SAMPLE_RUNS) || 3)));
 
 const LLM_ENGINES = new Set<VisibilityEngine>(["chatgpt", "claude", "gemini"]);
 
@@ -339,6 +342,13 @@ async function sampleLLMVisibility(
     ? mentionedRuns.reduce((s, r) => s + recommendationStrength(r.text, config.brandName), 0) / mentionedRuns.length
     : 0;
 
+  // Confidence from how consistent the samples were AND how many we ran. AI
+  // answers are volatile, so a unanimous 3/3 reads as more trustworthy than a
+  // split 2/3, and any single-sample read is shrunk so it never claims false
+  // certainty. agreement is the majority-class share (0.5..1).
+  const agreement = Math.max(mentionRate, 1 - mentionRate);
+  const sampleConfidence = Math.round(agreement * (runs.length / (runs.length + 1)) * 100) / 100;
+
   return {
     run_id: config.runId,
     project_id: config.projectId,
@@ -358,6 +368,7 @@ async function sampleLLMVisibility(
     owned_cited: citationRate >= 0.5,
     third_party_cited: mentionRate >= 0.5 && sourceDomains.some((d) => !d.includes(_brandToken)),
     answer_position: answerPosition(combinedText, config.brandName, config.competitors),
+    confidence: sampleConfidence,
     sample_count: runs.length,
     variance: Math.round(mentionRate * (1 - mentionRate) * 1000) / 1000,
     raw_response: {
