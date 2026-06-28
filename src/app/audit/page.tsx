@@ -17,6 +17,7 @@ export default function PublicAuditPage() {
     coverageItems?: Array<{ platform_name: string; is_present: boolean; competitor_present: boolean; surface: string }>;
     competitorGaps?: number;
     authorityOpportunities?: Array<{ target_site: string; pitch_angle: string }>;
+    authority?: { rating: number; referringDomains: number; domainAgeYears: number; sources: string[] } | null;
   } | null>(null);
 
   async function handleSubmit(e: React.FormEvent) {
@@ -64,6 +65,8 @@ export default function PublicAuditPage() {
                 <input
                   value={form.brandName}
                   onChange={(e) => setForm({ ...form, brandName: e.target.value })}
+                  placeholder="Acme Inc."
+                  title="Brand name"
                   className="w-full bg-background border border-input rounded-lg px-3 py-2 text-sm"
                 />
               </div>
@@ -83,6 +86,8 @@ export default function PublicAuditPage() {
                 type="email"
                 value={form.email}
                 onChange={(e) => setForm({ ...form, email: e.target.value })}
+                placeholder="you@company.com"
+                title="Email address"
                 className="w-full bg-background border border-input rounded-lg px-3 py-2 text-sm"
                 required
               />
@@ -105,6 +110,29 @@ export default function PublicAuditPage() {
                 <SubScoreBar label="Technical Readiness" score={result.score.technical_readiness} />
               </div>
             </div>
+
+            {result.authority && (
+              <div className="bg-card border border-border rounded-xl p-6">
+                <div className="flex items-center justify-between">
+                  <h2 className="font-semibold">Domain Authority</h2>
+                  <span className="text-2xl font-bold text-primary">{result.authority.rating}<span className="text-sm text-muted-foreground">/100</span></span>
+                </div>
+                <p className="text-sm text-muted-foreground mt-1">
+                  Free-signal blend (Tranco popularity, Common Crawl referring domains, domain age). High-authority domains are far more likely to be cited by AI engines.
+                </p>
+                <div className="flex flex-wrap gap-3 mt-3 text-xs text-muted-foreground">
+                  {result.authority.referringDomains > 0 && (
+                    <span className="bg-background border border-border rounded-full px-2.5 py-1">{result.authority.referringDomains} referring domains</span>
+                  )}
+                  {result.authority.domainAgeYears > 0 && (
+                    <span className="bg-background border border-border rounded-full px-2.5 py-1">{result.authority.domainAgeYears}y domain age</span>
+                  )}
+                  {result.authority.sources.map((s) => (
+                    <span key={s} className="bg-background border border-border rounded-full px-2.5 py-1">{s.replace(/_/g, " ")}</span>
+                  ))}
+                </div>
+              </div>
+            )}
 
             {result.criticalIssues > 0 && (
               <div>

@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { runTechnicalAudit } from "@/lib/engines/technical-audit";
 import { calculateOmniPresenceScore } from "@/lib/scoring/omnipresence";
+import { getAuthorityRating } from "@/lib/engines/authority-rating";
+import { getPageSpeed, pageSpeedToRetrievalScore } from "@/lib/providers/pagespeed";
 import { createServiceClient } from "@/lib/supabase/server";
 import { sendAuditLeadEmail } from "@/lib/email/reports";
 import { assertPublicDomain, assertDomainResolvesPublic, DomainValidationError } from "@/lib/security/domain";
@@ -47,7 +49,9 @@ export async function POST(request: NextRequest) {
     ? competitors.map((c: string) => String(c).slice(0, 80)).slice(0, 5)
     : [];
 
-  const [technicalFindings, intelligence] = await Promise.all([
+  // Same keyless authority + retrieval-health signals the authenticated scan
+  // feeds into the score, so the public number is computed identically.
+  const [technicalFindings, intelligence, authority, pageSpeed] = await Promise.all([
     runTechnicalAudit(normalized),
     runPublicAuditIntelligence({
       domain: normalized,
@@ -56,7 +60,13 @@ export async function POST(request: NextRequest) {
       location: loc,
       competitors: compList,
     }),
+    getAuthorityRating(normalized).catch(() => null),
+    getPageSpeed(normalized, "mobile").catch(() => null),
   ]);
+
+  const domainAuthority = authority && authority.rating > 0 ? authority.rating : undefined;
+  const pageSpeedScore =
+    pageSpeed?.success && pageSpeed.data ? pageSpeedToRetrievalScore(pageSpeed.data) : undefined;
 
   // Use the SAME rigorous, measured-only scorer as the authenticated product so
   // the public lead-gen number matches what the user sees after signing up.
@@ -110,6 +120,8 @@ export async function POST(request: NextRequest) {
     })),
     hasConversionTracking: false,
     hasGbp: false,
+    domainAuthority,
+    pageSpeedScore,
   });
 
   const criticalCount = technicalFindings.filter(
@@ -163,6 +175,14 @@ export async function POST(request: NextRequest) {
     backlinkCount: intelligence.backlinksAvailable ? intelligence.backlinkCount : null,
     backlinksAvailable: intelligence.backlinksAvailable,
     serpPresence: intelligence.serpPresence,
+    authority: authority
+      ? {
+          rating: authority.rating,
+          referringDomains: authority.components.referringDomains,
+          domainAgeYears: authority.components.ageYears,
+          sources: authority.sources,
+        }
+      : null,
     liveData: intelligence.liveData,
     dataMode: intelligence.dataMode,
     providersConfigured: intelligence.providers.configuredCount,
