@@ -15,6 +15,7 @@ import { trackApiUsage } from "@/lib/metering/api-usage";
 import {
   getPromptGenerationLimit,
   getVisibilityScanPromptLimit,
+  getOrganizationPlan,
 } from "@/lib/plans/limits";
 import {
   resolveScanDemoMode,
@@ -56,8 +57,9 @@ export async function runProjectScan(
 
   const p = project as Project;
   const demo = await resolveScanDemoMode(supabase, p.organization_id);
-  const promptCount = getPromptGenerationLimit();
-  const maxScanPrompts = getVisibilityScanPromptLimit();
+  const plan = await getOrganizationPlan(supabase, p.organization_id);
+  const promptCount = getPromptGenerationLimit(plan);
+  const maxScanPrompts = getVisibilityScanPromptLimit(plan);
 
   await supabase.from("projects").update({ status: "scanning" }).eq("id", projectId);
 

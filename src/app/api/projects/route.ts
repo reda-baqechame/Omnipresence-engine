@@ -3,6 +3,7 @@ import { createClient } from "@/lib/supabase/server";
 import { triggerProjectScan } from "@/lib/engines/trigger-scan";
 import { assertPublicDomain, DomainValidationError } from "@/lib/security/domain";
 import { apiError, apiServerError, apiUnauthorized, readJsonBody } from "@/lib/security/api-response";
+import { assertProjectLimit, PlanLimitExceededError } from "@/lib/plans/limits";
 
 export async function POST(request: NextRequest) {
   const supabase = await createClient();
@@ -32,6 +33,14 @@ export async function POST(request: NextRequest) {
 
   if (!membership) {
     return apiError("No organization found");
+  }
+
+  // Enforce per-plan project cap (no-op while FREE_ACCESS_MODE is on).
+  try {
+    await assertProjectLimit(supabase, membership.organization_id);
+  } catch (error) {
+    if (error instanceof PlanLimitExceededError) return apiError(error.message, 402);
+    return apiServerError("plan limit check failed", error);
   }
 
   const competitors = Array.isArray(body.competitors)

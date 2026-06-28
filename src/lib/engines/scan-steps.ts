@@ -26,7 +26,7 @@ import {
   generateDemoBrandProfile,
   generateDemoAuthorityOpportunities,
 } from "@/lib/demo/scan-data";
-import { getPromptGenerationLimit, getVisibilityScanPromptLimit } from "@/lib/plans/limits";
+import { getPromptGenerationLimit, getVisibilityScanPromptLimit, getOrganizationPlan } from "@/lib/plans/limits";
 import { resolveAndPersistCompetitors } from "@/lib/engines/competitor-resolver";
 import { syncExecutionTasks, verifyTaskResolution } from "@/lib/engines/execution-tasks";
 import { computeAndRecordFindingDiff } from "@/lib/engines/finding-diff";
@@ -88,8 +88,9 @@ export async function stepBrandExtract(supabase: SupabaseClient, project: Projec
 }
 
 export async function stepVisibilityScan(supabase: SupabaseClient, project: Project, demo: boolean) {
-  const promptCount = getPromptGenerationLimit();
-  const maxScanPrompts = getVisibilityScanPromptLimit();
+  const plan = await getOrganizationPlan(supabase, project.organization_id);
+  const promptCount = getPromptGenerationLimit(plan);
+  const maxScanPrompts = getVisibilityScanPromptLimit(plan);
 
   const { data: brand } = await supabase.from("brand_profiles").select("*").eq("project_id", project.id).single();
   const services = (brand?.products_services || []).map((s: { name: string }) => s.name);

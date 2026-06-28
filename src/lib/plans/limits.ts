@@ -12,6 +12,30 @@ export class PlanLimitExceededError extends Error {
   }
 }
 
+/**
+ * Per-plan allowances. Active only when FREE_ACCESS_MODE=false, so flipping the
+ * flag turns on real enforcement instantly — no code change needed. Values are
+ * intentionally generous; tune to match the published pricing tiers.
+ * `Infinity` = unlimited.
+ */
+export interface PlanLimits {
+  projects: number;
+  promptGeneration: number;
+  scanPrompts: number;
+}
+
+const PLAN_LIMITS: Record<SubscriptionPlan, PlanLimits> = {
+  free: { projects: 1, promptGeneration: 50, scanPrompts: 25 },
+  audit: { projects: 1, promptGeneration: 150, scanPrompts: 50 },
+  tracking: { projects: 3, promptGeneration: 300, scanPrompts: 100 },
+  agency: { projects: 25, promptGeneration: 500, scanPrompts: 150 },
+  enterprise: { projects: Infinity, promptGeneration: 1000, scanPrompts: 300 },
+};
+
+export function getPlanLimits(plan?: SubscriptionPlan): PlanLimits {
+  return PLAN_LIMITS[(plan || "free") as SubscriptionPlan] || PLAN_LIMITS.free;
+}
+
 export async function getOrganizationPlan(
   supabase: import("@supabase/supabase-js").SupabaseClient,
   organizationId: string
@@ -25,21 +49,42 @@ export async function getOrganizationPlan(
   return (org?.plan as SubscriptionPlan) || "free";
 }
 
+/**
+ * Enforce the per-plan project cap. No-op while FREE_ACCESS_MODE is on. When
+ * enforcement is active it counts the org's existing projects and throws a
+ * PlanLimitExceededError (mapped to HTTP 402) once the plan cap is reached.
+ */
 export async function assertProjectLimit(
-  _supabase: import("@supabase/supabase-js").SupabaseClient,
-  _organizationId: string,
-  _plan?: SubscriptionPlan
+  supabase: import("@supabase/supabase-js").SupabaseClient,
+  organizationId: string,
+  plan?: SubscriptionPlan
 ): Promise<void> {
   if (FREE_ACCESS_MODE) return;
-  throw new PlanLimitExceededError("Plan limits are enabled but not configured.");
+
+  const resolvedPlan = plan ?? (await getOrganizationPlan(supabase, organizationId));
+  const limit = getPlanLimits(resolvedPlan).projects;
+  if (!Number.isFinite(limit)) return;
+
+  const { count } = await supabase
+    .from("projects")
+    .select("id", { count: "exact", head: true })
+    .eq("organization_id", organizationId);
+
+  if ((count ?? 0) >= limit) {
+    throw new PlanLimitExceededError(
+      `Your ${resolvedPlan} plan allows ${limit} project${limit === 1 ? "" : "s"}. Upgrade to add more.`
+    );
+  }
 }
 
-export function getPromptGenerationLimit(_plan?: SubscriptionPlan): number {
-  return DEFAULT_PROMPT_GENERATION_LIMIT;
+export function getPromptGenerationLimit(plan?: SubscriptionPlan): number {
+  if (FREE_ACCESS_MODE) return DEFAULT_PROMPT_GENERATION_LIMIT;
+  return getPlanLimits(plan).promptGeneration;
 }
 
-export function getVisibilityScanPromptLimit(_plan?: SubscriptionPlan): number {
-  return DEFAULT_VISIBILITY_SCAN_LIMIT;
+export function getVisibilityScanPromptLimit(plan?: SubscriptionPlan): number {
+  if (FREE_ACCESS_MODE) return DEFAULT_VISIBILITY_SCAN_LIMIT;
+  return getPlanLimits(plan).scanPrompts;
 }
 
 /**
