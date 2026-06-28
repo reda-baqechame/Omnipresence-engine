@@ -17,6 +17,23 @@ export interface SocialMention {
 
 const UA = "OmniPresence-Mentions/1.0 (https://github.com)";
 
+/** Alphanumeric-normalized token (handles spacing/punctuation differences). */
+function norm(s: string): string {
+  return s.toLowerCase().replace(/[^a-z0-9]+/g, "");
+}
+
+/**
+ * Relevance guard: keep a result only when the brand/competitor query actually
+ * appears in the candidate text. Prevents counting brand-irrelevant noise
+ * (e.g. linear-algebra repos for the brand "Linear") as real mentions. Skips
+ * filtering for tokens too short to disambiguate.
+ */
+function matchesQuery(text: string, query: string): boolean {
+  const q = norm(query);
+  if (q.length < 3) return true;
+  return norm(text).includes(q);
+}
+
 // ---------- Stack Exchange (keyless; optional key for higher quota) ----------
 export async function searchStackExchange(query: string, site = "stackoverflow"): Promise<SocialMention[]> {
   try {
@@ -64,6 +81,7 @@ export async function searchGitHub(query: string): Promise<SocialMention[]> {
     const data = (await res.json()) as { items?: Array<{ html_url?: string; full_name?: string; description?: string; created_at?: string }> };
     return (data.items || [])
       .filter((i) => i.html_url)
+      .filter((i) => matchesQuery(`${i.full_name || ""} ${i.description || ""}`, query))
       .map((i) => ({
         platform: "github" as const,
         url: i.html_url!,
@@ -82,22 +100,25 @@ export async function searchProductHunt(query: string): Promise<SocialMention[]>
   const token = process.env.PRODUCTHUNT_TOKEN;
   if (!token || token.startsWith("your-")) return [];
   try {
-    const gql = `query($q:String!){ posts(first:10){ edges{ node{ name tagline url createdAt } } } }`;
+    // Product Hunt's public GraphQL has no full-text post search, so we pull a
+    // window of recent posts and match the brand client-side. NOTE: the query
+    // must NOT declare an unused $q variable — GraphQL's NoUnusedVariables rule
+    // rejects that, which previously made this provider always error out.
+    const gql = `query{ posts(first:20, order:NEWEST){ edges{ node{ name tagline url createdAt } } } }`;
     const res = await fetchWithTimeout("https://api.producthunt.com/v2/api/graphql", {
       method: "POST",
       headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json", "User-Agent": UA },
-      body: JSON.stringify({ query: gql, variables: { q: query } }),
+      body: JSON.stringify({ query: gql }),
       timeoutMs: 15_000,
     });
     if (!res.ok) return [];
     const data = (await res.json()) as {
       data?: { posts?: { edges?: Array<{ node?: { name?: string; tagline?: string; url?: string; createdAt?: string } }> } };
     };
-    const q = query.toLowerCase();
     return (data.data?.posts?.edges || [])
       .map((e) => e.node)
       .filter((n): n is { name?: string; tagline?: string; url?: string; createdAt?: string } => Boolean(n?.url))
-      .filter((n) => `${n.name} ${n.tagline}`.toLowerCase().includes(q))
+      .filter((n) => matchesQuery(`${n.name || ""} ${n.tagline || ""}`, query))
       .map((n) => ({
         platform: "producthunt" as const,
         url: n.url!,
@@ -125,6 +146,9 @@ export async function searchMastodon(query: string): Promise<SocialMention[]> {
     const data = (await res.json()) as Array<{ url?: string; content?: string; created_at?: string; account?: { acct?: string } }>;
     return (data || [])
       .filter((s) => s.url)
+      // Hashtag timelines collide on common words (e.g. #linear); keep posts
+      // whose text actually contains the brand to cut topic-collision noise.
+      .filter((s) => matchesQuery(`${s.account?.acct || ""} ${stripHtml(s.content || "")}`, query))
       .map((s) => ({
         platform: "mastodon" as const,
         url: s.url!,
