@@ -2,7 +2,7 @@ import { notFound } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { calculateVisibilityMetrics } from "@/lib/engines/visibility-scanner";
 import { calculateShareOfVoice, calculateShareOfVoiceByEngine, calculateSovTrend, compareShareOfVoice } from "@/lib/engines/share-of-voice";
-import { measuredEngineStats, competitorWinPrompts, topCitedSources, pageOpportunities } from "@/lib/engines/visibility-insights";
+import { measuredEngineStats, competitorWinPrompts, topCitedSources, missingCitationSources, pageOpportunities } from "@/lib/engines/visibility-insights";
 import { SovLeaderboard } from "@/components/sov-leaderboard";
 import { SovByEngineBreakdown } from "@/components/sov-by-engine";
 import { SovTrendChart } from "@/components/sov-trend-chart";
@@ -100,6 +100,7 @@ export default async function VisibilityPage({
   const competitorWins = competitorWinPrompts(insightResults);
   const citedSources = topCitedSources(insightResults, project.domain || "");
   const missingSources = citedSources.filter((s) => !s.ownsBrand);
+  const lostSources = missingCitationSources(insightResults, project.domain || "");
   const pagePlays = pageOpportunities(insightResults);
 
   const heatmapCells = (() => {
@@ -287,6 +288,35 @@ export default async function VisibilityPage({
                 <span className="font-medium shrink-0">{s.count}×</span>
               </div>
             ))}
+          </div>
+        </div>
+      )}
+
+      {lostSources.length > 0 && (
+        <div>
+          <h2 className="text-xl font-semibold mb-1">Missing citation sources (where rivals win)</h2>
+          <p className="text-sm text-muted-foreground mb-4 max-w-3xl">
+            Domains AI cites in answers where a competitor wins and you&apos;re absent — and which never cite you anywhere. These are your sharpest outreach targets: earn a placement here and you displace a rival in the exact answers you&apos;re losing.
+          </p>
+          <div className="bg-card border border-border rounded-xl overflow-hidden">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="border-b border-border text-muted-foreground">
+                  <th className="text-left p-3">Source domain</th>
+                  <th className="text-right p-3">Lost answers</th>
+                  <th className="text-left p-3">Rivals it feeds</th>
+                </tr>
+              </thead>
+              <tbody>
+                {lostSources.map((s) => (
+                  <tr key={s.domain} className="border-b border-border/50">
+                    <td className="p-3 truncate" title={s.domain}>{s.domain}</td>
+                    <td className="p-3 text-right font-medium">{s.count}×</td>
+                    <td className="p-3 text-muted-foreground">{s.competitors.join(", ") || "—"}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
           </div>
         </div>
       )}

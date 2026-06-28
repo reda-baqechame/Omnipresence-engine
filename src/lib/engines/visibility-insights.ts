@@ -252,3 +252,68 @@ export function topCitedSources(
     .sort((a, b) => b.count - a.count)
     .slice(0, limit);
 }
+
+export interface MissingCitationSource {
+  domain: string;
+  /** How many measured answers cited this domain while the brand was NOT cited. */
+  count: number;
+  /** Competitors that appeared in those same answers (your rivals on this source). */
+  competitors: string[];
+}
+
+/**
+ * The sharpest outreach list: third-party domains AI cites in answers where a
+ * competitor wins and YOU are absent (not cited). These are the exact sources
+ * feeding your competitors' citations but not yours — get featured here and you
+ * get pulled into the answers you're currently losing. Excludes your own domain
+ * and any domain that already cites you in some other answer (those aren't
+ * "missing"). Measured probes only.
+ */
+export function missingCitationSources(
+  results: VisibilityResult[],
+  brandDomain: string,
+  limit = 20
+): MissingCitationSource[] {
+  const brandHost = registrableHost(brandDomain);
+  const isOwn = (host: string) =>
+    brandHost.length > 0 && (host === brandHost || host.endsWith(`.${brandHost}`));
+
+  // Domains that cite the brand in ANY measured answer are already "won" — drop them.
+  const citesBrand = new Set<string>();
+  for (const r of results) {
+    if (!isMeasured(r) || !r.brand_cited) continue;
+    for (const d of r.source_domains || []) {
+      const host = registrableHost(d);
+      if (host) citesBrand.add(host);
+    }
+  }
+
+  const agg = new Map<string, { count: number; comps: Set<string> }>();
+  for (const r of results) {
+    if (!isMeasured(r)) continue;
+    if (r.brand_cited) continue; // we're already cited here → not a loss
+    const comps = [
+      ...new Set([
+        ...Object.entries(r.competitor_mentions || {}).filter(([, v]) => v).map(([k]) => k),
+        ...Object.entries(r.competitor_citations || {}).filter(([, v]) => v).map(([k]) => k),
+      ]),
+    ];
+    if (comps.length === 0) continue; // absent but nobody wins → not an outreach target
+    for (const d of r.source_domains || []) {
+      const host = registrableHost(d);
+      if (!host || isOwn(host) || citesBrand.has(host)) continue;
+      let e = agg.get(host);
+      if (!e) {
+        e = { count: 0, comps: new Set() };
+        agg.set(host, e);
+      }
+      e.count += 1;
+      for (const c of comps) e.comps.add(c);
+    }
+  }
+
+  return [...agg.entries()]
+    .map(([domain, e]) => ({ domain, count: e.count, competitors: [...e.comps] }))
+    .sort((a, b) => b.count - a.count)
+    .slice(0, limit);
+}
