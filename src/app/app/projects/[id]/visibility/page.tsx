@@ -1,8 +1,10 @@
 import { notFound } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { calculateVisibilityMetrics } from "@/lib/engines/visibility-scanner";
-import { calculateShareOfVoice } from "@/lib/engines/share-of-voice";
+import { calculateShareOfVoice, calculateShareOfVoiceByEngine, calculateSovTrend } from "@/lib/engines/share-of-voice";
 import { SovLeaderboard } from "@/components/sov-leaderboard";
+import { SovByEngineBreakdown } from "@/components/sov-by-engine";
+import { SovTrendChart } from "@/components/sov-trend-chart";
 import { preferLiveData } from "@/lib/config/capabilities";
 import { compareVisibilityRuns } from "@/lib/engines/visibility-delta";
 import type { VisibilityResult } from "@/types/database";
@@ -44,6 +46,20 @@ export default async function VisibilityPage({
   const sovResults = latestRunId ? results.filter((r) => r.run_id === latestRunId) : results;
   const sov = calculateShareOfVoice(
     sovResults.length ? sovResults : results,
+    project.name,
+    project.competitors || []
+  );
+  const sovByEngine = calculateShareOfVoiceByEngine(
+    sovResults.length ? sovResults : results,
+    project.name,
+    project.competitors || []
+  );
+  const sovTrend = calculateSovTrend(
+    completedRuns.map((r) => ({
+      runId: r.id,
+      date: r.completed_at || r.created_at,
+      results: results.filter((x) => x.run_id === r.id),
+    })),
     project.name,
     project.competitors || []
   );
@@ -131,6 +147,10 @@ export default async function VisibilityPage({
       </div>
 
       <SovLeaderboard sov={sov} />
+
+      <SovByEngineBreakdown data={sovByEngine} />
+
+      <SovTrendChart points={sovTrend} />
 
       {runDelta && (
         <CitationMovementPanel delta={runDelta} competitors={project.competitors || []} />

@@ -136,3 +136,70 @@ export function calculateShareOfVoice(
     sampleSize: pool.length,
   };
 }
+
+export interface SovByEngine {
+  engine: string;
+  sov: ShareOfVoiceResult;
+}
+
+/**
+ * Per-engine Share of Voice — where you win (e.g. ChatGPT) vs lose (e.g.
+ * Perplexity). The same prominence-weighted methodology, sliced by engine, so a
+ * customer can target the specific surfaces where competitors out-rank them.
+ * Only engines with at least one measured answer are returned.
+ */
+export function calculateShareOfVoiceByEngine(
+  results: VisibilityResult[],
+  brandName: string,
+  competitors: string[]
+): SovByEngine[] {
+  const byEngine = new Map<string, VisibilityResult[]>();
+  for (const r of results) {
+    if (!byEngine.has(r.engine)) byEngine.set(r.engine, []);
+    byEngine.get(r.engine)!.push(r);
+  }
+  return [...byEngine.entries()]
+    .map(([engine, rows]) => ({ engine, sov: calculateShareOfVoice(rows, brandName, competitors) }))
+    .filter((x) => x.sov.sampleSize > 0)
+    .sort((a, b) => (b.sov.brand?.shareOfVoice ?? 0) - (a.sov.brand?.shareOfVoice ?? 0));
+}
+
+export interface SovTrendPoint {
+  runId: string;
+  /** ISO date of the run (completed_at or created_at). */
+  date: string;
+  /** Brand's prominence-weighted share of voice for that run (0-1). */
+  shareOfVoice: number;
+  /** Brand's rank on that run's leaderboard (1 = leader), null if absent. */
+  rank: number | null;
+  /** Total entities competing on that run (for context). */
+  fieldSize: number;
+  /** Measured probes in the run. */
+  sampleSize: number;
+}
+
+/**
+ * Share-of-Voice trend across completed runs (oldest → newest) — the retention
+ * hook that shows the leaderboard MOVING as the platform does its work. Each
+ * point is the brand's prominence-weighted SoV for one run.
+ */
+export function calculateSovTrend(
+  runs: Array<{ runId: string; date: string; results: VisibilityResult[] }>,
+  brandName: string,
+  competitors: string[]
+): SovTrendPoint[] {
+  return runs
+    .map(({ runId, date, results }) => {
+      const sov = calculateShareOfVoice(results, brandName, competitors);
+      return {
+        runId,
+        date,
+        shareOfVoice: sov.brand?.shareOfVoice ?? 0,
+        rank: sov.brandRank,
+        fieldSize: sov.leaderboard.length,
+        sampleSize: sov.sampleSize,
+      };
+    })
+    .filter((p) => p.sampleSize > 0)
+    .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
+}
