@@ -109,7 +109,10 @@ export function hasSerpCapability(): boolean {
     hasEnv("SERPER_API_KEY") ||
     hasEnv("BRAVE_SEARCH_API_KEY") ||
     (hasEnv("OMNIDATA_BASE_URL") && hasEnv("OMNIDATA_API_KEY")) ||
-    (hasEnv("DATAFORSEO_LOGIN") && hasEnv("DATAFORSEO_PASSWORD"))
+    (hasEnv("DATAFORSEO_LOGIN") && hasEnv("DATAFORSEO_PASSWORD")) ||
+    // Firecrawl /v1/search returns live Google organic results — a real,
+    // working SERP backend whenever a Firecrawl key is configured.
+    hasEnv("FIRECRAWL_API_KEY")
   );
 }
 
@@ -141,6 +144,7 @@ export function getCapabilitiesSummary() {
     hasEnv("SERPER_API_KEY") ? "serper" :
     hasEnv("BRAVE_SEARCH_API_KEY") ? "brave" :
     hasLLMMentionsCapability() ? "dataforseo" :
+    hasEnv("FIRECRAWL_API_KEY") ? "firecrawl" :
     null;
 
   return {

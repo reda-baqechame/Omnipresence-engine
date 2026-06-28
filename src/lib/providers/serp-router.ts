@@ -5,9 +5,10 @@ import {
 import { searchGoogleOrganicBrave } from "@/lib/providers/brave-search";
 import { searchGoogleOrganicSerper } from "@/lib/providers/serper";
 import { searchGoogleOrganicSearxng, hasSearxngCapability } from "@/lib/providers/searxng";
+import { searchGoogleOrganicFirecrawl, hasFirecrawlCapability } from "@/lib/providers/firecrawl";
 import type { ProviderResult, SERPResult } from "./types";
 
-export type SerpProviderId = "serper" | "brave" | "searxng" | "omnidata" | "dataforseo";
+export type SerpProviderId = "serper" | "brave" | "searxng" | "firecrawl" | "omnidata" | "dataforseo";
 
 function hasEnv(key: string): boolean {
   const v = process.env[key];
@@ -25,6 +26,7 @@ export function getActiveSerpProvider(): SerpProviderId | null {
   if (hasSearxngCapability()) return "searxng";
   if (isOmniDataActive()) return "omnidata";
   if (hasEnv("DATAFORSEO_LOGIN") && hasEnv("DATAFORSEO_PASSWORD")) return "dataforseo";
+  if (hasFirecrawlCapability()) return "firecrawl";
   return null;
 }
 
@@ -59,6 +61,14 @@ export async function searchGoogleOrganicRouter(
       id: isOmniDataActive() ? "omnidata" : "dataforseo",
       enabled: hasDataForSeoBackend(),
       search: () => searchGoogleOrganicDataForSEO(keyword, location, brandDomain, competitors),
+    },
+    // Firecrawl /v1/search returns live Google organic results. Last in the
+    // chain because it costs a credit, but it's the default working SERP path
+    // in production (where a Firecrawl key is present and no dedicated SERP API).
+    {
+      id: "firecrawl",
+      enabled: hasFirecrawlCapability(),
+      search: () => searchGoogleOrganicFirecrawl(keyword, location, brandDomain, competitors),
     },
   ];
 

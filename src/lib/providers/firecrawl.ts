@@ -1,9 +1,113 @@
-import type { ProviderResult, CrawlResult } from "./types";
+import type { ProviderResult, CrawlResult, SERPResult } from "./types";
+import { logProviderError } from "@/lib/observability/log";
 
 /** True only when a real (non-placeholder) Firecrawl key is configured. */
 export function hasFirecrawlCapability(): boolean {
   const k = process.env.FIRECRAWL_API_KEY;
   return Boolean(k && k.trim() && !k.startsWith("your-"));
+}
+
+interface FirecrawlSearchItem {
+  url?: string;
+  title?: string;
+  description?: string;
+}
+
+function hostnameFrom(url: string): string {
+  try {
+    return new URL(url).hostname.replace(/^www\./, "");
+  } catch {
+    return "";
+  }
+}
+
+/**
+ * Real Google organic SERP via Firecrawl's /v1/search (live Google results).
+ * This is the keyless-by-default SERP path in production: whenever a Firecrawl
+ * key exists we can measure real brand ranking + presence without a dedicated
+ * SERP API. Returns the same SERPResult contract as Serper/Brave so the router
+ * and visibility scanner treat it as fully measured (grounded) data.
+ */
+export async function searchGoogleOrganicFirecrawl(
+  keyword: string,
+  location = "United States",
+  brandDomain = "",
+  competitors: string[] = []
+): Promise<ProviderResult<SERPResult>> {
+  const apiKey = process.env.FIRECRAWL_API_KEY;
+  if (!hasFirecrawlCapability() || !apiKey) {
+    return { success: false, error: "Firecrawl not configured" };
+  }
+  try {
+    const response = await fetch("https://api.firecrawl.dev/v1/search", {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${apiKey}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ query: keyword, limit: 20, location }),
+      signal: AbortSignal.timeout(30000),
+    });
+
+    if (!response.ok) {
+      // Some Firecrawl plans reject the `location` field — retry once without it.
+      if (response.status === 400) {
+        const retry = await fetch("https://api.firecrawl.dev/v1/search", {
+          method: "POST",
+          headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
+          body: JSON.stringify({ query: keyword, limit: 20 }),
+          signal: AbortSignal.timeout(30000),
+        });
+        if (!retry.ok) throw new Error(`Firecrawl search error: ${retry.status}`);
+        return parseFirecrawlSearch(await retry.json(), brandDomain, competitors);
+      }
+      throw new Error(`Firecrawl search error: ${response.status}`);
+    }
+
+    return parseFirecrawlSearch(await response.json(), brandDomain, competitors);
+  } catch (error) {
+    logProviderError("firecrawl.search", error, { keyword, location });
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : "Firecrawl search failed",
+    };
+  }
+}
+
+function parseFirecrawlSearch(
+  raw: unknown,
+  brandDomain: string,
+  competitors: string[]
+): ProviderResult<SERPResult> {
+  const items = ((raw as { data?: FirecrawlSearchItem[] })?.data || []).filter((i) => i.url);
+  const organicResults = items.map((item, index) => ({
+    title: item.title || "",
+    url: item.url || "",
+    position: index + 1,
+  }));
+
+  const domainLower = brandDomain.toLowerCase().replace(/^www\./, "");
+
+  const brandInResults = Boolean(
+    domainLower &&
+      organicResults.some(
+        (r) => hostnameFrom(r.url) === domainLower || hostnameFrom(r.url).endsWith(`.${domainLower}`)
+      )
+  );
+
+  const competitorInResults: Record<string, boolean> = {};
+  for (const comp of competitors) {
+    const compToken = comp.toLowerCase().replace(/\s+/g, "");
+    competitorInResults[comp] = organicResults.some((r) =>
+      hostnameFrom(r.url).replace(/\..*$/, "").includes(compToken)
+    );
+  }
+
+  return {
+    success: true,
+    data: { organicResults, aiOverview: undefined, brandInResults, competitorInResults },
+    creditsUsed: 1,
+  };
 }
 
 export async function scrapePage(url: string): Promise<ProviderResult<CrawlResult>> {
