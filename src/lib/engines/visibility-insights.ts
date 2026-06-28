@@ -85,6 +85,78 @@ export function competitorWinPrompts(results: VisibilityResult[], limit = 25): C
     .slice(0, limit);
 }
 
+export interface PagePlay {
+  prompt: string;
+  engines: string[];
+  competitors: string[];
+  reason: string;
+}
+
+export interface PageOpportunities {
+  create: PagePlay[];
+  update: PagePlay[];
+}
+
+/**
+ * Turn measured probe outcomes into a concrete content worklist:
+ *   - create: prompts where you're absent but a competitor wins → build a new
+ *     answer-first page to enter the answer.
+ *   - update: prompts where you're MENTIONED but not CITED → you already have a
+ *     page in the model's view; strengthen it (cit* able facts, schema,
+ *     answer-first structure) to convert the mention into a citation.
+ * Deduped by prompt across engines so each play appears once.
+ */
+export function pageOpportunities(results: VisibilityResult[], limit = 20): PageOpportunities {
+  const createMap = new Map<string, PagePlay>();
+  const updateMap = new Map<string, PagePlay>();
+
+  for (const r of results) {
+    if (!isMeasured(r)) continue;
+    const prompt = r.prompt_text;
+    if (!prompt) continue;
+
+    if (!r.brand_mentioned && !r.brand_cited) {
+      const comps = [
+        ...new Set([
+          ...Object.entries(r.competitor_mentions || {}).filter(([, v]) => v).map(([k]) => k),
+          ...Object.entries(r.competitor_citations || {}).filter(([, v]) => v).map(([k]) => k),
+        ]),
+      ];
+      if (comps.length === 0) continue; // absent but nobody wins → not a clear play
+      const prev = createMap.get(prompt);
+      if (prev) {
+        prev.engines = [...new Set([...prev.engines, r.engine])];
+        prev.competitors = [...new Set([...prev.competitors, ...comps])];
+      } else {
+        createMap.set(prompt, {
+          prompt,
+          engines: [r.engine],
+          competitors: comps,
+          reason: "You're absent here while competitors win the answer — create an answer-first page targeting this query.",
+        });
+      }
+    } else if (r.brand_mentioned && !r.brand_cited) {
+      const prev = updateMap.get(prompt);
+      if (prev) {
+        prev.engines = [...new Set([...prev.engines, r.engine])];
+      } else {
+        updateMap.set(prompt, {
+          prompt,
+          engines: [r.engine],
+          competitors: [],
+          reason: "You're mentioned but not cited — strengthen the page with citable facts + schema to earn the link.",
+        });
+      }
+    }
+  }
+
+  const byReach = (a: PagePlay, b: PagePlay) => b.engines.length - a.engines.length;
+  return {
+    create: [...createMap.values()].sort((a, b) => b.competitors.length - a.competitors.length || byReach(a, b)).slice(0, limit),
+    update: [...updateMap.values()].sort(byReach).slice(0, limit),
+  };
+}
+
 export interface CitedSource {
   domain: string;
   count: number;

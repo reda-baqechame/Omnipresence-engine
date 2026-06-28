@@ -2,7 +2,7 @@ import { notFound } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { calculateVisibilityMetrics } from "@/lib/engines/visibility-scanner";
 import { calculateShareOfVoice, calculateShareOfVoiceByEngine, calculateSovTrend, compareShareOfVoice } from "@/lib/engines/share-of-voice";
-import { measuredEngineStats, competitorWinPrompts, topCitedSources } from "@/lib/engines/visibility-insights";
+import { measuredEngineStats, competitorWinPrompts, topCitedSources, pageOpportunities } from "@/lib/engines/visibility-insights";
 import { SovLeaderboard } from "@/components/sov-leaderboard";
 import { SovByEngineBreakdown } from "@/components/sov-by-engine";
 import { SovTrendChart } from "@/components/sov-trend-chart";
@@ -100,6 +100,7 @@ export default async function VisibilityPage({
   const competitorWins = competitorWinPrompts(insightResults);
   const citedSources = topCitedSources(insightResults, project.domain || "");
   const missingSources = citedSources.filter((s) => !s.ownsBrand);
+  const pagePlays = pageOpportunities(insightResults);
 
   const heatmapCells = (() => {
     const promptMap = new Map((prompts || []).map((p) => [p.id, p.category as PromptCategory]));
@@ -224,6 +225,51 @@ export default async function VisibilityPage({
                 ))}
               </tbody>
             </table>
+          </div>
+        </div>
+      )}
+
+      {(pagePlays.create.length > 0 || pagePlays.update.length > 0) && (
+        <div className="grid lg:grid-cols-2 gap-6">
+          <div>
+            <h2 className="text-xl font-semibold mb-1">Pages to create ({pagePlays.create.length})</h2>
+            <p className="text-sm text-muted-foreground mb-3 max-w-xl">
+              Queries where you&apos;re absent and competitors win the answer. Build an answer-first page for each.
+            </p>
+            <div className="space-y-2">
+              {pagePlays.create.length === 0 ? (
+                <p className="text-sm text-muted-foreground">None — you appear on every measured competitor-won prompt.</p>
+              ) : (
+                pagePlays.create.map((p, i) => (
+                  <div key={`c-${i}`} className="bg-card border border-border rounded-lg p-3">
+                    <p className="text-sm font-medium leading-snug">{p.prompt}</p>
+                    <p className="text-xs text-muted-foreground mt-1">
+                      Winning: {p.competitors.join(", ") || "competitors"} · {p.engines.length} engine{p.engines.length === 1 ? "" : "s"}
+                    </p>
+                  </div>
+                ))
+              )}
+            </div>
+          </div>
+          <div>
+            <h2 className="text-xl font-semibold mb-1">Pages to update ({pagePlays.update.length})</h2>
+            <p className="text-sm text-muted-foreground mb-3 max-w-xl">
+              Queries where you&apos;re mentioned but not cited. Strengthen the existing page with citable facts + schema to earn the link.
+            </p>
+            <div className="space-y-2">
+              {pagePlays.update.length === 0 ? (
+                <p className="text-sm text-muted-foreground">None — every mention is already converting to a citation.</p>
+              ) : (
+                pagePlays.update.map((p, i) => (
+                  <div key={`u-${i}`} className="bg-card border border-border rounded-lg p-3">
+                    <p className="text-sm font-medium leading-snug">{p.prompt}</p>
+                    <p className="text-xs text-muted-foreground mt-1">
+                      Mentioned, not cited · {p.engines.length} engine{p.engines.length === 1 ? "" : "s"}
+                    </p>
+                  </div>
+                ))
+              )}
+            </div>
           </div>
         </div>
       )}
