@@ -186,8 +186,15 @@ export async function POST(request: NextRequest) {
     liveData: intelligence.liveData,
     dataMode: intelligence.dataMode,
     providersConfigured: intelligence.providers.configuredCount,
-    message: intelligence.liveData
-      ? "Live audit with real SERP/AI visibility data. Sign up for full competitor tracking and 90-day execution roadmap."
-      : "Technical audit is live. Add API keys (Serper + OpenAI minimum) for full AI visibility measurement.",
+    // Be honest about what was actually MEASURED this run, not just what's
+    // configured. Claiming "real AI visibility data" when measuredRate is 0
+    // (probes returned unavailable) is exactly the overclaim a premium tool
+    // must avoid — the message keys off the real measured rate.
+    message:
+      intelligence.visibilityMetrics.measuredRate > 0
+        ? "Live audit with real SERP/AI visibility data. Sign up for full competitor tracking and 90-day execution roadmap."
+        : intelligence.liveData
+          ? "Live technical + authority audit. AI visibility wasn't measurable this run — sign up to connect engines and track ChatGPT/Perplexity/Google citations."
+          : "Technical audit is live. Add API keys (Serper + OpenAI minimum) for full AI visibility measurement.",
   });
 }
