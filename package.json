@@ -10,6 +10,8 @@
     "typecheck": "tsc --noEmit",
     "smoke": "node scripts/smoke-test.mjs",
     "check:env": "node scripts/check-env.mjs",
+    "verify:providers": "node scripts/verify-providers.mjs",
+    "env:push": "node scripts/push-env-to-vercel.mjs",
     "verify:prod": "node scripts/verify-production.mjs",
     "prod:keygen": "node scripts/generate-integration-key.mjs",
     "prod:setup": "node scripts/prod-setup.mjs",
