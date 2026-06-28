@@ -38,20 +38,22 @@ CREATE INDEX IF NOT EXISTS idx_guarantee_claims_project ON guarantee_claims(proj
 ALTER TABLE guarantee_contracts ENABLE ROW LEVEL SECURITY;
 ALTER TABLE guarantee_claims ENABLE ROW LEVEL SECURITY;
 
+DROP POLICY IF EXISTS guarantee_contracts_org_access ON guarantee_contracts;
 CREATE POLICY guarantee_contracts_org_access ON guarantee_contracts
   FOR ALL USING (
     project_id IN (
       SELECT p.id FROM projects p
-      JOIN organization_members om ON om.organization_id = p.organization_id
-      WHERE om.user_id = auth.uid()
+      JOIN memberships m ON m.organization_id = p.organization_id
+      WHERE m.user_id = auth.uid()
     )
   );
 
+DROP POLICY IF EXISTS guarantee_claims_org_access ON guarantee_claims;
 CREATE POLICY guarantee_claims_org_access ON guarantee_claims
   FOR ALL USING (
     project_id IN (
       SELECT p.id FROM projects p
-      JOIN organization_members om ON om.organization_id = p.organization_id
-      WHERE om.user_id = auth.uid()
+      JOIN memberships m ON m.organization_id = p.organization_id
+      WHERE m.user_id = auth.uid()
     )
   );
