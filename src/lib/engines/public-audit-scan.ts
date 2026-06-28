@@ -5,6 +5,7 @@ import { findAuthorityOpportunities } from "@/lib/engines/authority-finder";
 import { checkPlatformCoverage } from "@/lib/engines/coverage-checker";
 import { getBacklinksFree } from "@/lib/providers/backlinks-free";
 import { searchGoogleOrganicRouter } from "@/lib/providers/serp-router";
+import { sameRegistrableDomain } from "@/lib/engines/brand-matcher";
 import type { VisibilityEngine, VisibilityResult } from "@/types/database";
 import type { TechnicalAuditFinding } from "@/lib/engines/technical-audit";
 import {
@@ -20,7 +21,11 @@ function selectPublicEngines(): VisibilityEngine[] {
   const engines: VisibilityEngine[] = [];
   if (process.env.PERPLEXITY_API_KEY) engines.push("perplexity");
   if (hasSerpCapability()) engines.push("google_organic", "google_ai_overview");
+  // Probe every configured generative engine — a real AI-visibility audit should
+  // reflect ChatGPT, Claude, AND Gemini, not just one. Bounded by the cost guard.
   if (process.env.OPENAI_API_KEY) engines.push("chatgpt");
+  if (process.env.ANTHROPIC_API_KEY) engines.push("claude");
+  if (process.env.GOOGLE_GENERATIVE_AI_API_KEY) engines.push("gemini");
   return engines.length ? engines : ["google_organic"];
 }
 
@@ -170,13 +175,26 @@ export async function runPublicAuditIntelligence(input: {
     ),
   ]);
 
-  const domainToken = input.domain.replace(/^www\./, "").split(".")[0].toLowerCase();
+  // SERP presence must be consistent with the organic probes we actually show.
+  // A real brand that surfaces on any buyer-intent organic/AI-Overview query has
+  // search presence — reporting "false" because its own domain didn't rank for a
+  // single hyper-competitive "best {industry}" listicle query reads as a fake
+  // miss. Combine the scanned organic hits with a proper registrable-domain match
+  // on the competitive check (no fragile substring matching).
+  const organicBrandHit = visibilityScan.some(
+    (r) =>
+      (r.engine === "google_organic" || r.engine === "google_ai_overview") &&
+      r.brand_mentioned
+  );
   const serpPresence =
-    serpCheck.success &&
-    Boolean(
-      serpCheck.data?.brandInResults ||
-        serpCheck.data?.organicResults.some((r) => r.url.toLowerCase().includes(domainToken))
-    );
+    organicBrandHit ||
+    (serpCheck.success &&
+      Boolean(
+        serpCheck.data?.brandInResults ||
+          serpCheck.data?.organicResults.some((r) =>
+            sameRegistrableDomain(r.url, input.domain)
+          )
+      ));
 
   const coverageGaps = coverage
     .filter((c) => !c.is_present && c.surface !== "other")
