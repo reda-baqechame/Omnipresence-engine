@@ -34,6 +34,8 @@ export interface ReportData {
     totalOrganicValue: number;
     replacementRatio: number;
     statedAdSpend: number;
+    /** "real" = Google Ads Keyword Planner CPC; "industry_estimate" = static default. */
+    cpcSource: "real" | "industry_estimate";
   };
 }
 
@@ -241,12 +243,13 @@ export function generateReportHTML(data: ReportData, whiteLabel?: { name: string
 
     ${data.adsEquivalent ? `
     <div class="section">
-      <h2>Paid Ads Replacement</h2>
+      <h2>Paid Ads Replacement <span class="tag ${data.adsEquivalent.cpcSource === "real" ? "live" : "estimated"}">${data.adsEquivalent.cpcSource === "real" ? "Live CPC" : "Estimated CPC"}</span></h2>
       <div class="metrics">
         <div class="metric"><div class="value">$${e(data.adsEquivalent.totalOrganicValue.toLocaleString())}</div><div class="label">Organic Value</div></div>
         <div class="metric"><div class="value">${Math.round(data.adsEquivalent.replacementRatio * 100)}%</div><div class="label">Replacement Ratio</div></div>
         <div class="metric"><div class="value">$${e(data.adsEquivalent.statedAdSpend.toLocaleString())}</div><div class="label">Stated Ad Spend</div></div>
       </div>
+      <p class="legend">Organic value = measured GA4 organic + AI-referral sessions × ${data.adsEquivalent.cpcSource === "real" ? "your real keyword CPC (Google Ads Keyword Planner)" : "an industry-average CPC estimate (connect DataForSEO for your exact CPC)"}.</p>
     </div>
     ` : ""}
 

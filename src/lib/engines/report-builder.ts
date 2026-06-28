@@ -128,6 +128,7 @@ export async function gatherReportData(
           totalOrganicValue: adsEquivalent.totalOrganicValue,
           replacementRatio: adsEquivalent.replacementRatio,
           statedAdSpend: adsEquivalent.statedAdSpend,
+          cpcSource: adsEquivalent.cpcSource,
         }
       : undefined,
   };
