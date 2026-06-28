@@ -1,5 +1,6 @@
 import type { BrandProfile, Project } from "@/types/database";
 import { generateStructured } from "@/lib/providers/ai-gateway";
+import { validateSchemaDeep } from "@/lib/engines/schema-validation";
 import { z } from "zod";
 
 export interface SchemaGenerationInput {
@@ -150,13 +151,18 @@ export async function generatePageSchema(
 export async function validateSchemaLocally(jsonLd: Record<string, unknown>[]): Promise<{
   valid: boolean;
   errors: string[];
+  warnings: string[];
+  perType: import("@/lib/engines/schema-validation").SchemaTypeResult[];
 }> {
-  const errors: string[] = [];
-  for (const block of jsonLd) {
-    if (!block["@context"]) errors.push("Missing @context");
-    if (!block["@type"]) errors.push("Missing @type");
-  }
-  return { valid: errors.length === 0, errors };
+  // Deep per-type Google Rich Results validation (required + recommended props,
+  // eligibility) instead of the old @context/@type-only check.
+  const deep = validateSchemaDeep(jsonLd);
+  return {
+    valid: deep.valid,
+    errors: deep.errors,
+    warnings: deep.warnings,
+    perType: deep.perType,
+  };
 }
 
 export async function deploySchemaToWordPress(

@@ -6,6 +6,7 @@ import { cn } from "@/lib/utils";
 
 const TABS = [
   { href: "", label: "Overview" },
+  { href: "/proof", label: "Proof" },
   { href: "/visibility", label: "Visibility" },
   { href: "/aeo-readiness", label: "AEO Readiness" },
   { href: "/frontier", label: "Frontier" },
@@ -22,6 +23,7 @@ const TABS = [
   { href: "/local", label: "Local SEO" },
   { href: "/gsc", label: "Search Console" },
   { href: "/backlinks", label: "Backlinks" },
+  { href: "/merchant", label: "Merchant" },
   { href: "/behavior", label: "Behavior" },
   { href: "/reputation", label: "Reputation" },
   { href: "/trends", label: "Trends" },

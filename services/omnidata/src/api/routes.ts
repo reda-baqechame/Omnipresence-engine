@@ -13,12 +13,13 @@ import { findContentGaps } from "../engines/content-gaps.js";
 import { findBacklinkGaps } from "../engines/backlink-gaps.js";
 import { runMapsLive } from "../engines/maps-serp.js";
 import { getRankHistoryHydrated } from "../store.js";
-import { isWebgraphReady } from "../engines/webgraph.js";
+import { isWebgraphReady, getWebgraphMeta, triggerIngestAsync, isIngestInFlight } from "../engines/webgraph.js";
 import { getKeywordMetrics, hasKeywordPlanner } from "../engines/keyword-planner.js";
 import { getTrends } from "../engines/trends.js";
 import { detectTechStack } from "../engines/techstack.js";
 import { runPopularity } from "../engines/popularity.js";
 import { embedTexts, isEmbeddingsReady } from "../engines/embeddings.js";
+import { clusterTexts as clusterTopics } from "../engines/clustering.js";
 import { dfsResponse } from "./response.js";
 
 const router = Router();
@@ -155,13 +156,16 @@ router.post("/v3/rank_tracker/check/live", async (req, res) => {
 });
 
 router.post("/v3/on_page/crawl", async (req, res) => {
-  const item = (req.body as Array<{ url?: string; max_pages?: number }>)?.[0];
+  const item = (req.body as Array<{ url?: string; max_pages?: number; js_render?: boolean }>)?.[0];
   if (!item?.url) {
     res.status(400).json(dfsResponse([], 40000));
     return;
   }
   try {
-    const result = await crawlSite(item.url, { maxPages: item.max_pages ?? 25 });
+    const result = await crawlSite(item.url, {
+      maxPages: item.max_pages ?? 25,
+      jsRender: item.js_render,
+    });
     res.json(dfsResponse([{ result: [result] }]));
   } catch (err) {
     res.status(400).json({
@@ -251,9 +255,50 @@ router.get("/v3/embeddings/status", async (_req, res) => {
   res.json(dfsResponse([{ result: [{ embeddings_ready: ready }] }]));
 });
 
+router.post("/v3/clustering/topics/live", async (req, res) => {
+  const item = (req.body as Array<{ texts?: string[]; threshold?: number }>)?.[0];
+  const texts = item?.texts || [];
+  if (!Array.isArray(texts) || texts.length === 0) {
+    res.status(400).json(dfsResponse([], 40000));
+    return;
+  }
+  const result = await clusterTopics(texts.slice(0, 400), item?.threshold);
+  res.json(dfsResponse([{ result: [result] }]));
+});
+
 router.get("/v3/backlinks/webgraph/status", async (_req, res) => {
   const ready = await isWebgraphReady();
-  res.json(dfsResponse([{ result: [{ webgraph_ready: ready }] }]));
+  const meta = await getWebgraphMeta();
+  res.json(
+    dfsResponse([
+      {
+        result: [
+          {
+            webgraph_ready: ready,
+            ingest_in_progress: isIngestInFlight(),
+            release: meta?.release ?? null,
+            ingested_at: meta?.ingested_at ?? null,
+            vertex_count: meta?.vertex_count ?? 0,
+            edge_count: meta?.edge_count ?? 0,
+          },
+        ],
+      },
+    ])
+  );
+});
+
+// Admin/scheduled re-ingest of a Common Crawl webgraph release. Heavy: runs in
+// the background and returns 202. Auth is enforced by the global middleware.
+router.post("/v3/backlinks/webgraph/ingest", async (req, res) => {
+  const release = (req.body as Array<{ release?: string }>)?.[0]?.release;
+  if (!release) {
+    res.status(400).json(dfsResponse([], 40000));
+    return;
+  }
+  const out = triggerIngestAsync(release);
+  res
+    .status(out.accepted ? 202 : 409)
+    .json(dfsResponse([{ result: [{ accepted: out.accepted, reason: out.reason ?? null }] }]));
 });
 
 router.post("/v3/domain_analytics/overview/live", async (req, res) => {

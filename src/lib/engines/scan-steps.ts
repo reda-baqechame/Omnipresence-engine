@@ -6,7 +6,7 @@ import { runTechnicalAudit } from "@/lib/engines/technical-audit";
 import { analyzePassageReadiness } from "@/lib/engines/passage-readiness";
 import { extractBrandProfile } from "@/lib/engines/brand-extraction";
 import { generatePromptUniverse, generateTemplatePrompts } from "@/lib/engines/prompt-generator";
-import { runVisibilityScan, extractCitationSources } from "@/lib/engines/visibility-scanner";
+import { runVisibilityScan, extractCitationSources, persistProbeTraces } from "@/lib/engines/visibility-scanner";
 import { SCAN_ENGINES } from "@/lib/config/scan-engines";
 import { checkPlatformCoverage } from "@/lib/engines/coverage-checker";
 import { findAuthorityOpportunities } from "@/lib/engines/authority-finder";
@@ -165,6 +165,13 @@ export async function stepVisibilityScan(supabase: SupabaseClient, project: Proj
       };
     });
     await supabase.from("visibility_results").insert(rows as never[]);
+  }
+
+  if (!demo && visibilityResults.length) {
+    await persistProbeTraces(
+      supabase,
+      visibilityResults as import("@/lib/engines/visibility-scanner").VisibilityScanResult[]
+    );
   }
 
   const measuredCount = visibilityResults.filter(

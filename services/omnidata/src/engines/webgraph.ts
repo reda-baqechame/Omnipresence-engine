@@ -132,6 +132,68 @@ export async function ingestWebgraph(release: string): Promise<{ ok: boolean; me
   }
 }
 
+export interface WebgraphMeta {
+  release: string | null;
+  ingested_at: string | null;
+  vertex_count: number;
+  edge_count: number;
+}
+
+/** Freshness/provenance metadata for the currently-ingested webgraph. */
+export async function getWebgraphMeta(): Promise<WebgraphMeta | null> {
+  const conn = await getConnection();
+  if (!conn) return null;
+  try {
+    const reader = await conn.runAndReadAll(
+      "SELECT release, CAST(ingested_at AS VARCHAR) AS ingested_at, vertex_count, edge_count FROM meta LIMIT 1"
+    );
+    const row = reader.getRowObjects()[0];
+    if (!row) return { release: null, ingested_at: null, vertex_count: 0, edge_count: 0 };
+    return {
+      release: row.release != null ? String(row.release) : null,
+      ingested_at: row.ingested_at != null ? String(row.ingested_at) : null,
+      vertex_count: Number(row.vertex_count ?? 0),
+      edge_count: Number(row.edge_count ?? 0),
+    };
+  } catch {
+    return null;
+  }
+}
+
+// In-process guard so a re-ingest trigger can't stack multiple multi-GB jobs.
+let ingestInFlight = false;
+
+/** Whether an ingest is currently running in this process. */
+export function isIngestInFlight(): boolean {
+  return ingestInFlight;
+}
+
+/**
+ * Fire-and-forget re-ingest used by the scheduled refresh endpoint. Returns
+ * immediately with whether the job was accepted; the heavy work runs in the
+ * background. Concurrent triggers are rejected while one is in flight.
+ */
+export function triggerIngestAsync(release: string): { accepted: boolean; reason?: string } {
+  if (ingestInFlight) return { accepted: false, reason: "ingest already in progress" };
+  let rel: string;
+  try {
+    rel = sanitizeRelease(release);
+  } catch (e) {
+    return { accepted: false, reason: e instanceof Error ? e.message : "invalid release" };
+  }
+  ingestInFlight = true;
+  void ingestWebgraph(rel)
+    .then((r) => {
+      if (!r.ok) console.warn(`[webgraph] re-ingest failed: ${r.message}`);
+      else console.log(`[webgraph] re-ingest complete: ${r.message}`);
+    })
+    .catch((e) => console.warn("[webgraph] re-ingest error", e))
+    .finally(() => {
+      ingestInFlight = false;
+    });
+  return { accepted: true };
+}
+
 export async function isWebgraphReady(): Promise<boolean> {
   const conn = await getConnection();
   if (!conn) return false;

@@ -502,6 +502,7 @@ export type ExecutionTaskSource =
   | "deep_crawl"
   | "video"
   | "reputation"
+  | "merchant"
   | "manual";
 
 export type ExecutionTaskStatus =

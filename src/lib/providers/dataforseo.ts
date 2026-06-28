@@ -60,6 +60,26 @@ async function dataForSEORequest<T>(endpoint: string, body: unknown[]): Promise<
   return response.json() as Promise<T>;
 }
 
+/**
+ * Authenticated GET against OmniData (e.g. webgraph status). Signs an empty
+ * object to match the server's `JSON.stringify(req.body ?? {})` for GET.
+ * Returns null when OmniData isn't configured or the call fails.
+ */
+export async function omniDataGet<T>(endpoint: string): Promise<T | null> {
+  if (!USE_OMNIDATA) return null;
+  try {
+    const response = await fetchWithTimeout(`${getBaseUrl()}${endpoint}`, {
+      method: "GET",
+      headers: getAuthHeaders({}),
+      timeoutMs: 15000,
+    });
+    if (!response.ok) return null;
+    return response.json() as Promise<T>;
+  } catch {
+    return null;
+  }
+}
+
 /** Labs-compatible POST for OmniData or DataForSEO (keyword intelligence spine). */
 export async function labsApiPost<T>(endpoint: string, body: unknown[]): Promise<T | null> {
   const hasCreds =

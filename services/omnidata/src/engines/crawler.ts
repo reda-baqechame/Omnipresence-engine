@@ -1,6 +1,7 @@
 import * as cheerio from "cheerio";
 import type { CrawlPage } from "../types.js";
 import { isCrawlAllowed } from "../robots-guard.js";
+import { isJsCrawlEnabled, launchRenderBrowser, renderPageHtml, type RenderBrowser } from "./js-render.js";
 
 const BLOCKED = new Set(["localhost", "127.0.0.1", "0.0.0.0", "169.254.169.254"]);
 
@@ -48,10 +49,11 @@ function computePageRank(pages: CrawlPage[]): Map<string, number> {
 
 export async function crawlSite(
   startUrl: string,
-  options: { maxPages?: number; sameDomain?: boolean } = {}
+  options: { maxPages?: number; sameDomain?: boolean; jsRender?: boolean } = {}
 ): Promise<{
   pages: CrawlPage[];
   duplicate_clusters: Array<{ simhash: string; urls: string[] }>;
+  rendered: boolean;
 }> {
   const maxPages = options.maxPages ?? 25;
   const start = assertPublicUrl(startUrl);
@@ -60,6 +62,13 @@ export async function crawlSite(
   const queue = [start.toString()];
   const pages: CrawlPage[] = [];
 
+  // Optional JS-rendered crawl depth (SPA coverage). Shared browser for the
+  // whole crawl; null when disabled or Chromium is unavailable (static fallback).
+  const useJsRender = (options.jsRender ?? isJsCrawlEnabled()) === true;
+  let renderBrowser: RenderBrowser | null = null;
+  if (useJsRender) renderBrowser = await launchRenderBrowser();
+  let rendered = false;
+
   while (queue.length > 0 && pages.length < maxPages) {
     const url = queue.shift()!;
     if (visited.has(url)) continue;
@@ -67,11 +76,20 @@ export async function crawlSite(
     visited.add(url);
 
     try {
-      const res = await fetch(url, {
-        headers: { "User-Agent": "OmniData-Crawler/1.0" },
-        signal: AbortSignal.timeout(10000),
-      });
-      const html = await res.text();
+      let html: string | null = null;
+      let status = 200;
+      if (renderBrowser) {
+        html = await renderPageHtml(renderBrowser, url);
+        if (html) rendered = true;
+      }
+      if (html == null) {
+        const res = await fetch(url, {
+          headers: { "User-Agent": "OmniData-Crawler/1.0" },
+          signal: AbortSignal.timeout(10000),
+        });
+        status = res.status;
+        html = await res.text();
+      }
       const $ = cheerio.load(html);
       const title = $("title").first().text().trim();
       const text = $("body").text().replace(/\s+/g, " ").trim().slice(0, 5000);
@@ -94,7 +112,7 @@ export async function crawlSite(
       });
       pages.push({
         url,
-        status: res.status,
+        status,
         title,
         links: [...new Set(links)],
         simhash: simhash(text),
@@ -102,6 +120,14 @@ export async function crawlSite(
       });
     } catch {
       pages.push({ url, status: 0, links: [], simhash: "", pagerank: 0 });
+    }
+  }
+
+  if (renderBrowser) {
+    try {
+      await renderBrowser.close();
+    } catch {
+      /* ignore */
     }
   }
 
@@ -121,5 +147,5 @@ export async function crawlSite(
     .filter(([, urls]) => urls.length > 1)
     .map(([simhash, urls]) => ({ simhash, urls }));
 
-  return { pages, duplicate_clusters };
+  return { pages, duplicate_clusters, rendered };
 }

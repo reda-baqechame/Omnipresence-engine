@@ -62,6 +62,41 @@ export async function fetchGscTopQueries(
   }
 }
 
+export interface GscPositionEntry {
+  position: number;
+  impressions: number;
+  clicks: number;
+}
+
+/**
+ * First-party rank truth: a map of `query -> avg position` from Search Console
+ * over the last 28 days. This is the user's *actual* measured ranking (not a
+ * public SERP scrape that can differ by personalization/locale), so the rank
+ * tracker prefers it when available. Only covers queries the site already
+ * appears for; everything else falls back to the public SERP.
+ */
+export async function buildGscPositionMap(
+  accessToken: string,
+  siteUrl: string
+): Promise<Map<string, GscPositionEntry>> {
+  const rows = await fetchGscTopQueries(
+    accessToken,
+    siteUrl,
+    isoDaysAgo(28),
+    isoDaysAgo(1),
+    1000
+  );
+  const map = new Map<string, GscPositionEntry>();
+  for (const r of rows) {
+    map.set(r.query.trim().toLowerCase(), {
+      position: r.position,
+      impressions: r.impressions,
+      clicks: r.clicks,
+    });
+  }
+  return map;
+}
+
 export interface GscPageRow {
   url: string;
   clicks: number;

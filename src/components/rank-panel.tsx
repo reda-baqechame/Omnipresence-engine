@@ -20,6 +20,9 @@ interface RankKeyword {
   competitor_overlay?: CompetitorOverlayEntry[];
   share_of_voice?: number | null;
   brand_in_ai_overview?: boolean | null;
+  last_rank_source?: string | null;
+  last_confidence?: number | null;
+  last_public_position?: number | null;
 }
 
 interface RankSnapshot {
@@ -174,6 +177,7 @@ export function RankPanel({ projectId }: RankPanelProps) {
             <tr>
               <th className="text-left p-3">Keyword</th>
               <th className="text-left p-3">Pos.</th>
+              <th className="text-left p-3">Source</th>
               <th className="text-left p-3">Δ</th>
               <th className="text-left p-3">Device</th>
               <th className="text-left p-3">SoV</th>
@@ -185,7 +189,7 @@ export function RankPanel({ projectId }: RankPanelProps) {
           <tbody>
             {keywords.length === 0 ? (
               <tr>
-                <td colSpan={8} className="p-4 text-muted-foreground">No keywords tracked yet.</td>
+                <td colSpan={9} className="p-4 text-muted-foreground">No keywords tracked yet.</td>
               </tr>
             ) : (
               keywords.map((k) => {
@@ -199,6 +203,25 @@ export function RankPanel({ projectId }: RankPanelProps) {
                         <span className="block text-xs text-muted-foreground">{k.location}</span>
                       </td>
                       <td className="p-3">{k.last_position ?? "—"}</td>
+                      <td className="p-3">
+                        {k.last_rank_source === "first_party" ? (
+                          <span
+                            className="inline-flex items-center gap-1 rounded bg-green-500/15 px-1.5 py-0.5 text-xs text-green-400"
+                            title={`Search Console first-party data${k.last_public_position != null ? ` · public SERP #${k.last_public_position}` : ""}`}
+                          >
+                            First-party
+                          </span>
+                        ) : k.last_rank_source === "public_serp" ? (
+                          <span
+                            className="inline-flex items-center gap-1 rounded bg-amber-500/15 px-1.5 py-0.5 text-xs text-amber-400"
+                            title="Public SERP scrape — connect Search Console for first-party truth"
+                          >
+                            Public SERP
+                          </span>
+                        ) : (
+                          <span className="text-xs text-muted-foreground">—</span>
+                        )}
+                      </td>
                       <td className="p-3">
                         {delta == null ? "—" : (
                           <span className={delta < 0 ? "text-green-400" : delta > 0 ? "text-red-400" : ""}>
@@ -222,7 +245,7 @@ export function RankPanel({ projectId }: RankPanelProps) {
                     </tr>
                     {expanded === k.id && (
                       <tr className="border-t border-border bg-secondary/20">
-                        <td colSpan={8} className="p-3 text-xs space-y-2">
+                        <td colSpan={9} className="p-3 text-xs space-y-2">
                           <div>
                             <span className="text-muted-foreground">History: </span>
                             {hist.map((h) => (

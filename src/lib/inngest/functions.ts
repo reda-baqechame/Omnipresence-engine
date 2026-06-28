@@ -36,6 +36,15 @@ import { buildMonthlyCampaign } from "@/lib/engines/link-building";
 import { runBehaviorAnalytics } from "@/lib/engines/behavior-analytics";
 import { monitorBrandNews } from "@/lib/engines/reputation";
 import { getCruxHistory, hasCruxHistoryCapability } from "@/lib/providers/crux-history";
+import { getWebgraphStatus, triggerWebgraphIngest } from "@/lib/providers/webgraph";
+import { isOmniDataActive } from "@/lib/providers/dataforseo";
+import { generatePassageRewrites } from "@/lib/engines/passage-rewriter";
+import {
+  measureCitationRate,
+  computeLift,
+  recordRewriteBaseline,
+  recordRewriteLift,
+} from "@/lib/engines/geo-rewrite-loop";
 import { fetchFirehoseMentions } from "@/lib/engines/community-mentions";
 import { logProviderError } from "@/lib/observability/log";
 import type { Project } from "@/types/database";
@@ -778,6 +787,105 @@ export const weeklyMentionFirehose = inngest.createFunction(
   }
 );
 
+// Monthly Common Crawl webgraph re-ingest so the backlink/authority moat stays
+// fresh. Only fires when COMMONCRAWL_WEBGRAPH_RELEASE is set (no guessing the
+// release id). The heavy work runs inside OmniData; we just trigger + log.
+export const monthlyWebgraphReingest = inngest.createFunction(
+  { id: "monthly-webgraph-reingest", retries: 1, triggers: [{ cron: "0 4 1 * *" }] },
+  async ({ step }) => {
+    const release = process.env.COMMONCRAWL_WEBGRAPH_RELEASE?.trim();
+    if (!release) return { skipped: "COMMONCRAWL_WEBGRAPH_RELEASE not set" };
+    if (!isOmniDataActive()) return { skipped: "OmniData not configured" };
+    return await step.run("trigger-ingest", async () => {
+      try {
+        const before = await getWebgraphStatus();
+        const res = await triggerWebgraphIngest(release);
+        return {
+          release,
+          accepted: res.accepted,
+          reason: res.reason ?? null,
+          previousRelease: before.release,
+          previousIngestedAt: before.ingestedAt,
+        };
+      } catch (error) {
+        logProviderError("cron:webgraph-reingest", error, { release });
+        return { release, accepted: false, error: "trigger failed" };
+      }
+    });
+  }
+);
+
+// Measured GEO rewrite loop: baseline citation rate -> AutoGEO answer-first
+// rewrite -> deploy artifact -> wait for propagation -> re-probe -> measure
+// real citation/mention lift from ai_probe_traces -> results-ledger/guarantee.
+export const geoRewriteLoop = inngest.createFunction(
+  { id: "geo-rewrite-loop", retries: 1, triggers: [{ event: "project/geo-rewrite.requested" }] },
+  async ({ event, step }) => {
+    const { projectId, organizationId, url, waitDays } = event.data as {
+      projectId: string;
+      organizationId: string;
+      url?: string;
+      waitDays?: number;
+    };
+    const supabase = await createServiceClient();
+
+    const project = await step.run("load-project", async () => {
+      const { data } = await supabase.from("projects").select("*").eq("id", projectId).single();
+      if (!data) throw new Error("Project not found");
+      return data as Project;
+    });
+
+    const targetUrl = url || (project.domain.startsWith("http") ? project.domain : `https://${project.domain}`);
+    const days = Math.max(1, Number(waitDays ?? process.env.GEO_REWRITE_WAIT_DAYS ?? 7));
+
+    const before = await step.run("baseline-citation-rate", () =>
+      measureCitationRate(supabase, projectId, {
+        sinceISO: new Date(Date.now() - 30 * 86400000).toISOString(),
+      })
+    );
+
+    const rewrite = await step.run("autogeo-rewrite", () =>
+      generatePassageRewrites(project.domain, project.name, targetUrl, { autoGeo: true })
+    );
+    if (rewrite.source !== "ai") {
+      return { skipped: rewrite.error || "rewrite unavailable (configure an LLM key or Ollama)" };
+    }
+
+    await step.run("record-baseline", async () => {
+      const jsonLd = rewrite.structured?.jsonLd || [];
+      if (jsonLd.length) {
+        const schemaTypes = jsonLd
+          .map((n) => (typeof n["@type"] === "string" ? (n["@type"] as string) : null))
+          .filter((t): t is string => Boolean(t));
+        await supabase.from("schema_deployments").insert({
+          project_id: projectId,
+          page_url: targetUrl,
+          schema_types: schemaTypes,
+          json_ld: { graph: jsonLd },
+          validation_status: "pending",
+          deployment_method: "geo_rewrite",
+        });
+      }
+      return recordRewriteBaseline(supabase, projectId, targetUrl, before);
+    });
+
+    await step.sleep("await-propagation", `${days}d`);
+
+    const reprobeStart = new Date().toISOString();
+    const demo = await step.run("resolve-demo", () => resolveScanDemoMode(supabase, organizationId));
+    await step.run("re-probe", () => stepVisibilityScan(supabase, project, demo));
+
+    const after = await step.run("after-citation-rate", () =>
+      measureCitationRate(supabase, projectId, { sinceISO: reprobeStart })
+    );
+
+    const lift = computeLift(before, after);
+    await step.run("record-lift", () => recordRewriteLift(supabase, projectId, targetUrl, lift));
+
+    return { url: targetUrl, lift };
+  }
+);
+
 export const scheduledContentPublish = inngest.createFunction(
   { id: "scheduled-content-publish", retries: 1, triggers: [{ cron: "0 * * * *" }] },
   async ({ step }) => {
@@ -1008,6 +1116,8 @@ export const functions = [
   dailyBrandNewsMonitor,
   weeklyCwvHistorySync,
   weeklyMentionFirehose,
+  monthlyWebgraphReingest,
+  geoRewriteLoop,
   scheduledContentPublish,
   weeklyIntelligenceSync,
   dailyOnPageAutomation,

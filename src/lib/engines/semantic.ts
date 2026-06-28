@@ -1,4 +1,4 @@
-import { embedTexts, hasEmbeddingsCapability } from "@/lib/providers/embeddings";
+import { embedTexts, hasEmbeddingsCapability, clusterTopicsRemote } from "@/lib/providers/embeddings";
 
 /**
  * Semantic engine (Phase 3). Thin, reusable layer over the keyless embeddings
@@ -63,10 +63,16 @@ export async function detectCannibalization(
 export interface SemanticCluster {
   label: string;
   members: string[];
+  /** Distinctive c-TF-IDF terms for the cluster (when computed server-side). */
+  terms?: string[];
 }
 
 /**
- * Greedy semantic clustering of short texts (keywords/titles) into topic groups.
+ * Semantic clustering of short texts (keywords/titles) into topic groups.
+ *
+ * Prefers the OmniData clustering endpoint (agglomerative average-linkage +
+ * c-TF-IDF labels — the BERTopic technique, scales to ~400 items). Falls back to
+ * the in-app greedy clustering when the endpoint is unavailable.
  */
 export async function clusterTexts(
   items: string[],
@@ -75,6 +81,16 @@ export async function clusterTexts(
   if (!hasEmbeddingsCapability()) {
     return { available: false, reason: "Embeddings not configured.", clusters: [] };
   }
+
+  // Preferred: server-side topic clustering (sharper, order-independent, labeled).
+  const remote = await clusterTopicsRemote(items);
+  if (remote.available && remote.clusters.length) {
+    return {
+      available: true,
+      clusters: remote.clusters.map((c) => ({ label: c.label, members: c.members, terms: c.terms })),
+    };
+  }
+
   const uniq = [...new Set(items.map((i) => i.trim()).filter(Boolean))].slice(0, 64);
   if (uniq.length < 2) return { available: true, clusters: uniq.map((m) => ({ label: m, members: [m] })) };
 

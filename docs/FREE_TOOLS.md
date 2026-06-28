@@ -66,6 +66,27 @@ Legend:
 | OmniData (this repo) | project | `OMNIDATA_BASE_URL` | SERP/backlinks/crawl/embeddings | per-feature `unavailable` |
 | Metabase (optional) | AGPL-3.0 / Enterprise | n/a (BI) | Agency dashboards | Looker Studio connector |
 
+## 200x activation engines (license-verified "steroids")
+
+These are the research-backed techniques wired in during the 200x activation. To
+avoid any copyleft/runtime risk, permissively-licensed *approaches* are
+re-implemented natively in this repo (no GPL/AGPL/NC code is linked into the
+bundle); optional self-host services stay network-isolated behind env flags.
+
+| Capability | Source technique | License | How it ships here | Fallback |
+|------------|------------------|---------|-------------------|----------|
+| Measured GEO rewrite loop | **AutoGEO** (paper +21–51% gen-engine visibility) | MIT (code + Qwen weights) | Distilled rule set in `src/lib/engines/autogeo.ts`; rewrite via `passage-rewriter`; optional `AutoGEO_mini` Qwen served by Ollama (`GEO_REWRITE_USE_OLLAMA`) | answer-first rewrite without AutoGEO rules |
+| Deep schema.org / Rich Results validation | **@adobe/structured-data-validator** + Google Rich Results rules | Apache-2.0 | Native dependency-free validator `src/lib/engines/schema-validation.ts` (per-type required/recommended + eligibility) | shallow `@context`/`@type` check |
+| Topic clustering | **BERTopic** + UMAP + HDBSCAN | MIT / BSD-3 / BSD-3 | Native c-TF-IDF + agglomerative implementation in `services/omnidata/src/engines/clustering.ts` (`POST /v3/clustering/topics/live`) | greedy clustering in `semantic.ts` |
+| Embeddings upgrade | **BGE-M3** / Qwen3-Embedding-0.6B | MIT / Apache-2.0 | `EMBEDDINGS_MODEL` env in OmniData (`Xenova/bge-m3`) | `all-MiniLM-L6-v2` default |
+| Merchant / Shopping feed optimization | **FeedGen** approach (titles/attributes via LLM) | Apache-2.0 (approach ported, not the Apps Script harness) | `src/lib/engines/merchant-feed.ts` + `/api/merchant` | `available:false` (plan-gated) |
+| AEO prompt observability | **Langfuse** (self-host) | MIT core | First-party `ai_probe_traces` is source of truth; optional mirror via `LANGFUSE_*` env | Supabase-only trace store |
+| Headless SPA crawl depth | **Katana** (ProjectDiscovery) | MIT | Optional sidecar; enable with `KATANA_URL` for OmniData JS-render crawl | Playwright/static crawl in OmniData |
+
+> **AutoGEO weights note:** the `cx-cmu/AutoGEO_mini_Qwen1.7B_*` weights are MIT
+> and may be pulled into Ollama. The default path uses the distilled rule set as
+> an instruction to the existing `ai-gateway` LLMs — zero added infra.
+
 ## Copyleft notes ("no strings" caveats)
 
 These are free and fine for an internal, self-hosted SaaS backend, but they are

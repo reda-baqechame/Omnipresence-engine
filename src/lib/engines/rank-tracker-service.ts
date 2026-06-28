@@ -1,8 +1,14 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { checkRankPosition } from "@/lib/providers/dataforseo";
 import { searchGoogleOrganicRouter } from "@/lib/providers/serp-router";
+import { getValidOAuthToken } from "@/lib/oauth/tokens";
+import { buildGscPositionMap, type GscPositionEntry } from "@/lib/engines/gsc-queries";
+import { logProviderError } from "@/lib/observability/log";
 
 export type RankDevice = "desktop" | "mobile";
+
+/** Where a tracked position came from — first-party (truth) vs public SERP. */
+export type RankSource = "first_party" | "public_serp";
 
 export interface CompetitorOverlayEntry {
   domain: string;
@@ -22,6 +28,11 @@ export interface RankCheckResult {
   brandInAiOverview: boolean | null;
   device: RankDevice;
   checkedAt: string;
+  /** Provenance: GSC first-party truth vs public SERP scrape. */
+  source: RankSource;
+  /** Public SERP position kept alongside first-party for cross-checking. */
+  publicPosition: number | null;
+  confidence: number;
 }
 
 /** Approximate organic CTR by position — used for share-of-voice weighting. */
@@ -84,7 +95,8 @@ export async function runRankCheckForProject(
   keyword: string,
   location: string,
   device: RankDevice = "desktop",
-  competitorDomains?: string[]
+  competitorDomains?: string[],
+  firstPartyPositions?: Map<string, GscPositionEntry> | null
 ): Promise<RankCheckResult | null> {
   const competitors = competitorDomains ?? (await loadResolvedCompetitorDomains(supabase, projectId));
   const brandHost = hostnameOf(domain);
@@ -144,6 +156,24 @@ export async function runRankCheckForProject(
     serpFeatures = basic.data.serp_features;
   }
 
+  // Public SERP is what we measured above. If Search Console first-party data
+  // exists for this exact query, prefer it as the authoritative position — it is
+  // the user's *actual* measured ranking (not a public scrape that can shift by
+  // personalization/locale). We keep the public SERP position alongside it.
+  const publicPosition = position;
+  let source: RankSource = "public_serp";
+  let provider = "serp";
+  // Public SERP scrape is a real measurement, but it is a less authoritative
+  // proxy for the user's true ranking than GSC, so it carries lower confidence.
+  let confidence = 0.8;
+  const fp = firstPartyPositions?.get(keyword.trim().toLowerCase());
+  if (fp && fp.impressions > 0 && Number.isFinite(fp.position) && fp.position > 0) {
+    position = Math.round(fp.position);
+    source = "first_party";
+    provider = "gsc";
+    confidence = 0.99;
+  }
+
   const strikingDistance = position != null && position > 3 && position <= 20;
 
   await supabase.from("rank_snapshots").insert({
@@ -159,8 +189,8 @@ export async function runRankCheckForProject(
     brand_in_ai_overview: brandInAiOverview,
     checked_at: checkedAt,
     data_source: "measured",
-    confidence: 0.95,
-    provider: "serp",
+    confidence,
+    provider,
     is_estimated: false,
   });
 
@@ -176,6 +206,9 @@ export async function runRankCheckForProject(
       competitor_overlay: competitorOverlay,
       share_of_voice: shareOfVoice,
       brand_in_ai_overview: brandInAiOverview,
+      last_rank_source: source,
+      last_confidence: confidence,
+      last_public_position: publicPosition,
     })
     .eq("id", keywordId);
 
@@ -208,6 +241,9 @@ export async function runRankCheckForProject(
     brandInAiOverview,
     device,
     checkedAt,
+    source,
+    publicPosition,
+    confidence,
   };
 }
 
@@ -226,6 +262,10 @@ export async function runAllRankChecks(
   // Resolve competitor domains once for the whole batch.
   const competitors = await loadResolvedCompetitorDomains(supabase, projectId);
 
+  // Build the Search Console first-party position map once per batch (when the
+  // project has GSC connected). Best-effort: failures just fall back to SERP.
+  const firstPartyPositions = await loadFirstPartyPositions(supabase, projectId, domain);
+
   const results: RankCheckResult[] = [];
   for (const kw of keywords) {
     const r = await runRankCheckForProject(
@@ -236,11 +276,33 @@ export async function runAllRankChecks(
       kw.keyword,
       kw.location,
       (kw.device as RankDevice) || "desktop",
-      competitors
+      competitors,
+      firstPartyPositions
     );
     if (r) results.push(r);
   }
   return results;
+}
+
+/**
+ * Load Search Console first-party positions for the project when GSC OAuth is
+ * connected. Returns null (not an error) when unavailable so the rank tracker
+ * cleanly falls back to public SERP.
+ */
+async function loadFirstPartyPositions(
+  supabase: SupabaseClient,
+  projectId: string,
+  domain: string
+): Promise<Map<string, GscPositionEntry> | null> {
+  try {
+    const token = await getValidOAuthToken(supabase, projectId, "google_search_console");
+    if (!token) return null;
+    const map = await buildGscPositionMap(token, domain);
+    return map.size > 0 ? map : null;
+  } catch (error) {
+    logProviderError("rank-tracker.firstParty", error, { projectId });
+    return null;
+  }
 }
 
 export async function importKeywordsFromPrompts(

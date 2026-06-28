@@ -13,6 +13,7 @@ import { makeBrandMatcher, makeCompetitorMatcher, sameRegistrableDomain, type En
 import type { VisibilityEngine, VisibilityResult } from "@/types/database";
 import type { DataSource, DataQuality } from "@/types/database";
 import { SCAN_ENGINES } from "@/lib/config/scan-engines";
+import { hasLangfuse, mirrorTracesToLangfuse } from "@/lib/providers/langfuse";
 
 export interface VisibilityScanConfig {
   projectId: string;
@@ -570,6 +571,114 @@ export function calculateVisibilityMetrics(results: Array<Pick<VisibilityResult,
     winRate,
     measuredRate: measured / attempted,
   };
+}
+
+export interface ProbeTraceRow {
+  run_id?: string;
+  project_id: string;
+  prompt_id?: string;
+  engine: string;
+  prompt: string;
+  response_excerpt: string | null;
+  brand_mentioned: boolean;
+  brand_cited: boolean;
+  cited_sources: string[];
+  competitors_mentioned: string[];
+  model: string | null;
+  grounding_mode: string | null;
+  confidence: number;
+  data_source: DataQuality;
+  checked_at: string;
+}
+
+function probeConfidence(ds: DataQuality): number {
+  if (ds === "measured") return 0.9;
+  if (ds === "model_knowledge") return 0.6;
+  if (ds === "estimated") return 0.4;
+  return 0; // simulated / unavailable
+}
+
+function probeExcerpt(raw: Record<string, unknown> | null | undefined): string | null {
+  if (!raw) return null;
+  const candidate = (raw.answer ?? raw.text ?? raw.label) as unknown;
+  if (typeof candidate === "string" && candidate.trim()) return candidate.trim().slice(0, 600);
+  return null;
+}
+
+/**
+ * Per-probe AEO observability rows. Each visibility result is one prompt×engine
+ * probe; this flattens them into an auditable win/loss history (the proof +
+ * "magic" layer). Demo/simulated probes are excluded — only real attempts.
+ */
+export function buildProbeTraceRows(results: VisibilityScanResult[]): ProbeTraceRow[] {
+  const now = new Date().toISOString();
+  const rows: ProbeTraceRow[] = [];
+  for (const r of results) {
+    if (r.data_source === "simulated") continue;
+    const competitorsMentioned = Object.entries(r.competitor_mentions || {})
+      .filter(([, v]) => Boolean(v))
+      .map(([k]) => k);
+    const detail = (r.raw_response?.data_source_detail ?? r.raw_response?.provider) as
+      | string
+      | undefined;
+    rows.push({
+      run_id: r.run_id,
+      project_id: r.project_id,
+      prompt_id: r.prompt_id,
+      engine: r.engine,
+      prompt: r.prompt_text,
+      response_excerpt: probeExcerpt(r.raw_response),
+      brand_mentioned: Boolean(r.brand_mentioned),
+      brand_cited: Boolean(r.brand_cited),
+      cited_sources: [...new Set(r.source_domains || [])].slice(0, 25),
+      competitors_mentioned: competitorsMentioned,
+      model: detail ?? null,
+      grounding_mode: r.measurement_mode ?? null,
+      confidence: probeConfidence(r.data_source),
+      data_source: r.data_source,
+      checked_at: now,
+    });
+  }
+  return rows;
+}
+
+/** Persist probe traces (best-effort; never throws into the scan pipeline). */
+export async function persistProbeTraces(
+  supabase: {
+    from: (t: string) => { insert: (rows: unknown[]) => PromiseLike<{ error: unknown }> };
+  },
+  results: VisibilityScanResult[]
+): Promise<number> {
+  const rows = buildProbeTraceRows(results);
+  if (!rows.length) return 0;
+  // Optional ops-grade mirror; Supabase stays the source of truth.
+  if (hasLangfuse()) {
+    void mirrorTracesToLangfuse(
+      rows.map((r) => ({
+        project_id: r.project_id,
+        engine: r.engine,
+        prompt: r.prompt,
+        response_excerpt: r.response_excerpt,
+        brand_mentioned: r.brand_mentioned,
+        brand_cited: r.brand_cited,
+        competitors_mentioned: r.competitors_mentioned,
+        model: r.model,
+        grounding_mode: r.grounding_mode,
+        checked_at: r.checked_at,
+      }))
+    );
+  }
+  try {
+    const { error } = await supabase.from("ai_probe_traces").insert(rows);
+    if (error) {
+      logProviderError("visibility.probeTraces", error);
+      return 0;
+    }
+    return rows.length;
+  } catch (error) {
+    logProviderError("visibility.probeTraces", error);
+    return 0;
+  }
 }
 
 /** Extract citation source rows for DB persistence */

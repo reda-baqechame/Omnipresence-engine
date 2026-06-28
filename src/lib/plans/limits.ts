@@ -41,3 +41,15 @@ export function getPromptGenerationLimit(_plan?: SubscriptionPlan): number {
 export function getVisibilityScanPromptLimit(_plan?: SubscriptionPlan): number {
   return DEFAULT_VISIBILITY_SCAN_LIMIT;
 }
+
+/**
+ * Merchant / Shopping engine is a higher-tier vertical. Honors FREE_ACCESS_MODE
+ * (everything unlocked while paywalls are deferred); otherwise it's gated to
+ * paid tiers. Wired now so flipping FREE_ACCESS_MODE off enforces it instantly.
+ */
+const MERCHANT_PLANS: SubscriptionPlan[] = ["tracking", "agency", "enterprise"];
+
+export function hasMerchantAccess(plan?: SubscriptionPlan): boolean {
+  if (FREE_ACCESS_MODE) return true;
+  return plan ? MERCHANT_PLANS.includes(plan) : false;
+}

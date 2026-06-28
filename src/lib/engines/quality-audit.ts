@@ -1,6 +1,7 @@
 import * as cheerio from "cheerio";
 import { fetchWithTimeout } from "@/lib/providers/http";
 import { validateHtml } from "@/lib/providers/w3c-validator";
+import { validateSchemaDeep } from "@/lib/engines/schema-validation";
 import type { FindingSeverity } from "@/types/database";
 
 /**
@@ -27,19 +28,6 @@ export interface QualityAuditResult {
   htmlErrors: number;
   richResultsEligible: string[];
 }
-
-/** Rich Results required properties per common type (subset, Google guidelines). */
-const RICH_RESULT_REQUIREMENTS: Record<string, string[]> = {
-  Product: ["name", "image", "offers"],
-  FAQPage: ["mainEntity"],
-  Article: ["headline", "image", "datePublished"],
-  Recipe: ["name", "image", "recipeIngredient"],
-  Event: ["name", "startDate", "location"],
-  LocalBusiness: ["name", "address"],
-  Organization: ["name", "url"],
-  BreadcrumbList: ["itemListElement"],
-  VideoObject: ["name", "thumbnailUrl", "uploadDate"],
-};
 
 export async function runQualityAudit(domain: string): Promise<QualityAuditResult> {
   const url = domain.startsWith("http") ? domain : `https://${domain}`;
@@ -248,24 +236,36 @@ function checkRichResults(html: string, url: string): { findings: QualityFinding
       });
       return;
     }
-    const nodes = flattenJsonLd(parsed);
-    for (const node of nodes) {
-      const type = normalizeType(node["@type"]);
-      if (!type) continue;
-      const required = RICH_RESULT_REQUIREMENTS[type];
-      if (!required) continue;
-      const missing = required.filter((p) => node[p] === undefined || node[p] === null || node[p] === "");
-      if (missing.length === 0) {
-        if (!eligible.includes(type)) eligible.push(type);
-      } else if (!incomplete.includes(type)) {
-        incomplete.push(type);
+    // Deep per-type validation (required + recommended + rich-result eligibility).
+    const deep = validateSchemaDeep(parsed);
+    for (const t of deep.perType) {
+      if (!t.recognized) continue;
+      if (t.richResultEligible && !eligible.includes(t.type)) eligible.push(t.type);
+
+      const missingRequired = t.issues.filter((i) => i.severity === "error").map((i) => i.property);
+      const missingRecommended = t.issues.filter((i) => i.severity === "warning").map((i) => i.property);
+
+      if (missingRequired.length && !incomplete.includes(`${t.type}:err`)) {
+        incomplete.push(`${t.type}:err`);
+        findings.push({
+          category: "schema",
+          severity: "medium",
+          title: `${t.type} schema missing required properties`,
+          description: `${t.type} is present but missing required: ${missingRequired.join(", ")}.`,
+          impact: `Incomplete ${t.type} markup is ineligible for rich results / AI extraction.`,
+          fix_recommendation: `Add the required properties (${missingRequired.join(", ")}) to your ${t.type} JSON-LD, then re-test with the Rich Results Test.`,
+          affected_url: url,
+        });
+      } else if (missingRecommended.length && !incomplete.includes(`${t.type}:warn`)) {
+        // Eligible but could be richer — recommend the optional properties.
+        incomplete.push(`${t.type}:warn`);
         findings.push({
           category: "schema",
           severity: "low",
-          title: `${type} schema missing rich-result properties`,
-          description: `${type} is present but missing: ${missing.join(", ")}.`,
-          impact: `Incomplete ${type} markup is ineligible for rich results / AI extraction.`,
-          fix_recommendation: `Add the required properties (${missing.join(", ")}) to your ${type} JSON-LD.`,
+          title: `${t.type} schema missing recommended properties`,
+          description: `${t.type} is rich-result eligible but missing recommended: ${missingRecommended.slice(0, 6).join(", ")}.`,
+          impact: `Recommended properties improve rich-result appearance and AI extraction quality.`,
+          fix_recommendation: `Add recommended properties (${missingRecommended.slice(0, 6).join(", ")}) to your ${t.type} JSON-LD.`,
           affected_url: url,
         });
       }
@@ -273,24 +273,4 @@ function checkRichResults(html: string, url: string): { findings: QualityFinding
   });
 
   return { findings, eligible };
-}
-
-function flattenJsonLd(parsed: unknown): Array<Record<string, unknown>> {
-  const out: Array<Record<string, unknown>> = [];
-  const visit = (v: unknown) => {
-    if (Array.isArray(v)) v.forEach(visit);
-    else if (v && typeof v === "object") {
-      const obj = v as Record<string, unknown>;
-      out.push(obj);
-      if (Array.isArray(obj["@graph"])) (obj["@graph"] as unknown[]).forEach(visit);
-    }
-  };
-  visit(parsed);
-  return out;
-}
-
-function normalizeType(t: unknown): string | null {
-  if (typeof t === "string") return t;
-  if (Array.isArray(t) && typeof t[0] === "string") return t[0];
-  return null;
 }

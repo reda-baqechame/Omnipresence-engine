@@ -20,7 +20,11 @@ services:
       retries: 5
 
   omnidata:
-    build: ./services/omnidata
+    build:
+      context: ./services/omnidata
+      args:
+        # Bundle Chromium so the keyless SERP/Maps scrape fallback works.
+        INSTALL_CHROMIUM: ${OMNIDATA_INSTALL_CHROMIUM:-true}
     restart: unless-stopped
     environment:
       REDIS_URL: redis://redis:6379
@@ -44,7 +48,10 @@ services:
       retries: 3
 
   omnidata-worker:
-    build: ./services/omnidata
+    build:
+      context: ./services/omnidata
+      args:
+        INSTALL_CHROMIUM: ${OMNIDATA_INSTALL_CHROMIUM:-true}
     restart: unless-stopped
     command: ["node", "dist/worker.js"]
     environment:
@@ -69,6 +76,12 @@ services:
       # OmniData on by default so SERP/backlinks/crawl run without paid vendors.
       OMNIDATA_BASE_URL: ${OMNIDATA_BASE_URL:-http://omnidata:8787}
       OMNIDATA_API_KEY: ${OMNIDATA_API_KEY:-dev-local-key}
+      # Keyless engine URLs — present so the app uses them when the `keyless`
+      # profile services are up; harmless (graceful-degrade) when they are not.
+      SEARXNG_URL: ${SEARXNG_URL:-http://searxng:8080}
+      OLLAMA_BASE_URL: ${OLLAMA_BASE_URL:-http://ollama:11434}
+      OLLAMA_MODEL: ${OLLAMA_MODEL:-llama3.1:8b}
+      LANGUAGETOOL_URL: ${LANGUAGETOOL_URL:-http://languagetool:8010}
     depends_on:
       omnidata:
         condition: service_started
@@ -93,6 +106,27 @@ services:
       - "11434:11434"
     volumes:
       - ollama-models:/root/.ollama
+
+  # Pulls the default model once on first start so keyless AI probes work.
+  # Override the model with OLLAMA_MODEL (must match the app's OLLAMA_MODEL).
+  ollama-pull:
+    image: ollama/ollama:latest
+    profiles: ["keyless"]
+    restart: "no"
+    entrypoint: ["/bin/sh", "-c"]
+    command: ["sleep 5 && OLLAMA_HOST=http://ollama:11434 ollama pull ${OLLAMA_MODEL:-llama3.1:8b}"]
+    depends_on:
+      - ollama
+
+  # LanguageTool — keyless grammar/style engine for editorial QA.
+  languagetool:
+    image: erikvl87/languagetool:latest
+    profiles: ["keyless"]
+    restart: unless-stopped
+    environment:
+      Java_Xmx: 512m
+    ports:
+      - "8010:8010"
 
 volumes:
   omni-redis:

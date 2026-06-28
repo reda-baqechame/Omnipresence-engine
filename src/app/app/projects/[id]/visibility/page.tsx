@@ -10,6 +10,7 @@ import { ExportButtons } from "@/components/export-buttons";
 import { CitationMovementPanel } from "@/components/citation-movement-panel";
 import { PromptImportPanel } from "@/components/prompt-import-panel";
 import { PromptHeatmap } from "@/components/prompt-heatmap";
+import { AiTracesPanel } from "@/components/ai-traces-panel";
 import type { PromptCategory } from "@/types/database";
 
 export default async function VisibilityPage({
@@ -156,6 +157,8 @@ export default async function VisibilityPage({
         <h2 className="text-xl font-semibold mb-4">Prompt Results ({results.length})</h2>
         <VisibilityTable results={results} brandName={project.name} competitors={project.competitors || []} />
       </div>
+
+      <AiTracesPanel projectId={id} />
 
       {prompts && prompts.length > 0 && (
         <div>
