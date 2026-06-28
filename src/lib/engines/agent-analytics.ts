@@ -82,8 +82,11 @@ export function parseServerLogs(raw: string, maxLines = 50_000): ParsedLogHit[] 
     if (reqMatch) path = reqMatch[1].slice(0, 500);
 
     // Status code: first standalone 3-digit number after the request line.
+    // Use indexOf (not split) so an empty/odd request field can't shatter the
+    // line into characters.
     let statusCode: number | null = null;
-    const afterReq = line.split(reqLine)[1] || "";
+    const reqIdx = reqLine ? line.indexOf(reqLine) : -1;
+    const afterReq = reqIdx >= 0 ? line.slice(reqIdx + reqLine.length) : line;
     const statusMatch = afterReq.match(/\b([1-5]\d{2})\b/);
     if (statusMatch) statusCode = Number(statusMatch[1]);
 

@@ -12,6 +12,11 @@ import { parseServerLogs, type ParsedLogHit } from "@/lib/engines/agent-analytic
 import { classifyCrawler } from "@/lib/tracking/ai-crawlers";
 
 const MAX_HITS_PER_REQUEST = 50_000;
+// Cap raw log text so a runaway paste can't exhaust memory before we parse it.
+const MAX_LOGS_CHARS = 8_000_000; // ~8 MB of text
+const MAX_STRUCTURED_HITS = 100_000; // cap before classify/normalize work
+// Supabase/PostgREST chokes on enormous single inserts; chunk the write.
+const INSERT_BATCH = 1_000;
 
 interface StructuredHit {
   userAgent?: unknown;
@@ -62,9 +67,13 @@ export async function POST(
   let parsed: ParsedLogHit[] = [];
 
   if (typeof body.logs === "string" && body.logs.trim()) {
+    if (body.logs.length > MAX_LOGS_CHARS) {
+      return apiError(`Log payload too large (max ${Math.floor(MAX_LOGS_CHARS / 1_000_000)} MB). Split it into smaller batches.`, 413);
+    }
     parsed = parseServerLogs(body.logs);
   } else if (Array.isArray(body.hits)) {
     parsed = (body.hits as StructuredHit[])
+      .slice(0, MAX_STRUCTURED_HITS)
       .map(normalizeStructuredHit)
       .filter((h): h is ParsedLogHit => h !== null);
   } else {
@@ -89,15 +98,35 @@ export async function POST(
     hit_at: h.hitAt,
   }));
 
+  let inserted = 0;
   try {
-    const { error } = await supabase.from("ai_crawler_hits").insert(rows);
-    if (error) return apiServerError("Failed to store crawler hits", error);
+    for (let i = 0; i < rows.length; i += INSERT_BATCH) {
+      const batch = rows.slice(i, i + INSERT_BATCH);
+      const { error } = await supabase.from("ai_crawler_hits").insert(batch);
+      if (error) {
+        // Surface a partial success rather than losing everything already stored.
+        if (inserted > 0) {
+          return NextResponse.json(
+            { ingested: inserted, partial: true, error: "Some batches failed to store." },
+            { status: 207 }
+          );
+        }
+        return apiServerError("Failed to store crawler hits", error);
+      }
+      inserted += batch.length;
+    }
   } catch (error) {
+    if (inserted > 0) {
+      return NextResponse.json(
+        { ingested: inserted, partial: true, error: "Some batches failed to store." },
+        { status: 207 }
+      );
+    }
     return apiServerError("Failed to store crawler hits", error);
   }
 
   return NextResponse.json({
-    ingested: rows.length,
+    ingested: inserted,
     bots: [...new Set(rows.map((r) => r.bot))],
     truncated: parsed.length > MAX_HITS_PER_REQUEST,
   });
