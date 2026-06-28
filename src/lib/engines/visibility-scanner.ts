@@ -121,6 +121,7 @@ async function scanSinglePrompt(
           data_source: "measured",
           data_source_detail: "ai_ui_capture",
           measurement_mode: "grounded",
+          entity_prominence: computeEntityProminence(captured.answer, [config.brandName, ...config.competitors]),
         },
         data_source: "measured",
       };
@@ -159,6 +160,7 @@ async function scanSinglePrompt(
             data_source: "measured",
             data_source_detail: "perplexity",
             measurement_mode: "grounded",
+            entity_prominence: computeEntityProminence(answer, [config.brandName, ...config.competitors]),
           },
           data_source: "measured",
         };
@@ -236,6 +238,13 @@ async function scanSinglePrompt(
             data_source: "measured",
             data_source_detail: res.provider || "serp",
             measurement_mode: "grounded",
+            // Prominence from the ranked answer surface: result titles in rank
+            // order + the AI Overview text. Position in this blob mirrors SERP
+            // rank, so an entity in the top result outweighs one ranked #9.
+            entity_prominence: computeEntityProminence(
+              [...top.map((r) => r.title || ""), res.data.aiOverview?.text || ""].join("\n"),
+              [config.brandName, ...config.competitors]
+            ),
           },
           data_source: "measured",
         };
@@ -381,6 +390,7 @@ async function sampleLLMVisibility(
       data_source: "model_knowledge",
       data_source_detail: usedOllama ? `ollama:${getOllamaModel()}` : "llm_direct",
       measurement_mode: "model_knowledge",
+      entity_prominence: computeEntityProminence(combinedText, [config.brandName, ...config.competitors]),
       label: usedOllama
         ? `Model-knowledge (open model ${getOllamaModel()}, ${runs.length}-run sample, no browsing)`
         : `Model-knowledge (${runs.length}-run sample, no browsing)`,
@@ -446,6 +456,7 @@ async function scanViaLLMMentions(
       data_source_detail: "dataforseo",
       measurement_mode: "grounded",
       aiSearchVolume: res.data[0]?.aiSearchVolume,
+      entity_prominence: computeEntityProminence(answerText, [config.brandName, ...config.competitors]),
     },
     data_source: "measured",
   };
@@ -508,6 +519,37 @@ function answerPosition(text: string, brand: string, competitors: string[]): num
     .sort((a, b) => a.idx - b.idx);
   const pos = entries.findIndex((e) => e.name === brand);
   return pos >= 0 ? pos + 1 : undefined;
+}
+
+export interface EntityProminence {
+  /** 1 = strongly recommended near the mention, 0.5 = mentioned in passing. */
+  strength: number;
+  /** Ordinal slot among all named entities by first appearance (1 = first). */
+  position: number;
+}
+
+/**
+ * Per-entity prominence for a single answer — the symmetric building block of a
+ * prominence-weighted Share of Voice. Ranks brand + competitors by first
+ * appearance and scores each one's recommendation strength, so a competitor
+ * named as the "#1 pick" in sentence one outranks one buried at the bottom. We
+ * compute this AT SCAN TIME (where the real answer text exists) and persist it
+ * in the freeform raw_response JSON, so SoV can be reconstructed without a
+ * schema change and without re-querying the model.
+ */
+export function computeEntityProminence(text: string, entities: string[]): Record<string, EntityProminence> {
+  if (!text) return {};
+  const lower = text.toLowerCase();
+  const found = entities
+    .filter((name) => name && name.trim())
+    .map((name) => ({ name, idx: lower.indexOf(name.toLowerCase()) }))
+    .filter((e) => e.idx >= 0)
+    .sort((a, b) => a.idx - b.idx);
+  const out: Record<string, EntityProminence> = {};
+  found.forEach((e, i) => {
+    out[e.name] = { strength: recommendationStrength(text, e.name), position: i + 1 };
+  });
+  return out;
 }
 
 function mapAIResult(data: {

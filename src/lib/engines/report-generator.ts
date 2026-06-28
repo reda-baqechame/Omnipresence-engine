@@ -9,6 +9,7 @@ import type {
 } from "@/types/database";
 import { getScoreLabel } from "@/lib/scoring/omnipresence";
 import { calculateVisibilityMetrics } from "@/lib/engines/visibility-scanner";
+import { calculateShareOfVoice } from "@/lib/engines/share-of-voice";
 import { escapeHtml, sanitizeHexColor } from "@/lib/security/escape-html";
 
 function e(value: string | number | undefined | null): string {
@@ -44,6 +45,11 @@ export function generateReportHTML(data: ReportData, whiteLabel?: { name: string
   const color = sanitizeHexColor(whiteLabel?.color);
   const scoreLabel = getScoreLabel(data.score.omnipresence_score);
   const visibility = calculateVisibilityMetrics(data.visibilityResults);
+  const sov = calculateShareOfVoice(
+    data.visibilityResults,
+    data.project.name,
+    data.project.competitors || []
+  );
   const criticalFindings = data.technicalFindings.filter((f) => f.severity === "critical" || f.severity === "high");
   const missingCoverage = data.coverageItems.filter((c) => !c.is_present);
   const topOpportunities = data.authorityOpportunities.slice(0, 10);
@@ -175,6 +181,26 @@ export function generateReportHTML(data: ReportData, whiteLabel?: { name: string
       <p class="legend">Based on ${measuredPct}% measured AI probes${maxSamples > 1 ? `, each AI prompt sampled up to ${maxSamples}× and majority-voted to control for AI response volatility` : ""}. Rates are computed only over engines we could measure this run; unmeasured engines are excluded rather than counted as zero.</p>
       ${visibility.sampleSize > 0 ? `<p class="legend">Mention rate 95% confidence interval: <strong>${Math.round(visibility.mentionRateCI.low * 100)}%–${Math.round(visibility.mentionRateCI.high * 100)}%</strong> across ${visibility.sampleSize} measured probe${visibility.sampleSize === 1 ? "" : "s"} · overall read confidence <strong>${Math.round(visibility.confidence * 100)}%</strong>. A narrower band means a more certain measurement.</p>` : ""}
     </div>
+
+    ${sov.sampleSize > 0 && sov.leaderboard.length > 0 ? `
+    <div class="section">
+      <h2>AI Share of Voice${sov.brandRank !== null ? ` <span class="tag ${sov.brandRank === 1 ? "live" : "estimated"}">Rank #${sov.brandRank} of ${sov.leaderboard.length}</span>` : ""}</h2>
+      <p class="legend">Prominence-weighted across ${sov.sampleSize} measured AI answer${sov.sampleSize === 1 ? "" : "s"} — being named as the #1 pick counts more than a passing mention near the bottom, the way real buyers act on AI answers.</p>
+      <table style="width:100%;border-collapse:collapse;font-size:13px;margin-top:8px;">
+        <thead><tr style="text-align:left;border-bottom:1px solid #e2e2e2;">
+          <th style="padding:6px 4px;">Brand</th><th style="padding:6px 4px;">Share of Voice</th><th style="padding:6px 4px;">Answers</th><th style="padding:6px 4px;">Avg. position</th>
+        </tr></thead>
+        <tbody>
+        ${sov.leaderboard.map((row) => `
+          <tr style="border-bottom:1px solid #f1f1f1;${row.isBrand ? "font-weight:600;background:#f7faff;" : ""}">
+            <td style="padding:6px 4px;">${e(row.name)}${row.isBrand ? " (you)" : ""}</td>
+            <td style="padding:6px 4px;">${Math.round(row.shareOfVoice * 100)}%</td>
+            <td style="padding:6px 4px;">${row.appearances}</td>
+            <td style="padding:6px 4px;">${row.avgPosition !== null ? `#${row.avgPosition}` : "—"}</td>
+          </tr>`).join("")}
+        </tbody>
+      </table>
+    </div>` : ""}
 
     ${competitorWinPrompts.length > 0 ? `
     <div class="section">

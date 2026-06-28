@@ -1,6 +1,8 @@
 import { notFound } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { calculateVisibilityMetrics } from "@/lib/engines/visibility-scanner";
+import { calculateShareOfVoice } from "@/lib/engines/share-of-voice";
+import { SovLeaderboard } from "@/components/sov-leaderboard";
 import { preferLiveData } from "@/lib/config/capabilities";
 import { compareVisibilityRuns } from "@/lib/engines/visibility-delta";
 import type { VisibilityResult } from "@/types/database";
@@ -35,6 +37,16 @@ export default async function VisibilityPage({
   const liveMode = preferLiveData();
 
   const completedRuns = (runs || []).filter((r) => r.status === "completed");
+
+  // Share of Voice reflects the CURRENT competitive standing, so scope it to the
+  // latest completed run (fall back to all results if no run is tagged).
+  const latestRunId = completedRuns[0]?.id;
+  const sovResults = latestRunId ? results.filter((r) => r.run_id === latestRunId) : results;
+  const sov = calculateShareOfVoice(
+    sovResults.length ? sovResults : results,
+    project.name,
+    project.competitors || []
+  );
   let runDelta = null;
 
   if (completedRuns.length >= 2) {
@@ -117,6 +129,8 @@ export default async function VisibilityPage({
           </div>
         ))}
       </div>
+
+      <SovLeaderboard sov={sov} />
 
       {runDelta && (
         <CitationMovementPanel delta={runDelta} competitors={project.competitors || []} />
