@@ -57,17 +57,25 @@ export async function buildProofReport(
       .order("executed_at", { ascending: true }),
     supabase
       .from("visibility_results")
-      .select("brand_cited, created_at")
-      .eq("project_id", projectId),
+      .select("brand_cited, run_id, created_at")
+      .eq("project_id", projectId)
+      .order("created_at", { ascending: false }),
   ]);
 
   const first = scores?.[0];
   const last = scores && scores.length ? scores[scores.length - 1] : undefined;
 
   // Citations: baseline snapshot vs current measured brand_cited count.
+  // Scope "now" to the LATEST run only — visibility_results accumulates across
+  // scans, so counting all-time brand_cited rows would inflate the citation
+  // count as more scans run (fake improvement against a point-in-time
+  // baseline). The query is ordered newest-first, so row 0 is the latest run.
   const baselineCitations =
     (baselines?.[0]?.baseline_snapshot as { citation_count?: number } | null)?.citation_count ?? null;
-  const currentCitations = (visibility || []).filter((v) => v.brand_cited).length;
+  const latestRunId = visibility?.[0]?.run_id;
+  const currentCitations = (visibility || []).filter(
+    (v) => v.run_id === latestRunId && v.brand_cited
+  ).length;
 
   // Average rank: compare oldest vs newest snapshot per tracked keyword.
   const avgRank = await computeRankDelta(supabase, projectId);
