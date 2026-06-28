@@ -68,6 +68,23 @@ export function estimateCostUsd(model: string, inputTokens: number, outputTokens
   return (inputTokens / 1_000_000) * p.in + (outputTokens / 1_000_000) * p.out;
 }
 
+/** Token usage in any of the shapes providers report it. */
+export interface CallUsage {
+  inputTokens?: number;
+  outputTokens?: number;
+  promptTokens?: number;
+  completionTokens?: number;
+  totalTokens?: number;
+}
+
+function normalizeUsage(u?: CallUsage): { inputTokens: number; outputTokens: number } {
+  const inTok = Math.max(0, Math.round(u?.inputTokens ?? u?.promptTokens ?? 0));
+  let outTok = Math.max(0, Math.round(u?.outputTokens ?? u?.completionTokens ?? 0));
+  // Only a grand total was reported — attribute the remainder to output (conservative).
+  if (outTok === 0 && u?.totalTokens) outTok = Math.max(0, Math.round(u.totalTokens - inTok));
+  return { inputTokens: inTok, outputTokens: outTok };
+}
+
 export class BudgetExceededError extends Error {
   constructor(public reason: string) {
     super(`cost-guard: ${reason}`);
@@ -167,11 +184,19 @@ export async function assertWithinBudget(_provider: GuardProvider): Promise<void
 export async function recordSpend(
   provider: GuardProvider,
   model: string,
-  usage?: { inputTokens?: number; outputTokens?: number }
+  usage?: CallUsage,
+  opts?: { fallbackOutputTokens?: number }
 ): Promise<void> {
   if (guardDisabled()) return;
-  const inTok = Math.max(0, Math.round(usage?.inputTokens || 0));
-  const outTok = Math.max(0, Math.round(usage?.outputTokens || 0));
+  let { inputTokens: inTok, outputTokens: outTok } = normalizeUsage(usage);
+  if (inTok === 0 && outTok === 0) {
+    // The provider returned no usage payload, but a paid call still happened —
+    // never treat it as free, or the budget could be silently defeated. Charge a
+    // conservative estimate (assume the output cap was used) so spend always
+    // advances toward the limit.
+    inTok = 500;
+    outTok = opts?.fallbackOutputTokens ?? maxOutputTokens("probe");
+  }
   const cost = estimateCostUsd(model, inTok, outTok);
 
   const day = todayKey();

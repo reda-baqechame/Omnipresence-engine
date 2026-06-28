@@ -135,7 +135,9 @@ export async function generateWithAI(
       abortSignal: AbortSignal.timeout(60000),
     });
 
-    await recordSpend("openai", modelId, result.usage);
+    await recordSpend("openai", modelId, result.usage, {
+      fallbackOutputTokens: maxOutputTokens("content"),
+    });
     return { success: true, data: result.text, creditsUsed: model === "quality" ? 5 : 1 };
   } catch (error) {
     return {
@@ -164,7 +166,9 @@ export async function generateStructured<T>(
       abortSignal: AbortSignal.timeout(60000),
     });
 
-    await recordSpend("openai", "gpt-4o-mini", result.usage);
+    await recordSpend("openai", "gpt-4o-mini", result.usage, {
+      fallbackOutputTokens: maxOutputTokens("content"),
+    });
     return { success: true, data: result.object, creditsUsed: 2 };
   } catch (error) {
     return {
