@@ -88,12 +88,22 @@ export async function gatherReportData(
 
   let realCpc: number | null = null;
   if (attribution) {
-    const { data: kwRows } = await supabase
-      .from("keywords")
+    // Keyword inventory for real-CPC lookup: scan-discovered opportunities are
+    // the broadest source; fall back to the user's tracked rank keywords.
+    const { data: oppRows } = await supabase
+      .from("keyword_opportunities")
       .select("keyword")
       .eq("project_id", projectId)
       .limit(50);
-    const kwList = (kwRows || []).map((k) => k.keyword).filter(Boolean);
+    let kwList = (oppRows || []).map((k) => k.keyword).filter(Boolean);
+    if (!kwList.length) {
+      const { data: rankRows } = await supabase
+        .from("rank_keywords")
+        .select("keyword")
+        .eq("project_id", projectId)
+        .limit(50);
+      kwList = (rankRows || []).map((k) => k.keyword).filter(Boolean);
+    }
     if (kwList.length) realCpc = await getRealKeywordCpc(kwList);
   }
 
