@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useCallback } from "react";
+import { useState, useCallback } from "react";
 
 interface LedgerEntry {
   id: string;
@@ -69,10 +69,6 @@ export function GeoLiftLab({ projectId, initialEntries }: { projectId: string; i
       /* ignore */
     }
   }, [projectId]);
-
-  useEffect(() => {
-    refresh();
-  }, [refresh]);
 
   async function launch() {
     if (busy) return;
@@ -169,7 +165,16 @@ export function GeoLiftLab({ projectId, initialEntries }: { projectId: string; i
       )}
 
       <div>
-        <h3 className="font-semibold mb-3">Measured results ({done.length})</h3>
+        <div className="flex items-center justify-between mb-3">
+          <h3 className="font-semibold">Measured results ({done.length})</h3>
+          <button
+            type="button"
+            onClick={refresh}
+            className="text-xs text-muted-foreground hover:text-foreground border border-border rounded-lg px-3 py-1.5"
+          >
+            Refresh
+          </button>
+        </div>
         {done.length === 0 ? (
           <div className="bg-card border border-border rounded-xl p-6 text-center text-muted-foreground text-sm">
             No completed experiments yet. Launch one above — results appear after the measurement window.
