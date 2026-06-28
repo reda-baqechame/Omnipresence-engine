@@ -7,6 +7,7 @@ import { cn } from "@/lib/utils";
 const TABS = [
   { href: "", label: "Overview" },
   { href: "/proof", label: "Proof" },
+  { href: "/geo-lift", label: "GEO Lift" },
   { href: "/visibility", label: "Visibility" },
   { href: "/crawlers", label: "AI Crawlers" },
   { href: "/aeo-readiness", label: "AEO Readiness" },
