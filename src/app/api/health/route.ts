@@ -114,6 +114,8 @@ export async function GET() {
             monthCostUsd: Math.round(spend.monthCost * 1000) / 1000,
             dailyBudgetUsd: spend.dailyBudget,
             monthlyBudgetUsd: spend.monthlyBudget,
+            atDailyLimit: spend.atDailyLimit,
+            atMonthlyLimit: spend.atMonthlyLimit,
             enabled: !spend.disabled,
           }
         : null,

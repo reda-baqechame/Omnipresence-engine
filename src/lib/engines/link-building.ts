@@ -37,12 +37,14 @@ export function buildMonthlyCampaign(
   const partialCount = Math.round(count * ANCHOR_MIX.partial);
   const exactCount = count - brandedCount - partialCount;
 
-  const targets = gapDomains.slice(0, count);
+  // Only ever target REAL gap domains — never fabricate a placeholder outreach
+  // URL. If there are no real targets, no orders are produced (honest empty).
+  const targets = gapDomains.filter((g) => g.domain && g.domain.trim()).slice(0, count);
   let i = 0;
 
   for (let n = 0; n < brandedCount && i < targets.length; n++, i++) {
     orders.push({
-      target_url: `https://${targets[i]?.domain || "vendor-placeholder.com"}/outreach`,
+      target_url: `https://${targets[i].domain}/outreach`,
       anchor_text: brand,
       anchor_type: "branded",
       vendor_tier: tier,
@@ -52,7 +54,7 @@ export function buildMonthlyCampaign(
   }
   for (let n = 0; n < partialCount && i < targets.length; n++, i++) {
     orders.push({
-      target_url: `https://${targets[i]?.domain || "vendor-placeholder.com"}/outreach`,
+      target_url: `https://${targets[i].domain}/outreach`,
       anchor_text: `${primaryKw} experts`,
       anchor_type: "partial",
       vendor_tier: tier,

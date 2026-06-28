@@ -76,9 +76,14 @@ export class BudgetExceededError extends Error {
 }
 
 // ---- Layer 2: per-instance sliding-window rate limiter ----
+// Pure runaway-loop protection (the USD budget below is the real money cap).
+// The counter is shared across concurrent requests on a warm serverless
+// instance, so the default is set high enough that legitimate multi-tenant
+// traffic never false-trips it, while a tight infinite loop (thousands/min) is
+// still stopped instantly.
 const callTimes: number[] = [];
 function checkRate(): void {
-  const limit = Math.floor(num("LLM_MAX_CALLS_PER_MIN", 60));
+  const limit = Math.floor(num("LLM_MAX_CALLS_PER_MIN", 300));
   if (limit <= 0) return;
   const now = Date.now();
   const windowStart = now - 60_000;
@@ -198,15 +203,23 @@ export async function getSpendSnapshot(): Promise<{
   monthCost: number;
   dailyBudget: number;
   monthlyBudget: number;
+  atDailyLimit: boolean;
+  atMonthlyLimit: boolean;
   disabled: boolean;
 }> {
   await refreshCache();
+  const dayCost = cache?.dayCost ?? 0;
+  const monthCost = cache?.monthCost ?? 0;
+  const dailyBudget = num("LLM_DAILY_BUDGET_USD", 5);
+  const monthlyBudget = num("LLM_MONTHLY_BUDGET_USD", 50);
   return {
     day: todayKey(),
-    dayCost: cache?.dayCost ?? 0,
-    monthCost: cache?.monthCost ?? 0,
-    dailyBudget: num("LLM_DAILY_BUDGET_USD", 5),
-    monthlyBudget: num("LLM_MONTHLY_BUDGET_USD", 50),
+    dayCost,
+    monthCost,
+    dailyBudget,
+    monthlyBudget,
+    atDailyLimit: dailyBudget > 0 && dayCost >= dailyBudget,
+    atMonthlyLimit: monthlyBudget > 0 && monthCost >= monthlyBudget,
     disabled: guardDisabled(),
   };
 }
