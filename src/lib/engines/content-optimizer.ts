@@ -1,6 +1,6 @@
 import { searchGoogleOrganicRouter } from "@/lib/providers/serp-router";
 import { scrapePage } from "@/lib/providers/firecrawl";
-import { contentTerms, termFrequencies, entities } from "@/lib/nlp/wink";
+import { termFrequencies, entities } from "@/lib/nlp/wink";
 import { logProviderError } from "@/lib/observability/log";
 
 /**
@@ -138,7 +138,10 @@ export async function optimizeContent(input: {
       ? (await safeScrapeText(input.targetUrl))
       : "";
   const draftFreq = termFrequencies(draftText);
-  const draftWordCount = contentTerms(draftText).length;
+  // Full word count (matches how competitor page.wordCount is measured) — using
+  // the stopword-stripped term count here would make the draft look ~30%
+  // shorter than competitors and unfairly penalize the word-count score.
+  const draftWordCount = (draftText.match(/\S+/g) || []).length;
 
   // Important terms: present in >=40% of ranking pages.
   const threshold = Math.max(2, Math.ceil(pages.length * 0.4));
@@ -213,7 +216,7 @@ export async function optimizeContent(input: {
     keyword,
     competitorsAnalyzed: pages.length,
     medianWordCount,
-    draftWordCount: draftText ? (draftText.match(/\S+/g) || []).length : 0,
+    draftWordCount,
     score,
     termTargets,
     entityTargets,
