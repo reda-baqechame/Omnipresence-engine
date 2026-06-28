@@ -8,6 +8,7 @@ const TABS = [
   { href: "", label: "Overview" },
   { href: "/proof", label: "Proof" },
   { href: "/visibility", label: "Visibility" },
+  { href: "/crawlers", label: "AI Crawlers" },
   { href: "/aeo-readiness", label: "AEO Readiness" },
   { href: "/frontier", label: "Frontier" },
   { href: "/prompts", label: "Prompts" },
