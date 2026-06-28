@@ -11,6 +11,8 @@
     "smoke": "node scripts/smoke-test.mjs",
     "check:env": "node scripts/check-env.mjs",
     "verify:tables": "node scripts/verify-table-coverage.mjs",
+    "verify:columns": "node scripts/verify-column-coverage.mjs",
+    "verify:schema": "node scripts/verify-table-coverage.mjs && node scripts/verify-column-coverage.mjs",
     "verify:providers": "node scripts/verify-providers.mjs",
     "env:push": "node scripts/push-env-to-vercel.mjs",
     "verify:prod": "node scripts/verify-production.mjs",
