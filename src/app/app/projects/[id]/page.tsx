@@ -6,8 +6,10 @@ import { ScoreHistoryChart } from "@/components/score-chart";
 import { ScanPoller } from "@/components/scan-poller";
 import { CompetitorChart } from "@/components/competitor-chart";
 import { calculateVisibilityMetrics } from "@/lib/engines/visibility-scanner";
-import type { VisibilityResult } from "@/types/database";
+import type { VisibilityResult, ExecutionTask } from "@/types/database";
 import { getProject } from "@/lib/projects";
+import { buildActionPlan } from "@/lib/engines/action-plan";
+import { ActionPlanPanel } from "@/components/action-plan-panel";
 
 export default async function ProjectOverviewPage({
   params,
@@ -26,13 +28,17 @@ export default async function ProjectOverviewPage({
     { data: coverage },
     { data: visibility },
     { data: brandProfile },
+    { data: tasks },
   ] = await Promise.all([
     supabase.from("scores").select("*").eq("project_id", id).order("created_at", { ascending: true }),
     supabase.from("technical_findings").select("*").eq("project_id", id).order("severity"),
     supabase.from("coverage_items").select("*").eq("project_id", id),
     supabase.from("visibility_results").select("*").eq("project_id", id),
     supabase.from("brand_profiles").select("*").eq("project_id", id).single(),
+    supabase.from("execution_tasks").select("*").eq("project_id", id),
   ]);
+
+  const actionPlan = buildActionPlan(id, (tasks || []) as ExecutionTask[]);
 
   const latestScore = scores?.[scores.length - 1];
   const previousScore = scores && scores.length >= 2 ? scores[scores.length - 2] : null;
@@ -47,6 +53,8 @@ export default async function ProjectOverviewPage({
   return (
     <div className="space-y-8">
       <ScanPoller projectId={id} initialStatus={project.status} />
+
+      <ActionPlanPanel projectId={id} plan={actionPlan} />
 
       {latestScore ? (
         <>
