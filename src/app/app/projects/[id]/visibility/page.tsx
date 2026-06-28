@@ -2,6 +2,7 @@ import { notFound } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { calculateVisibilityMetrics } from "@/lib/engines/visibility-scanner";
 import { calculateShareOfVoice, calculateShareOfVoiceByEngine, calculateSovTrend, compareShareOfVoice } from "@/lib/engines/share-of-voice";
+import { measuredEngineStats, competitorWinPrompts, topCitedSources } from "@/lib/engines/visibility-insights";
 import { SovLeaderboard } from "@/components/sov-leaderboard";
 import { SovByEngineBreakdown } from "@/components/sov-by-engine";
 import { SovTrendChart } from "@/components/sov-trend-chart";
@@ -90,16 +91,15 @@ export default async function VisibilityPage({
     }
   }
 
-  const byEngine = results.reduce(
-    (acc, r) => {
-      if (!acc[r.engine]) acc[r.engine] = { total: 0, mentioned: 0, cited: 0 };
-      acc[r.engine].total++;
-      if (r.brand_mentioned) acc[r.engine].mentioned++;
-      if (r.brand_cited) acc[r.engine].cited++;
-      return acc;
-    },
-    {} as Record<string, { total: number; mentioned: number; cited: number }>
-  );
+  // Claim discipline: keep measured probes strictly separate from "unavailable"
+  // so an engine we couldn't read is never shown as a fake 0% result.
+  const engineStats = measuredEngineStats(results);
+
+  // Actionable gaps, scoped to the current competitive snapshot (latest run).
+  const insightResults = sovResults.length ? sovResults : results;
+  const competitorWins = competitorWinPrompts(insightResults);
+  const citedSources = topCitedSources(insightResults, project.domain || "");
+  const missingSources = citedSources.filter((s) => !s.ownsBrand);
 
   const heatmapCells = (() => {
     const promptMap = new Map((prompts || []).map((p) => [p.id, p.category as PromptCategory]));
@@ -174,18 +174,76 @@ export default async function VisibilityPage({
       <div>
         <h2 className="text-xl font-semibold mb-4">Visibility by Engine</h2>
         <div className="grid md:grid-cols-3 lg:grid-cols-4 gap-3">
-          {Object.entries(byEngine).map(([engine, stats]) => (
-            <div key={engine} className="bg-card border border-border rounded-xl p-4">
-              <div className="text-sm font-medium capitalize mb-2">{engine.replace(/_/g, " ")}</div>
-              <div className="text-xs text-muted-foreground space-y-1">
-                <div>Prompts tested: {stats.total}</div>
-                <div className="text-green-400">Mentioned: {stats.mentioned}</div>
-                <div className="text-cyan-400">Cited: {stats.cited}</div>
-              </div>
+          {engineStats.map((stats) => (
+            <div key={stats.engine} className="bg-card border border-border rounded-xl p-4">
+              <div className="text-sm font-medium capitalize mb-2">{stats.engine.replace(/_/g, " ")}</div>
+              {stats.measured === 0 ? (
+                <div className="text-xs text-yellow-400/90 space-y-1">
+                  <div>Not measured this run</div>
+                  {stats.unavailable > 0 && (
+                    <div className="text-muted-foreground">{stats.unavailable} probe{stats.unavailable === 1 ? "" : "s"} unavailable — connect this engine to measure it</div>
+                  )}
+                </div>
+              ) : (
+                <div className="text-xs text-muted-foreground space-y-1">
+                  <div>Measured probes: {stats.measured}</div>
+                  <div className="text-green-400">Mentioned: {stats.mentioned} ({Math.round((stats.mentionRate || 0) * 100)}%)</div>
+                  <div className="text-cyan-400">Cited: {stats.cited} ({Math.round((stats.citationRate || 0) * 100)}%)</div>
+                  {stats.unavailable > 0 && (
+                    <div className="text-yellow-400/70">{stats.unavailable} unavailable (excluded)</div>
+                  )}
+                </div>
+              )}
             </div>
           ))}
         </div>
       </div>
+
+      {competitorWins.length > 0 && (
+        <div>
+          <h2 className="text-xl font-semibold mb-1">Prompts where competitors beat you</h2>
+          <p className="text-sm text-muted-foreground mb-4 max-w-3xl">
+            Measured prompts where a competitor was mentioned or cited and you were not — your highest-priority content and AEO targets.
+          </p>
+          <div className="bg-card border border-border rounded-xl overflow-hidden">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="border-b border-border text-muted-foreground">
+                  <th className="text-left p-3">Prompt</th>
+                  <th className="text-left p-3">Engine</th>
+                  <th className="text-left p-3">Winning competitors</th>
+                </tr>
+              </thead>
+              <tbody>
+                {competitorWins.map((w, i) => (
+                  <tr key={`${w.engine}-${i}`} className="border-b border-border/50">
+                    <td className="p-3">{w.prompt}</td>
+                    <td className="p-3 capitalize text-muted-foreground">{w.engine.replace(/_/g, " ")}</td>
+                    <td className="p-3 text-muted-foreground">{w.competitors.join(", ")}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+
+      {missingSources.length > 0 && (
+        <div>
+          <h2 className="text-xl font-semibold mb-1">Sources AI cites (earned-media targets)</h2>
+          <p className="text-sm text-muted-foreground mb-4 max-w-3xl">
+            Domains AI engines cite for your prompts. These are the third-party sources you should pursue for coverage — get mentioned here and you get pulled into the answer.
+          </p>
+          <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-2">
+            {missingSources.map((s) => (
+              <div key={s.domain} className="flex justify-between bg-card border border-border rounded-lg px-3 py-2 text-sm">
+                <span className="truncate text-muted-foreground" title={s.domain}>{s.domain}</span>
+                <span className="font-medium shrink-0">{s.count}×</span>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
 
       {runs && runs.length > 0 && (
         <div>
