@@ -539,9 +539,18 @@ export function getResultDataSourceLabel(result: Pick<VisibilityResult, "raw_res
   return "Simulated";
 }
 
-export function calculateVisibilityMetrics(results: Array<Pick<VisibilityResult, "brand_mentioned" | "brand_cited" | "competitor_mentions" | "raw_response" | "data_source">>) {
+export function calculateVisibilityMetrics(results: Array<Pick<VisibilityResult, "brand_mentioned" | "brand_cited" | "competitor_mentions" | "raw_response" | "data_source" | "recommendation_strength" | "answer_position">>) {
   const attempted = results.length;
-  if (attempted === 0) return { mentionRate: 0, citationRate: 0, shareOfVoice: 0, winRate: 0, measuredRate: 0 };
+  const EMPTY = {
+    mentionRate: 0,
+    citationRate: 0,
+    shareOfVoice: 0,
+    winRate: 0,
+    measuredRate: 0,
+    prominence: 0,
+    avgPosition: null as number | null,
+  };
+  if (attempted === 0) return EMPTY;
 
   const dq = (r: { data_source?: DataQuality; raw_response?: Record<string, unknown> }) =>
     r.data_source ?? (r.raw_response?.data_source as DataQuality | undefined);
@@ -555,7 +564,7 @@ export function calculateVisibilityMetrics(results: Array<Pick<VisibilityResult,
   });
   const total = pool.length;
   const measured = pool.length;
-  if (total === 0) return { mentionRate: 0, citationRate: 0, shareOfVoice: 0, winRate: 0, measuredRate: 0 };
+  if (total === 0) return EMPTY;
 
   const mentions = pool.filter((r) => r.brand_mentioned).length;
   const citations = pool.filter((r) => r.brand_cited).length;
@@ -582,12 +591,31 @@ export function calculateVisibilityMetrics(results: Array<Pick<VisibilityResult,
   const totalMentions = mentions + compOnly + brandAndCompBoth;
   const shareOfVoice = totalMentions > 0 ? mentions / totalMentions : 0;
 
+  // Prominence (Profound-class): how STRONGLY the brand is recommended when it
+  // appears, not just whether it appears. recommendation_strength is 0-1 (1 =
+  // top recommendation, lower = mentioned in passing). avgPosition is the mean
+  // ordinal slot among answers that name the brand (lower = better). These
+  // separate "named but buried" from "named as the #1 pick" — the signal raw
+  // mention-count tools miss.
+  const mentionedPool = pool.filter((r) => r.brand_mentioned);
+  const prominence = mentionedPool.length
+    ? mentionedPool.reduce((s, r) => s + (r.recommendation_strength ?? 0), 0) / mentionedPool.length
+    : 0;
+  const positions = mentionedPool
+    .map((r) => r.answer_position)
+    .filter((p): p is number => typeof p === "number" && p > 0);
+  const avgPosition = positions.length
+    ? Math.round((positions.reduce((a, b) => a + b, 0) / positions.length) * 10) / 10
+    : null;
+
   return {
     mentionRate: mentions / total,
     citationRate: citations / total,
     shareOfVoice,
     winRate,
     measuredRate: measured / attempted,
+    prominence: Math.round(prominence * 100) / 100,
+    avgPosition,
   };
 }
 
