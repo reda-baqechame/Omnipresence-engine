@@ -178,13 +178,29 @@ async function scanSinglePrompt(
         const aiDomains = res.data.aiOverview?.citedDomains || [];
         const aiUrls = res.data.aiOverview?.citedUrls || [];
         const aiCited = brandMatcher.citedInDomains(aiDomains);
-        const brandInAi = res.data.brandInResults || aiCited;
 
-        const organicDomains = res.data.organicResults
-          .slice(0, 10)
+        const top = res.data.organicResults.slice(0, 10);
+        // A SERP full of pages ABOUT the brand (G2, Trustpilot, Reddit "Why X?",
+        // news) is real brand visibility even when the brand's own domain isn't
+        // the URL. Count the brand name appearing in result titles as a mention,
+        // not just owning a ranking domain — otherwise strong brands read as
+        // "not mentioned" on review/comparison queries (a weak, misleading miss).
+        const brandInTitles = top.some((r) => brandMatcher.mentionedIn(r.title || ""));
+        const brandInAi = res.data.brandInResults || aiCited;
+        const brandPresent = brandInAi || brandInTitles;
+
+        const competitorMentions: Record<string, boolean> = { ...res.data.competitorInResults };
+        for (const comp of config.competitors) {
+          if (!competitorMentions[comp]) {
+            const cm = makeCompetitorMatcher(comp);
+            competitorMentions[comp] = top.some((r) => cm.mentionedIn(r.title || ""));
+          }
+        }
+
+        const organicDomains = top
           .map((r) => tryHostname(r.url))
           .filter(Boolean);
-        const organicUrls = res.data.organicResults.slice(0, 10).map((r) => r.url).filter(Boolean);
+        const organicUrls = top.map((r) => r.url).filter(Boolean);
 
         // Brand's organic rank = its position in the answer surface (eTLD+1).
         const organicPosition = res.data.organicResults.findIndex(
@@ -193,16 +209,18 @@ async function scanSinglePrompt(
 
         return {
           ...base,
-          brand_mentioned: brandInAi,
+          brand_mentioned: brandPresent,
           brand_cited: aiCited,
-          competitor_mentions: res.data.competitorInResults,
+          competitor_mentions: competitorMentions,
           source_domains: [...new Set([...aiDomains, ...organicDomains])],
           cited_urls: [...new Set([...aiUrls, ...organicUrls])],
           measurement_mode: "grounded",
-          sentiment: brandInAi ? "neutral" : "unknown",
-          recommendation_strength: aiCited ? 1 : brandInAi ? 0.5 : 0,
+          sentiment: brandPresent ? "neutral" : "unknown",
+          recommendation_strength: aiCited ? 1 : brandPresent ? 0.5 : 0,
           owned_cited: aiCited || organicPosition >= 0,
-          third_party_cited: brandInAi && aiDomains.some((d) => !sameRegistrableDomain(d, config.brandDomain)),
+          third_party_cited:
+            brandPresent &&
+            [...aiDomains, ...organicDomains].some((d) => !sameRegistrableDomain(d, config.brandDomain)),
           answer_position: organicPosition >= 0 ? organicPosition + 1 : undefined,
           sample_count: 1,
           variance: 0,
