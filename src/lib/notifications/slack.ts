@@ -1,3 +1,5 @@
+import { fetchWithTimeout } from "@/lib/providers/http";
+
 export interface SlackMessage {
   text: string;
   blocks?: Array<Record<string, unknown>>;
@@ -10,7 +12,7 @@ export async function sendSlackWebhook(
   if (!webhookUrl) return false;
 
   try {
-    const response = await fetch(webhookUrl, {
+    const response = await fetchWithTimeout(webhookUrl, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(message),

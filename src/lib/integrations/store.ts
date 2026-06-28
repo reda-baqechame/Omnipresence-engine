@@ -1,4 +1,5 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
+import { fetchWithTimeout } from "@/lib/providers/http";
 import { decryptCredentials } from "@/lib/security/credential-vault";
 
 export type CmsPlatform = "wordpress" | "webflow" | "shopify";
@@ -41,7 +42,7 @@ export async function publishViaCms(
     case "wordpress": {
       const url = creds.url || "";
       if (!url) return { ok: false };
-      const response = await fetch(`${url.replace(/\/$/, "")}/wp-json/wp/v2/posts`, {
+      const response = await fetchWithTimeout(`${url.replace(/\/$/, "")}/wp-json/wp/v2/posts`, {
         method: "POST",
         headers: {
           Authorization: `Bearer ${creds.apiKey}`,
@@ -59,7 +60,7 @@ export async function publishViaCms(
     }
     case "webflow": {
       if (!creds.collectionId) return { ok: false };
-      const response = await fetch(
+      const response = await fetchWithTimeout(
         `https://api.webflow.com/v2/collections/${creds.collectionId}/items`,
         {
           method: "POST",
@@ -85,7 +86,7 @@ export async function publishViaCms(
       const shop = (creds.shop || creds.url || "").replace(/\.myshopify\.com$/, "");
       if (!shop) return { ok: false };
       const blogId = creds.collectionId || "news";
-      const response = await fetch(
+      const response = await fetchWithTimeout(
         `https://${shop}.myshopify.com/admin/api/2024-01/blogs/${blogId}/articles.json`,
         {
           method: "POST",

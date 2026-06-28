@@ -1,4 +1,5 @@
 import type { BrandProfile, Project } from "@/types/database";
+import { fetchWithTimeout } from "@/lib/providers/http";
 import { generateStructured } from "@/lib/providers/ai-gateway";
 import { validateSchemaDeep } from "@/lib/engines/schema-validation";
 import { z } from "zod";
@@ -172,7 +173,7 @@ export async function deploySchemaToWordPress(
   htmlSnippet: string
 ): Promise<{ success: boolean; error?: string }> {
   try {
-    const response = await fetch(`${wpUrl}/wp-json/wp/v2/posts/${postId}`, {
+    const response = await fetchWithTimeout(`${wpUrl}/wp-json/wp/v2/posts/${postId}`, {
       method: "POST",
       headers: {
         Authorization: `Bearer ${apiKey}`,
@@ -197,7 +198,7 @@ export async function deploySchemaToWebflow(
   htmlSnippet: string
 ): Promise<{ success: boolean; error?: string }> {
   try {
-    const response = await fetch(
+    const response = await fetchWithTimeout(
       `https://api.webflow.com/v2/collections/${collectionId}/items/${itemId}`,
       {
         method: "PATCH",

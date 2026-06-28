@@ -1,4 +1,5 @@
 import { searchGoogleOrganicRouter } from "@/lib/providers/serp-router";
+import { fetchWithTimeout } from "@/lib/providers/http";
 import { logProviderError } from "@/lib/observability/log";
 import { fetchMentionFirehose } from "@/lib/providers/social-mentions";
 
@@ -41,7 +42,7 @@ async function getRedditToken(): Promise<string | null> {
   if (!REDDIT_CLIENT_ID || !REDDIT_CLIENT_SECRET) return null;
   try {
     const auth = Buffer.from(`${REDDIT_CLIENT_ID}:${REDDIT_CLIENT_SECRET}`).toString("base64");
-    const res = await fetch("https://www.reddit.com/api/v1/access_token", {
+    const res = await fetchWithTimeout("https://www.reddit.com/api/v1/access_token", {
       method: "POST",
       headers: {
         Authorization: `Basic ${auth}`,
@@ -75,7 +76,7 @@ export async function searchRedditMentions(
     const url = `https://oauth.reddit.com/search?q=${encodeURIComponent(
       query
     )}&limit=${limit}&sort=relevance&type=link`;
-    const res = await fetch(url, {
+    const res = await fetchWithTimeout(url, {
       headers: { Authorization: `Bearer ${token}`, "User-Agent": REDDIT_USER_AGENT },
     });
     if (!res.ok) return [];
@@ -129,7 +130,7 @@ export async function searchRedditViaSerp(query: string): Promise<CommunityMenti
 /** Real Hacker News mentions via the keyless Algolia HN Search API. */
 export async function searchHackerNewsMentions(query: string): Promise<CommunityMentionRow[]> {
   try {
-    const res = await fetch(
+    const res = await fetchWithTimeout(
       `https://hn.algolia.com/api/v1/search?query=${encodeURIComponent(query)}&tags=story&hitsPerPage=20`,
       { headers: { connection: "close" }, signal: AbortSignal.timeout(10_000) }
     );

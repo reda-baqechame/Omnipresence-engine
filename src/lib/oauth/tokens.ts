@@ -1,4 +1,5 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
+import { fetchWithTimeout } from "@/lib/providers/http";
 
 interface OAuthConnection {
   access_token: string | null;
@@ -12,7 +13,7 @@ export async function refreshGoogleAccessToken(refreshToken: string): Promise<{
   expires_in: number;
   refresh_token?: string;
 } | null> {
-  const response = await fetch("https://oauth2.googleapis.com/token", {
+  const response = await fetchWithTimeout("https://oauth2.googleapis.com/token", {
     method: "POST",
     headers: { "Content-Type": "application/x-www-form-urlencoded" },
     body: new URLSearchParams({

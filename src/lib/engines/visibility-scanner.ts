@@ -55,8 +55,28 @@ export async function runVisibilityScan(
     .sort((a, b) => (b.priority ?? 0) - (a.priority ?? 0))
     .slice(0, scanLimit);
 
+  // Overall wall-clock budget so a slow provider chain can't run the scan past
+  // the host's function limit and get hard-killed (which would lose ALL results
+  // and leave the run wedged). When the budget is exhausted we stop probing and
+  // return what we measured so far — a partial-but-honest result beats a kill.
+  const VISIBILITY_SCAN_BUDGET_MS = Math.max(
+    60000,
+    Number(process.env.VISIBILITY_SCAN_BUDGET_MS) || 240000
+  );
+  const deadline = Date.now() + VISIBILITY_SCAN_BUDGET_MS;
+
+  let budgetExhausted = false;
   for (const prompt of promptsToScan) {
+    if (budgetExhausted) break;
     for (const engine of engines) {
+      if (Date.now() >= deadline) {
+        budgetExhausted = true;
+        logProviderError("visibility.scan_budget_exhausted", new Error("scan budget exhausted"), {
+          measured: results.length,
+          prompt: prompt.text.slice(0, 80),
+        });
+        break;
+      }
       const result = await scanSinglePrompt(config, prompt, engine);
       if (result) results.push(result);
     }

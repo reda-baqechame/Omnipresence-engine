@@ -1,4 +1,5 @@
 import type { CmsCredentials } from "@/lib/integrations/store";
+import { fetchWithTimeout } from "@/lib/providers/http";
 
 /** Apply on-page meta fixes to WordPress when post ID or slug is known. */
 export async function patchWordPressPageMeta(
@@ -10,7 +11,7 @@ export async function patchWordPressPageMeta(
 
   let postId = opts.postId;
   if (!postId && opts.slug) {
-    const search = await fetch(
+    const search = await fetchWithTimeout(
       `${base}/wp-json/wp/v2/posts?slug=${encodeURIComponent(opts.slug)}&per_page=1`,
       { headers: { Authorization: `Bearer ${creds.apiKey}` } }
     );
@@ -27,7 +28,7 @@ export async function patchWordPressPageMeta(
     body.meta = { _yoast_wpseo_metadesc: opts.metaDescription };
   }
 
-  const res = await fetch(`${base}/wp-json/wp/v2/posts/${postId}`, {
+  const res = await fetchWithTimeout(`${base}/wp-json/wp/v2/posts/${postId}`, {
     method: "POST",
     headers: {
       Authorization: `Bearer ${creds.apiKey}`,
@@ -54,7 +55,7 @@ export async function injectInternalLinkToWordPress(
   }
   if (!slug) return { ok: false };
 
-  const search = await fetch(
+  const search = await fetchWithTimeout(
     `${base}/wp-json/wp/v2/posts?slug=${encodeURIComponent(slug)}&per_page=1`,
     { headers: { Authorization: `Bearer ${creds.apiKey}` } }
   );
@@ -67,7 +68,7 @@ export async function injectInternalLinkToWordPress(
   const existing = post.content?.rendered || "";
   if (existing.includes(opts.targetUrl)) return { ok: true };
 
-  const res = await fetch(`${base}/wp-json/wp/v2/posts/${post.id}`, {
+  const res = await fetchWithTimeout(`${base}/wp-json/wp/v2/posts/${post.id}`, {
     method: "POST",
     headers: {
       Authorization: `Bearer ${creds.apiKey}`,

@@ -1,4 +1,5 @@
 /** 14-step blog pipeline (AEO Engine pattern) for content domination. */
+import { fetchWithTimeout } from "@/lib/providers/http";
 
 export const BLOG_PIPELINE_STEPS = [
   { id: 1, key: "keyword_research", label: "Keyword research" },
@@ -58,7 +59,7 @@ export async function generateFeaturedImage(
     const fullPrompt = opts.style
       ? `${prompt}. Style: ${opts.style}. Clean, professional, editorial blog hero image, no text overlay.`
       : `${prompt}. Clean, professional, editorial blog hero image, no text overlay.`;
-    const res = await fetch("https://api.openai.com/v1/images/generations", {
+    const res = await fetchWithTimeout("https://api.openai.com/v1/images/generations", {
       method: "POST",
       headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
       body: JSON.stringify({
@@ -67,6 +68,7 @@ export async function generateFeaturedImage(
         size: opts.size || "1536x1024",
         n: 1,
       }),
+      timeoutMs: 90000, // image generation is slow; don't cut off a legit render
     });
     if (!res.ok) {
       return { success: false, error: `Image API error: ${res.status}` };

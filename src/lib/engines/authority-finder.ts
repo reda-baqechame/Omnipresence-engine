@@ -2,6 +2,7 @@ import {
   getBacklinks,
   resolveCompetitorDomain,
 } from "@/lib/providers/dataforseo";
+import { fetchWithTimeout } from "@/lib/providers/http";
 import { getBacklinksFree } from "@/lib/providers/backlinks-free";
 import {
   resolveCompetitorDomainFree,
@@ -446,7 +447,7 @@ export async function sendOutreachEmail(
   if (!apiKey) return { success: false, error: "Resend not configured" };
 
   try {
-    const response = await fetch("https://api.resend.com/emails", {
+    const response = await fetchWithTimeout("https://api.resend.com/emails", {
       method: "POST",
       headers: {
         Authorization: `Bearer ${apiKey}`,
