@@ -35,19 +35,33 @@ const SentimentSchema = z.object({
   ),
 });
 
+// Keep each batch small enough that the JSON response fits within the cost
+// guard's output-token cap. A single large batch would truncate and fail to
+// parse, silently degrading every mention to "unknown" sentiment.
+const SENTIMENT_BATCH = 15;
+
 async function scoreSentiments(
   items: { title?: string; url: string }[]
 ): Promise<Map<number, { sentiment: Sentiment; score: number }>> {
   const map = new Map<number, { sentiment: Sentiment; score: number }>();
   if (items.length === 0) return map;
-  const list = items.map((it, i) => `${i}. ${it.title || it.url}`).join("\n");
-  const res = await generateStructured(
-    "You classify the sentiment of brand mentions toward the brand. Return sentiment and a score from -1 (very negative) to 1 (very positive) for each numbered item.",
-    `Classify the sentiment of these brand mentions:\n${list}`,
-    SentimentSchema
-  );
-  if (res.success && res.data) {
-    for (const r of res.data.results) map.set(r.index, { sentiment: r.sentiment, score: r.score });
+
+  for (let start = 0; start < items.length; start += SENTIMENT_BATCH) {
+    const batch = items.slice(start, start + SENTIMENT_BATCH);
+    const list = batch.map((it, i) => `${i}. ${it.title || it.url}`).join("\n");
+    const res = await generateStructured(
+      "You classify the sentiment of brand mentions toward the brand. Return sentiment and a score from -1 (very negative) to 1 (very positive) for each numbered item.",
+      `Classify the sentiment of these brand mentions:\n${list}`,
+      SentimentSchema
+    );
+    if (res.success && res.data) {
+      for (const r of res.data.results) {
+        const globalIndex = start + r.index;
+        if (globalIndex >= start && globalIndex < start + batch.length) {
+          map.set(globalIndex, { sentiment: r.sentiment, score: r.score });
+        }
+      }
+    }
   }
   return map;
 }
@@ -341,13 +355,15 @@ export interface BrandSerpAudit {
   missingProfiles: string[];
 }
 
-const EXPECTED_PROFILES = [
-  { name: "LinkedIn", hint: "linkedin.com" },
-  { name: "Crunchbase", hint: "crunchbase.com" },
-  { name: "Wikipedia", hint: "wikipedia.org" },
-  { name: "G2", hint: "g2.com" },
-  { name: "Trustpilot", hint: "trustpilot.com" },
-  { name: "X (Twitter)", hint: "twitter.com" },
+const EXPECTED_PROFILES: { name: string; hints: string[] }[] = [
+  { name: "LinkedIn", hints: ["linkedin.com"] },
+  { name: "Crunchbase", hints: ["crunchbase.com"] },
+  { name: "Wikipedia", hints: ["wikipedia.org"] },
+  { name: "G2", hints: ["g2.com"] },
+  { name: "Trustpilot", hints: ["trustpilot.com"] },
+  // X rebranded from twitter.com to x.com — match either to avoid falsely
+  // reporting a brand as "missing from X" when it's on the current domain.
+  { name: "X (Twitter)", hints: ["x.com", "twitter.com"] },
 ];
 
 export async function auditBrandSerp(
@@ -372,7 +388,9 @@ export async function auditBrandSerp(
   });
 
   const blob = top.map((r) => r.url.toLowerCase()).join(" ");
-  const missingProfiles = EXPECTED_PROFILES.filter((p) => !blob.includes(p.hint)).map((p) => p.name);
+  const missingProfiles = EXPECTED_PROFILES.filter(
+    (p) => !p.hints.some((h) => blob.includes(h))
+  ).map((p) => p.name);
 
   return {
     available: true,
