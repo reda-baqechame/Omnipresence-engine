@@ -1,5 +1,5 @@
 import { preferLiveData, hasSerpCapability, getCapabilitiesSummary } from "@/lib/config/capabilities";
-import { generateTemplatePrompts } from "@/lib/engines/prompt-generator";
+import { generatePromptUniverse, generateTemplatePrompts } from "@/lib/engines/prompt-generator";
 import { runVisibilityScan, calculateVisibilityMetrics } from "@/lib/engines/visibility-scanner";
 import { findAuthorityOpportunities } from "@/lib/engines/authority-finder";
 import { checkPlatformCoverage } from "@/lib/engines/coverage-checker";
@@ -98,14 +98,38 @@ export async function runPublicAuditIntelligence(input: {
     };
   }
 
-  const templatePrompts = generateTemplatePrompts(
-    PUBLIC_PROJECT_ID,
-    input.brandName,
-    input.industry,
-    location,
-    competitors,
-    [input.industry]
-  )
+  // Prefer LLM-generated, brand/industry-aware prompts (real buyer intent) so a
+  // strong brand shows real visibility instead of fake zeros from generic
+  // local-service templates. Falls back to the improved templates if the LLM
+  // call fails or returns nothing.
+  let candidatePrompts: Array<{ text: string; category?: string; priority?: number }> = [];
+  if (process.env.OPENAI_API_KEY || process.env.ANTHROPIC_API_KEY || process.env.GOOGLE_GENERATIVE_AI_API_KEY) {
+    try {
+      candidatePrompts = await generatePromptUniverse(
+        PUBLIC_PROJECT_ID,
+        input.brandName,
+        input.industry,
+        location,
+        competitors,
+        `${input.industry} buyers`,
+        [input.industry],
+        14
+      );
+    } catch {
+      candidatePrompts = [];
+    }
+  }
+  if (candidatePrompts.length === 0) {
+    candidatePrompts = generateTemplatePrompts(
+      PUBLIC_PROJECT_ID,
+      input.brandName,
+      input.industry,
+      location,
+      competitors,
+      [input.industry]
+    );
+  }
+  const templatePrompts = candidatePrompts
     .sort((a, b) => (b.priority ?? 0) - (a.priority ?? 0))
     .slice(0, MAX_PUBLIC_PROMPTS);
 
@@ -137,7 +161,9 @@ export async function runPublicAuditIntelligence(input: {
     checkPlatformCoverage(PUBLIC_PROJECT_ID, input.brandName, input.domain, competitors),
     getBacklinksFree(input.domain, 15),
     searchGoogleOrganicRouter(
-      `best ${input.industry} ${location}`,
+      location && location.trim().toLowerCase() !== "united states"
+        ? `best ${input.industry} ${location}`
+        : `best ${input.industry}`,
       location,
       input.domain,
       competitors

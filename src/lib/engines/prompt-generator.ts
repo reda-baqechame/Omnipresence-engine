@@ -15,17 +15,36 @@ const PromptSchema = z.object({
   ),
 });
 
+// Universal, intent-rich templates that work across SaaS, e-commerce, B2B,
+// media, and local businesses — not just local-service queries. Brand- and
+// category-aware prompts are what actually surface real visibility in SERPs and
+// AI answers, so a strong brand shows real presence instead of fake zeros.
 const CATEGORY_TEMPLATES: Record<PromptCategory, string[]> = {
-  best_of: ["best {service} in {location}", "top rated {service} companies", "best {service} for {audience}"],
-  comparison: ["{brand} vs {competitor}", "{competitor} alternatives", "compare {service} providers in {location}"],
-  local: ["{service} near me", "{service} in {location}", "24/7 {service} {location}"],
-  problem_aware: ["why is my {problem}", "how to fix {problem}", "signs you need {service}"],
-  solution_aware: ["who fixes {problem} fast", "best way to {solution}", "how much does {service} cost"],
-  pricing: ["{service} cost in {location}", "how much does {service} cost", "affordable {service} {location}"],
-  trust: ["is {brand} reliable", "{brand} reviews", "is {brand} legit"],
-  alternatives: ["best alternative to {competitor}", "{competitor} vs other options", "cheaper than {competitor}"],
-  reviews: ["top rated {service} company", "{brand} customer reviews", "best reviewed {service} {location}"],
-  transactional: ["book {service} today", "hire {service} {location}", "schedule {service} appointment"],
+  best_of: ["best {service}", "best {service} for {audience}", "top {service} tools"],
+  comparison: ["{brand} vs {competitor}", "{competitor} alternatives", "{service} comparison"],
+  local: ["best {service} in {location}", "{service} near me"],
+  problem_aware: ["how to choose {service}", "do I need {service}", "common {service} mistakes"],
+  solution_aware: ["what is the best {service}", "best {service} software", "how to get started with {service}"],
+  pricing: ["{service} pricing", "how much does {service} cost", "{brand} pricing"],
+  trust: ["is {brand} legit", "is {brand} worth it", "{brand} pros and cons"],
+  alternatives: ["best alternative to {competitor}", "tools like {competitor}", "{competitor} vs {brand}"],
+  reviews: ["{brand} reviews", "{service} reviews", "top rated {service}"],
+  transactional: ["{service} free trial", "buy {service}", "{brand} sign up"],
+};
+
+// Commercial/brand intent weighting. Brand-aware and category queries rank
+// highest so the top-N selected for quick audits reflect real visibility.
+const CATEGORY_PRIORITY: Record<PromptCategory, number> = {
+  reviews: 90,
+  best_of: 88,
+  comparison: 86,
+  trust: 84,
+  alternatives: 80,
+  solution_aware: 78,
+  pricing: 74,
+  transactional: 70,
+  problem_aware: 64,
+  local: 55,
 };
 
 export async function generatePromptUniverse(
@@ -82,38 +101,45 @@ export function generateTemplatePrompts(
 ): Omit<Prompt, "id" | "created_at">[] {
   const prompts: Omit<Prompt, "id" | "created_at">[] = [];
   const service = services[0] || industry;
+  const audience = `${service} buyers`;
+  // Only generate location-bound prompts when a real, specific location is given
+  // (default "United States" or empty is not specific enough to be meaningful).
+  const hasRealLocation = Boolean(location) && location.trim().toLowerCase() !== "united states";
+
+  const fill = (template: string, competitor?: string) =>
+    template
+      .replace("{brand}", brandName)
+      .replace("{service}", service)
+      .replace("{location}", location)
+      .replace("{audience}", audience)
+      .replace("{competitor}", competitor ?? "")
+      .trim();
+
+  const seen = new Set<string>();
+  const push = (text: string, category: PromptCategory, priority: number) => {
+    const key = text.toLowerCase();
+    if (!text || seen.has(key)) return;
+    seen.add(key);
+    prompts.push({ project_id: projectId, text, category, priority, is_tracked: priority >= 50 });
+  };
 
   for (const [category, templates] of Object.entries(CATEGORY_TEMPLATES)) {
+    const cat = category as PromptCategory;
+    if (cat === "local" && !hasRealLocation) continue;
+    const basePriority = CATEGORY_PRIORITY[cat] ?? 50;
     for (const template of templates) {
-      let text = template
-        .replace("{brand}", brandName)
-        .replace("{service}", service)
-        .replace("{location}", location)
-        .replace("{audience}", "businesses")
-        .replace("{problem}", `${service} issues`)
-        .replace("{solution}", service);
-
-      if (template.includes("{competitor}") && competitors.length > 0) {
+      // Brand-anchored prompts almost always surface the brand → real signal.
+      const brandBonus = template.includes("{brand}") ? 3 : 0;
+      if (template.includes("{competitor}")) {
+        if (competitors.length === 0) continue;
         for (const comp of competitors.slice(0, 2)) {
-          prompts.push({
-            project_id: projectId,
-            text: text.replace("{competitor}", comp),
-            category: category as PromptCategory,
-            priority: category === "transactional" || category === "comparison" ? 80 : 50,
-            is_tracked: true,
-          });
+          push(fill(template, comp), cat, basePriority + brandBonus);
         }
-      } else if (!template.includes("{competitor}")) {
-        prompts.push({
-          project_id: projectId,
-          text,
-          category: category as PromptCategory,
-          priority: category === "transactional" ? 85 : 50,
-          is_tracked: true,
-        });
+      } else {
+        push(fill(template), cat, basePriority + brandBonus);
       }
     }
   }
 
-  return prompts;
+  return prompts.sort((a, b) => (b.priority ?? 0) - (a.priority ?? 0));
 }
