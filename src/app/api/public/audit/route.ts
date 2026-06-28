@@ -6,10 +6,7 @@ import { sendAuditLeadEmail } from "@/lib/email/reports";
 import { assertPublicDomain, assertDomainResolvesPublic, DomainValidationError } from "@/lib/security/domain";
 import { guardPublicEndpoint, isValidEmail } from "@/lib/security/public-guard";
 import { apiError } from "@/lib/security/api-response";
-import {
-  runPublicAuditIntelligence,
-  mergeIntelligenceIntoScore,
-} from "@/lib/engines/public-audit-scan";
+import { runPublicAuditIntelligence } from "@/lib/engines/public-audit-scan";
 import { preferLiveData } from "@/lib/config/capabilities";
 
 export async function POST(request: NextRequest) {
@@ -61,7 +58,11 @@ export async function POST(request: NextRequest) {
     }),
   ]);
 
-  const baseScore = calculateOmniPresenceScore({
+  // Use the SAME rigorous, measured-only scorer as the authenticated product so
+  // the public lead-gen number matches what the user sees after signing up.
+  // (Previously an ad-hoc booster re-added mention/citation/SERP signals that the
+  // base scorer already accounts for, double-counting and inflating the score.)
+  const score = calculateOmniPresenceScore({
     visibilityResults: intelligence.visibilityResults.map((r, i) => ({
       ...r,
       id: `public-${i}`,
@@ -109,13 +110,6 @@ export async function POST(request: NextRequest) {
     })),
     hasConversionTracking: false,
     hasGbp: false,
-  });
-
-  const score = mergeIntelligenceIntoScore(technicalFindings, intelligence, {
-    omnipresence_score: baseScore.omnipresence_score,
-    ai_visibility: baseScore.ai_visibility,
-    search_visibility: baseScore.search_visibility,
-    technical_readiness: baseScore.technical_readiness,
   });
 
   const criticalCount = technicalFindings.filter(

@@ -232,31 +232,8 @@ export async function runPublicAuditIntelligence(input: {
   };
 }
 
-export function mergeIntelligenceIntoScore(
-  technicalFindings: TechnicalAuditFinding[],
-  intelligence: PublicAuditIntelligence,
-  baseScore: {
-    omnipresence_score: number;
-    ai_visibility: number;
-    search_visibility: number;
-    technical_readiness: number;
-  }
-) {
-  if (intelligence.dataMode === "demo") return baseScore;
-
-  const mentionBoost = intelligence.visibilityMetrics.mentionRate * 15;
-  const citationBoost = intelligence.visibilityMetrics.citationRate * 10;
-  const serpBoost = intelligence.serpPresence ? 5 : 0;
-  const backlinkBoost = Math.min(intelligence.backlinkCount * 0.5, 8);
-  const gapPenalty = Math.min(intelligence.coverageGaps.length * 1.5, 12);
-
-  return {
-    omnipresence_score: Math.min(
-      100,
-      Math.max(0, baseScore.omnipresence_score + mentionBoost + serpBoost + backlinkBoost - gapPenalty)
-    ),
-    ai_visibility: Math.min(100, baseScore.ai_visibility + mentionBoost + citationBoost),
-    search_visibility: Math.min(100, baseScore.search_visibility + serpBoost + backlinkBoost),
-    technical_readiness: baseScore.technical_readiness,
-  };
-}
+// NOTE: A prior `mergeIntelligenceIntoScore` booster was removed — it re-added
+// mention/citation/SERP/coverage signals that `calculateOmniPresenceScore`
+// already accounts for, double-counting and inflating the public audit score
+// relative to the in-app score. The public route now uses the rigorous scorer
+// directly so both numbers share one honest methodology.
