@@ -14,6 +14,32 @@ export function isMeasured(r: VisibilityResult): boolean {
   return r.data_source !== "unavailable" && r.measurement_mode !== "unavailable";
 }
 
+/**
+ * Defensive coercion of freeform DB JSON. The TS types say these columns are a
+ * boolean-map / string-array, but the database stores JSON and legacy or
+ * externally-written rows can hold null, a string, or the wrong container. A raw
+ * `for…of` over a non-array throws ("not iterable") and crashes the whole page,
+ * so every read of these columns goes through these guards.
+ */
+function asBoolMap(v: unknown): Record<string, boolean> {
+  if (!v || typeof v !== "object" || Array.isArray(v)) return {};
+  return v as Record<string, boolean>;
+}
+
+function asStringArray(v: unknown): string[] {
+  return Array.isArray(v) ? v.filter((x): x is string => typeof x === "string" && x.length > 0) : [];
+}
+
+/** Names of competitors mentioned or cited in a single answer (deduped). */
+function winningEntities(r: VisibilityResult): string[] {
+  return [
+    ...new Set([
+      ...Object.entries(asBoolMap(r.competitor_mentions)).filter(([, v]) => v).map(([k]) => k),
+      ...Object.entries(asBoolMap(r.competitor_citations)).filter(([, v]) => v).map(([k]) => k),
+    ]),
+  ];
+}
+
 export interface EngineStat {
   engine: string;
   measured: number;
@@ -63,13 +89,7 @@ export function competitorWinPrompts(results: VisibilityResult[], limit = 25): C
   for (const r of results) {
     if (!isMeasured(r)) continue;
     if (r.brand_mentioned || r.brand_cited) continue;
-    const compsMentioned = Object.entries(r.competitor_mentions || {})
-      .filter(([, v]) => v)
-      .map(([k]) => k);
-    const compsCited = Object.entries(r.competitor_citations || {})
-      .filter(([, v]) => v)
-      .map(([k]) => k);
-    const comps = [...new Set([...compsMentioned, ...compsCited])];
+    const comps = winningEntities(r);
     if (comps.length === 0) continue;
     wins.push({ prompt: r.prompt_text, engine: r.engine, competitors: comps });
   }
@@ -114,8 +134,8 @@ export function competitorVisibilityRates(
     brand.measured += 1;
     if (r.brand_mentioned) brand.mentioned += 1;
     if (r.brand_cited) brand.cited += 1;
-    const mentions = r.competitor_mentions || {};
-    const citations = r.competitor_citations || {};
+    const mentions = asBoolMap(r.competitor_mentions);
+    const citations = asBoolMap(r.competitor_citations);
     for (const c of competitors) {
       comp[c].measured += 1;
       if (mentions[c]) comp[c].mentioned += 1;
@@ -164,12 +184,7 @@ export function pageOpportunities(results: VisibilityResult[], limit = 20): Page
     if (!prompt) continue;
 
     if (!r.brand_mentioned && !r.brand_cited) {
-      const comps = [
-        ...new Set([
-          ...Object.entries(r.competitor_mentions || {}).filter(([, v]) => v).map(([k]) => k),
-          ...Object.entries(r.competitor_citations || {}).filter(([, v]) => v).map(([k]) => k),
-        ]),
-      ];
+      const comps = winningEntities(r);
       if (comps.length === 0) continue; // absent but nobody wins → not a clear play
       const prev = createMap.get(prompt);
       if (prev) {
@@ -237,7 +252,7 @@ export function topCitedSources(
   const counts = new Map<string, number>();
   for (const r of results) {
     if (!isMeasured(r)) continue;
-    for (const d of r.source_domains || []) {
+    for (const d of asStringArray(r.source_domains)) {
       const host = registrableHost(d);
       if (!host) continue;
       counts.set(host, (counts.get(host) || 0) + 1);
@@ -282,7 +297,7 @@ export function missingCitationSources(
   const citesBrand = new Set<string>();
   for (const r of results) {
     if (!isMeasured(r) || !r.brand_cited) continue;
-    for (const d of r.source_domains || []) {
+    for (const d of asStringArray(r.source_domains)) {
       const host = registrableHost(d);
       if (host) citesBrand.add(host);
     }
@@ -292,14 +307,9 @@ export function missingCitationSources(
   for (const r of results) {
     if (!isMeasured(r)) continue;
     if (r.brand_cited) continue; // we're already cited here → not a loss
-    const comps = [
-      ...new Set([
-        ...Object.entries(r.competitor_mentions || {}).filter(([, v]) => v).map(([k]) => k),
-        ...Object.entries(r.competitor_citations || {}).filter(([, v]) => v).map(([k]) => k),
-      ]),
-    ];
+    const comps = winningEntities(r);
     if (comps.length === 0) continue; // absent but nobody wins → not an outreach target
-    for (const d of r.source_domains || []) {
+    for (const d of asStringArray(r.source_domains)) {
       const host = registrableHost(d);
       if (!host || isOwn(host) || citesBrand.has(host)) continue;
       let e = agg.get(host);
