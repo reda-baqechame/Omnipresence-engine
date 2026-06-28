@@ -1,4 +1,10 @@
 import type { AIVisibilityResult, ProviderResult } from "./types";
+import {
+  assertWithinBudget,
+  recordSpend,
+  maxOutputTokens,
+  type GuardProvider,
+} from "./cost-guard";
 
 const AI_BOTS = [
   "OAI-SearchBot",
@@ -28,42 +34,44 @@ export async function queryLLMForVisibility(
     let citedUrls: string[] = [];
 
     if (provider === "ollama") {
+      // Self-hosted / local — free, so it bypasses the paid-API budget guard.
       const { generateWithOllama } = await import("@/lib/providers/ollama");
       const out = await generateWithOllama(systemPrompt, prompt);
       if (!out.available) {
         return { success: false, error: out.reason || "Ollama unavailable" };
       }
       responseText = out.text;
-    } else if (provider === "openai") {
-      const { generateText } = await import("ai");
-      const { openai } = await import("@ai-sdk/openai");
-      const result = await generateText({
-        model: openai("gpt-4o-mini"),
-        system: systemPrompt,
-        prompt,
-        abortSignal: AbortSignal.timeout(45000),
-      });
-      responseText = result.text;
-    } else if (provider === "gemini") {
-      const { generateText } = await import("ai");
-      const { google } = await import("@ai-sdk/google");
-      const result = await generateText({
-        model: google("gemini-2.0-flash"),
-        system: systemPrompt,
-        prompt,
-        abortSignal: AbortSignal.timeout(45000),
-      });
-      responseText = result.text;
     } else {
+      // Paid providers — enforce the spend budget + rate limit before calling.
+      const guardProvider: GuardProvider =
+        provider === "openai" ? "openai" : provider === "gemini" ? "gemini" : "anthropic";
+      await assertWithinBudget(guardProvider);
+
       const { generateText } = await import("ai");
-      const { anthropic } = await import("@ai-sdk/anthropic");
+      let modelId: string;
+      let model;
+      if (provider === "openai") {
+        const { openai } = await import("@ai-sdk/openai");
+        modelId = "gpt-4o-mini";
+        model = openai(modelId);
+      } else if (provider === "gemini") {
+        const { google } = await import("@ai-sdk/google");
+        modelId = "gemini-2.0-flash";
+        model = google(modelId);
+      } else {
+        const { anthropic } = await import("@ai-sdk/anthropic");
+        modelId = "claude-3-5-haiku-latest";
+        model = anthropic(modelId);
+      }
       const result = await generateText({
-        model: anthropic("claude-3-5-haiku-latest"),
+        model,
         system: systemPrompt,
         prompt,
+        maxOutputTokens: maxOutputTokens("probe"),
         abortSignal: AbortSignal.timeout(45000),
       });
       responseText = result.text;
+      await recordSpend(guardProvider, modelId, result.usage);
     }
 
     // IMPORTANT: this is the PARAMETRIC (no-browsing) path. URLs a non-browsing
@@ -114,6 +122,7 @@ export async function generateWithAI(
   model: "fast" | "quality" = "fast"
 ): Promise<ProviderResult<string>> {
   try {
+    await assertWithinBudget("openai");
     const { generateText } = await import("ai");
     const { openai } = await import("@ai-sdk/openai");
 
@@ -122,9 +131,11 @@ export async function generateWithAI(
       model: openai(modelId),
       system: systemPrompt,
       prompt: userPrompt,
+      maxOutputTokens: maxOutputTokens("content"),
       abortSignal: AbortSignal.timeout(60000),
     });
 
+    await recordSpend("openai", modelId, result.usage);
     return { success: true, data: result.text, creditsUsed: model === "quality" ? 5 : 1 };
   } catch (error) {
     return {
@@ -140,6 +151,7 @@ export async function generateStructured<T>(
   schema: import("zod").ZodType<T>
 ): Promise<ProviderResult<T>> {
   try {
+    await assertWithinBudget("openai");
     const { generateObject } = await import("ai");
     const { openai } = await import("@ai-sdk/openai");
 
@@ -148,9 +160,11 @@ export async function generateStructured<T>(
       system: systemPrompt,
       prompt: userPrompt,
       schema,
+      maxOutputTokens: maxOutputTokens("content"),
       abortSignal: AbortSignal.timeout(60000),
     });
 
+    await recordSpend("openai", "gpt-4o-mini", result.usage);
     return { success: true, data: result.object, creditsUsed: 2 };
   } catch (error) {
     return {

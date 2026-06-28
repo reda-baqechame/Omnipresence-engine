@@ -4,6 +4,7 @@ import { getCapabilitiesSummary } from "@/lib/config/capabilities";
 import { getProductionReadiness } from "@/lib/config/production";
 import { hasIntelligenceApi } from "@/lib/providers/intelligence-api";
 import { hasIntegrationEncryptionKey } from "@/lib/security/credential-vault";
+import { getSpendSnapshot } from "@/lib/providers/cost-guard";
 
 export async function GET() {
   const caps = getCapabilitiesSummary();
@@ -88,6 +89,8 @@ export async function GET() {
     }
   }
 
+  const spend = await getSpendSnapshot().catch(() => null);
+
   const healthy =
     checks.supabase !== "error" &&
     checks.intelligence_schema !== "error" &&
@@ -104,6 +107,16 @@ export async function GET() {
       providersConfigured: caps.configuredCount,
       activeSerpProvider: caps.activeSerpProvider,
       diyStack: caps.diyStack,
+      costGuard: spend
+        ? {
+            day: spend.day,
+            dayCostUsd: Math.round(spend.dayCost * 1000) / 1000,
+            monthCostUsd: Math.round(spend.monthCost * 1000) / 1000,
+            dailyBudgetUsd: spend.dailyBudget,
+            monthlyBudgetUsd: spend.monthlyBudget,
+            enabled: !spend.disabled,
+          }
+        : null,
       production: {
         ready: production.ready,
         score: production.score,

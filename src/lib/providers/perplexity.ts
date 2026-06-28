@@ -1,5 +1,6 @@
 import type { ProviderResult, SearchResult } from "./types";
 import { fetchWithTimeout } from "./http";
+import { assertWithinBudget, recordSpend, maxOutputTokens } from "./cost-guard";
 
 /** True only when a real (non-placeholder) Perplexity key is configured. */
 export function hasPerplexityCapability(): boolean {
@@ -26,6 +27,7 @@ export async function searchPerplexity(
   }
 
   try {
+    await assertWithinBudget("perplexity");
     const response = await fetchWithTimeout("https://api.perplexity.ai/search", {
       method: "POST",
       headers: {
@@ -106,6 +108,7 @@ export async function queryPerplexitySonar(
   }
 
   try {
+    await assertWithinBudget("perplexity");
     const response = await fetchWithTimeout("https://api.perplexity.ai/chat/completions", {
       method: "POST",
       headers: {
@@ -115,6 +118,7 @@ export async function queryPerplexitySonar(
       body: JSON.stringify({
         model: "sonar",
         messages: [{ role: "user", content: prompt }],
+        max_tokens: maxOutputTokens("probe"),
       }),
       timeoutMs: 25000,
     });
@@ -126,7 +130,12 @@ export async function queryPerplexitySonar(
     const data = (await response.json()) as {
       choices: Array<{ message: { content: string } }>;
       citations?: string[];
+      usage?: { prompt_tokens?: number; completion_tokens?: number };
     };
+    await recordSpend("perplexity", "sonar", {
+      inputTokens: data.usage?.prompt_tokens,
+      outputTokens: data.usage?.completion_tokens,
+    });
 
     const answer = data.choices?.[0]?.message?.content || "";
     const citations = data.citations || [];
