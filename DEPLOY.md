@@ -61,23 +61,36 @@ layer (OmniData scraping, headless Chromium, transformers.js embeddings, SearXNG
 Ollama, LanguageTool) cannot run there by default. Railway runs long-lived
 containers, so deploy the full 100X stack there.
 
-Create one Railway project with these services:
+Create one Railway project with these services. Each non-app service points at
+`services/omnidata` as its **Root Directory**; Railway then auto-detects the
+config file in that folder.
 
-| Service | Source | Notes |
-| --- | --- | --- |
-| **app** | repo root `Dockerfile` + `railway.json` | Next.js (`npm run start`). Healthcheck `/api/health`. |
-| **omnidata** | `services/omnidata/Dockerfile` + `railway.json` | Keyless SERP/backlinks/crawl/embeddings. On by default. |
-| **redis** | Railway Redis plugin | Set `REDIS_URL` on omnidata + worker. |
-| **searxng** *(optional)* | `searxng/searxng` image | Keyless meta-search SERP. Set `SEARXNG_URL` on app + omnidata. |
-| **ollama** *(optional)* | `ollama/ollama` image | Open-model AI visibility. Set `OLLAMA_BASE_URL` on app. |
-| **posthog / languagetool** *(optional)* | official images | First-party analytics + grammar/style. |
+| Service | Root dir / config | Start | Notes |
+| --- | --- | --- | --- |
+| **app** | repo root `railway.json` | `npm run start` | Next.js. Healthcheck `/api/health`. |
+| **omnidata-api** | `services/omnidata` → `railway.json` | `node dist/index.js` | Keyless SERP/backlinks/crawl/embeddings. Healthcheck `/health`. Set `OMNIDATA_ENABLE_WORKER=false`. |
+| **omnidata-worker** | `services/omnidata` → set *Config Path* to `railway.worker.json` | `node dist/worker.js` | BullMQ queue consumer (crawl/webgraph jobs). |
+| **redis** | Railway Redis plugin | — | Set `REDIS_URL` on omnidata-api + omnidata-worker. |
+| **searxng** *(optional)* | `searxng/searxng` image | — | Keyless meta-search SERP. Set `SEARXNG_URL` on app + omnidata. |
+| **ollama** *(optional)* | `ollama/ollama` image | — | Open-model AI visibility. Set `OLLAMA_BASE_URL` on app. |
+| **posthog / languagetool** *(optional)* | official images | — | First-party analytics + grammar/style. |
 
 Wire-up:
 
-1. On **app**, set everything from `.env.example` plus `OMNIDATA_BASE_URL=http://omnidata.railway.internal:8787`.
-2. Add a **persistent volume** to **omnidata** mounted at `/data` (Common Crawl webgraph index).
-3. Railway sets `PORT` automatically; `next start` and OmniData both bind to it.
-4. The fail-fast env guard activates on `RAILWAY_ENVIRONMENT`, so a misconfigured deploy fails loudly at boot instead of silently serving errors.
+1. On **app**, set everything from `.env.example` plus `OMNIDATA_BASE_URL=http://omnidata-api.railway.internal:8787`.
+2. **Security (required):** set a strong `OMNIDATA_API_KEY` (24+ chars — `openssl rand -hex 32`) and `OMNIDATA_SIGNING_SECRET` on **app**, **omnidata-api**, and **omnidata-worker**. OmniData now **refuses to boot in production** if the key is missing or still the default `dev-local-key`.
+3. Add a **persistent volume** to **omnidata-api** and **omnidata-worker** mounted at `/data` (Common Crawl webgraph index). Mount the same volume on both so the worker's ingested index is queryable by the API.
+4. Set `REDIS_URL` on **omnidata-api** and **omnidata-worker** (Railway Redis plugin internal URL).
+5. Railway sets `PORT` automatically; `next start` and OmniData both bind to it.
+6. The fail-fast env guard activates on `RAILWAY_ENVIRONMENT`, so a misconfigured deploy fails loudly at boot instead of silently serving errors.
+
+Verify the whole stack after deploy:
+
+```bash
+# Probes app /api/health (production readiness + app↔OmniData) and
+# omnidata /health (+ confirms auth is enforced).
+npm run railway:verify -- https://your-app.up.railway.app https://your-omnidata.up.railway.app
+```
 
 Local all-in-one equivalent:
 

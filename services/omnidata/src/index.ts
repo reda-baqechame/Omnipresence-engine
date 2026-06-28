@@ -10,6 +10,13 @@ const PORT = Number(process.env.PORT || 8787);
 const app = express();
 
 app.use(express.json({ limit: "2mb" }));
+
+// Public health endpoint — must be reachable WITHOUT auth so Railway/Docker/Fly
+// healthchecks (which send no API key) don't fail the deploy.
+app.get("/health", (_req, res) => {
+  res.json({ ok: true, service: "omnidata", version: "0.5.0" });
+});
+
 app.use(verifySignedRequest);
 app.use(routes);
 

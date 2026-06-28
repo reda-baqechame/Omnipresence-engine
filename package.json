@@ -13,6 +13,7 @@
     "verify:providers": "node scripts/verify-providers.mjs",
     "env:push": "node scripts/push-env-to-vercel.mjs",
     "verify:prod": "node scripts/verify-production.mjs",
+    "railway:verify": "node scripts/railway-verify.mjs",
     "prod:keygen": "node scripts/generate-integration-key.mjs",
     "prod:setup": "node scripts/prod-setup.mjs",
     "prod:deploy": "node scripts/prod-setup.mjs --deploy",
