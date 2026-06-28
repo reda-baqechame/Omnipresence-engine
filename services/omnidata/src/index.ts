@@ -1,7 +1,10 @@
 import express from "express";
 import routes from "./api/routes.js";
-import { verifySignedRequest } from "./middleware/auth.js";
+import { verifySignedRequest, assertProductionAuth } from "./middleware/auth.js";
 import { startWorker } from "./queue.js";
+
+// Fail fast on insecure production config before binding the port.
+assertProductionAuth();
 
 const PORT = Number(process.env.PORT || 8787);
 const app = express();

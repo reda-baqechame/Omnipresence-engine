@@ -6,7 +6,11 @@ const DEV_FALLBACK = "dev-only-insecure-key-change-in-production";
 export function isProductionDeploy(): boolean {
   return (
     process.env.NODE_ENV === "production" ||
-    process.env.VERCEL_ENV === "production"
+    process.env.VERCEL_ENV === "production" ||
+    process.env.VERCEL_ENV === "preview" ||
+    // Railway deploys must enforce the same secret requirements as Vercel:
+    // require a real encryption key and never fall back to the dev secret.
+    Boolean(process.env.RAILWAY_ENVIRONMENT)
   );
 }
 

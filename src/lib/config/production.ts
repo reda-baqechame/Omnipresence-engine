@@ -26,7 +26,10 @@ export function isProductionDeploy(): boolean {
   return (
     process.env.NODE_ENV === "production" ||
     process.env.VERCEL_ENV === "production" ||
-    process.env.VERCEL_ENV === "preview"
+    process.env.VERCEL_ENV === "preview" ||
+    // Railway is a first-class deploy target: its env is present for every
+    // service (app, omnidata, worker) so the fail-fast guards activate there too.
+    Boolean(process.env.RAILWAY_ENVIRONMENT)
   );
 }
 
@@ -116,15 +119,26 @@ export function getProductionReadiness(): {
     message: "Scans, crons, guarantee verify, publish scheduler",
   });
 
+  const omnidataInsecureKey =
+    process.env.OMNIDATA_API_KEY === "dev-local-key" ||
+    (process.env.OMNIDATA_API_KEY?.length ?? 0) < 24;
+  const omnidataRemote =
+    hasEnv("OMNIDATA_BASE_URL") &&
+    !/localhost|127\.0\.0\.1|0\.0\.0\.0/.test(process.env.OMNIDATA_BASE_URL || "");
   checks.push({
     id: "omnidata",
     label: "OmniData engine",
-    status: hasEnv("OMNIDATA_BASE_URL")
-      ? hasEnv("OMNIDATA_API_KEY") && hasEnv("OMNIDATA_SIGNING_SECRET")
-        ? "ok"
-        : "warning"
-      : "skipped",
-    message: "Self-hosted SERP/rank/backlinks — recommended for production volume",
+    status: !hasEnv("OMNIDATA_BASE_URL")
+      ? "skipped"
+      : omnidataRemote && isProductionDeploy() && omnidataInsecureKey
+        ? "error"
+        : hasEnv("OMNIDATA_API_KEY") && hasEnv("OMNIDATA_SIGNING_SECRET")
+          ? "ok"
+          : "warning",
+    message:
+      omnidataRemote && omnidataInsecureKey
+        ? "Insecure key: set a strong OMNIDATA_API_KEY (24+ chars, not 'dev-local-key') + OMNIDATA_SIGNING_SECRET — a remote OmniData with the dev key is an open data endpoint"
+        : "Self-hosted SERP/rank/backlinks — recommended for production volume",
   });
 
   checks.push({

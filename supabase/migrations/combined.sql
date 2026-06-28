@@ -1,5 +1,5 @@
--- PresenceOS combined migration (42 files)
--- Generated 2026-06-27T14:52:48.641Z
+-- PresenceOS combined migration (47 files)
+-- Generated 2026-06-28T22:22:50.451Z
 
 -- ========== 0001_init.sql ==========
 
@@ -821,21 +821,23 @@ CREATE INDEX IF NOT EXISTS idx_guarantee_claims_project ON guarantee_claims(proj
 ALTER TABLE guarantee_contracts ENABLE ROW LEVEL SECURITY;
 ALTER TABLE guarantee_claims ENABLE ROW LEVEL SECURITY;
 
+DROP POLICY IF EXISTS guarantee_contracts_org_access ON guarantee_contracts;
 CREATE POLICY guarantee_contracts_org_access ON guarantee_contracts
   FOR ALL USING (
     project_id IN (
       SELECT p.id FROM projects p
-      JOIN organization_members om ON om.organization_id = p.organization_id
-      WHERE om.user_id = auth.uid()
+      JOIN memberships m ON m.organization_id = p.organization_id
+      WHERE m.user_id = auth.uid()
     )
   );
 
+DROP POLICY IF EXISTS guarantee_claims_org_access ON guarantee_claims;
 CREATE POLICY guarantee_claims_org_access ON guarantee_claims
   FOR ALL USING (
     project_id IN (
       SELECT p.id FROM projects p
-      JOIN organization_members om ON om.organization_id = p.organization_id
-      WHERE om.user_id = auth.uid()
+      JOIN memberships m ON m.organization_id = p.organization_id
+      WHERE m.user_id = auth.uid()
     )
   );
 
@@ -1919,5 +1921,170 @@ ALTER TABLE brand_mentions
   ADD COLUMN IF NOT EXISTS confidence NUMERIC,
   ADD COLUMN IF NOT EXISTS last_checked_at TIMESTAMPTZ,
   ADD COLUMN IF NOT EXISTS is_estimated BOOLEAN DEFAULT false;
+
+
+-- ========== 0043_rank_source.sql ==========
+
+-- First-party trusted-source routing for rank tracking. When Search Console is
+-- connected, the tracked position comes from the user's own measured ranking
+-- (first_party) instead of a public SERP scrape (public_serp). Persist the
+-- source, confidence, and the public SERP position alongside it so the UI can
+-- label each keyword honestly and pros can cross-check against Search Console.
+
+ALTER TABLE rank_keywords
+  ADD COLUMN IF NOT EXISTS last_rank_source TEXT,
+  ADD COLUMN IF NOT EXISTS last_confidence NUMERIC,
+  ADD COLUMN IF NOT EXISTS last_public_position INTEGER;
+
+
+-- ========== 0044_ai_probe_traces.sql ==========
+
+-- AEO/LLM prompt observability: one auditable row per prompt×engine probe.
+-- This is the proof + "magic" history — a per-prompt win/loss timeline showing
+-- when the brand was mentioned/cited vs when competitors won, with the model,
+-- grounding mode, cited sources, and a response excerpt for evidence.
+
+CREATE TABLE IF NOT EXISTS ai_probe_traces (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  project_id UUID NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+  run_id UUID,
+  prompt_id UUID,
+  engine TEXT NOT NULL,
+  prompt TEXT NOT NULL,
+  persona TEXT,
+  response_excerpt TEXT,
+  brand_mentioned BOOLEAN NOT NULL DEFAULT false,
+  brand_cited BOOLEAN NOT NULL DEFAULT false,
+  cited_sources TEXT[] NOT NULL DEFAULT '{}',
+  competitors_mentioned TEXT[] NOT NULL DEFAULT '{}',
+  model TEXT,
+  grounding_mode TEXT,
+  confidence NUMERIC,
+  data_source TEXT,
+  checked_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE INDEX IF NOT EXISTS idx_ai_probe_traces_project ON ai_probe_traces(project_id, checked_at DESC);
+CREATE INDEX IF NOT EXISTS idx_ai_probe_traces_prompt ON ai_probe_traces(project_id, prompt);
+CREATE INDEX IF NOT EXISTS idx_ai_probe_traces_engine ON ai_probe_traces(project_id, engine);
+
+ALTER TABLE ai_probe_traces ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS ai_probe_traces_all ON ai_probe_traces;
+CREATE POLICY ai_probe_traces_all ON ai_probe_traces FOR ALL
+  USING (project_id IN (SELECT id FROM projects WHERE organization_id IN (SELECT get_user_org_ids())));
+
+
+-- ========== 0045_merchant.sql ==========
+
+-- Merchant / Shopping vertical: store the parsed + audited product feed so the
+-- UI can show feed-quality scores, top issues, and LLM-optimized titles/
+-- descriptions, and so feed issues can be tracked as execution_tasks.
+
+CREATE TABLE IF NOT EXISTS merchant_products (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  project_id UUID NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+  product_id TEXT NOT NULL,
+  title TEXT,
+  description TEXT,
+  optimized_title TEXT,
+  optimized_description TEXT,
+  brand TEXT,
+  price TEXT,
+  issues JSONB NOT NULL DEFAULT '[]',
+  score INTEGER NOT NULL DEFAULT 0,
+  json_ld JSONB,
+  data_source TEXT NOT NULL DEFAULT 'measured',
+  audited_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  UNIQUE (project_id, product_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_merchant_products_project ON merchant_products(project_id, score);
+
+ALTER TABLE merchant_products ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS merchant_products_all ON merchant_products;
+CREATE POLICY merchant_products_all ON merchant_products FOR ALL
+  USING (project_id IN (SELECT id FROM projects WHERE organization_id IN (SELECT get_user_org_ids())));
+
+
+-- ========== 0046_api_spend.sql ==========
+
+-- Global LLM / paid-API spend ledger for the cost guard.
+-- Tracks estimated USD spend per day+provider so the app can enforce a hard
+-- daily/monthly budget across all callers (scans, public audits, crons) and
+-- never run up an unbounded API bill. This is intentionally global (not
+-- org-scoped) — it protects the platform owner's provider accounts.
+
+CREATE TABLE IF NOT EXISTS api_spend_daily (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  day date NOT NULL,
+  provider text NOT NULL,
+  calls integer NOT NULL DEFAULT 0,
+  input_tokens bigint NOT NULL DEFAULT 0,
+  output_tokens bigint NOT NULL DEFAULT 0,
+  est_cost_usd numeric(12,6) NOT NULL DEFAULT 0,
+  updated_at timestamptz NOT NULL DEFAULT now(),
+  UNIQUE (day, provider)
+);
+
+CREATE INDEX IF NOT EXISTS api_spend_daily_day_idx ON api_spend_daily (day);
+
+-- Only the service role touches this ledger; RLS on with no public policies.
+ALTER TABLE api_spend_daily ENABLE ROW LEVEL SECURITY;
+
+-- Atomic increment so concurrent LLM calls can't lose updates (race-free budget).
+CREATE OR REPLACE FUNCTION increment_api_spend(
+  p_day date,
+  p_provider text,
+  p_calls integer,
+  p_in bigint,
+  p_out bigint,
+  p_cost numeric
+) RETURNS void
+LANGUAGE sql
+AS $$
+  INSERT INTO api_spend_daily (day, provider, calls, input_tokens, output_tokens, est_cost_usd, updated_at)
+  VALUES (p_day, p_provider, p_calls, p_in, p_out, p_cost, now())
+  ON CONFLICT (day, provider) DO UPDATE SET
+    calls = api_spend_daily.calls + EXCLUDED.calls,
+    input_tokens = api_spend_daily.input_tokens + EXCLUDED.input_tokens,
+    output_tokens = api_spend_daily.output_tokens + EXCLUDED.output_tokens,
+    est_cost_usd = api_spend_daily.est_cost_usd + EXCLUDED.est_cost_usd,
+    updated_at = now();
+$$;
+
+
+-- ========== 0047_agent_analytics.sql ==========
+
+-- Agent Analytics: log of AI crawler/agent hits on the customer's site.
+-- This is the leading indicator of citation — AI engines must fetch your pages
+-- (GPTBot, ClaudeBot, PerplexityBot, Google-Extended, OAI-SearchBot, …) before
+-- they can cite you. Ingested keyless via a tracking beacon or a server/CDN log
+-- paste, then aggregated into bot-by-bot crawl frequency, purpose mix, and the
+-- most-crawled paths. Profound gates this behind enterprise CDN integrations;
+-- we offer it open.
+
+CREATE TABLE IF NOT EXISTS ai_crawler_hits (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  project_id UUID NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+  bot TEXT NOT NULL,
+  vendor TEXT NOT NULL,
+  purpose TEXT NOT NULL,
+  path TEXT,
+  status_code INT,
+  user_agent TEXT,
+  hit_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE INDEX IF NOT EXISTS idx_ai_crawler_hits_project ON ai_crawler_hits(project_id, hit_at DESC);
+CREATE INDEX IF NOT EXISTS idx_ai_crawler_hits_bot ON ai_crawler_hits(project_id, bot);
+CREATE INDEX IF NOT EXISTS idx_ai_crawler_hits_vendor ON ai_crawler_hits(project_id, vendor);
+
+ALTER TABLE ai_crawler_hits ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS ai_crawler_hits_all ON ai_crawler_hits;
+CREATE POLICY ai_crawler_hits_all ON ai_crawler_hits FOR ALL
+  USING (project_id IN (SELECT id FROM projects WHERE organization_id IN (SELECT get_user_org_ids())));
 
 

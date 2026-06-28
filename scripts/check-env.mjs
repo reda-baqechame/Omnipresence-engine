@@ -128,9 +128,24 @@ if (missingRequired > 0) {
   process.exit(1);
 }
 
+const isProdDeploy =
+  process.env.NODE_ENV === "production" ||
+  process.env.VERCEL_ENV === "production" ||
+  Boolean(process.env.RAILWAY_ENVIRONMENT);
+
 const prodEncryption = has("INTEGRATION_ENCRYPTION_KEY");
-if (process.env.VERCEL_ENV === "production" && !prodEncryption) {
+if (isProdDeploy && !prodEncryption) {
   console.log("WARNING: INTEGRATION_ENCRYPTION_KEY not set — required before saving CMS integrations in production.\n");
+}
+
+// Guard the OmniData dev key on any remote production deploy.
+const omnidataBase = process.env.OMNIDATA_BASE_URL || "";
+const omnidataRemote = omnidataBase && !/localhost|127\.0\.0\.1|0\.0\.0\.0/.test(omnidataBase);
+if (isProdDeploy && omnidataRemote) {
+  const key = process.env.OMNIDATA_API_KEY || "";
+  if (!key || key === "dev-local-key" || key.length < 24) {
+    console.log("WARNING: OMNIDATA_API_KEY is missing/insecure for a remote OmniData — set a strong key (24+ chars, not 'dev-local-key') and OMNIDATA_SIGNING_SECRET.\n");
+  }
 }
 
 console.log(`All required vars set. ${optionalSet} optional vars configured.\n`);
