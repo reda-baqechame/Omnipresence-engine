@@ -1,14 +1,14 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { verifyProjectAccess } from "@/lib/security/project-access";
-import { apiError, apiForbidden, apiServerError, apiUnauthorized } from "@/lib/security/api-response";
+import { apiError, apiForbidden, apiServerError, apiUnauthorized, readJsonBody } from "@/lib/security/api-response";
 
 export async function POST(request: NextRequest) {
   const supabase = await createClient();
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) return apiUnauthorized();
 
-  const { projectId, siteId, apiKey } = await request.json();
+  const { projectId, siteId, apiKey } = await readJsonBody(request);
   if (!projectId || !siteId) {
     return apiError("projectId and siteId required");
   }

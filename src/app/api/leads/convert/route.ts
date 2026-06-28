@@ -2,14 +2,14 @@ import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { triggerProjectScan } from "@/lib/engines/trigger-scan";
 import { assertPublicDomain, DomainValidationError } from "@/lib/security/domain";
-import { apiError, apiForbidden, apiNotFound, apiServerError, apiUnauthorized } from "@/lib/security/api-response";
+import { apiError, apiForbidden, apiNotFound, apiServerError, apiUnauthorized, readJsonBody } from "@/lib/security/api-response";
 
 export async function POST(request: NextRequest) {
   const supabase = await createClient();
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) return apiUnauthorized();
 
-  const { leadId } = await request.json();
+  const { leadId } = await readJsonBody(request);
   if (!leadId) return apiError("leadId required");
 
   const { data: membership } = await supabase

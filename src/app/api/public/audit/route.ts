@@ -7,7 +7,7 @@ import { createServiceClient } from "@/lib/supabase/server";
 import { sendAuditLeadEmail } from "@/lib/email/reports";
 import { assertPublicDomain, assertDomainResolvesPublic, DomainValidationError } from "@/lib/security/domain";
 import { guardPublicEndpoint, isValidEmail } from "@/lib/security/public-guard";
-import { apiError } from "@/lib/security/api-response";
+import { apiError, readJsonBody } from "@/lib/security/api-response";
 import { runPublicAuditIntelligence } from "@/lib/engines/public-audit-scan";
 import { preferLiveData } from "@/lib/config/capabilities";
 
@@ -17,7 +17,7 @@ export async function POST(request: NextRequest) {
 
   let body: { domain?: string; brandName?: string; industry?: string; email?: string; location?: string; competitors?: string[] };
   try {
-    body = await request.json();
+    body = await readJsonBody(request);
   } catch {
     return apiError("Invalid JSON body");
   }

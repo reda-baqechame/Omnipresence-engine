@@ -56,8 +56,20 @@ function readEntityProminence(
   raw: Record<string, unknown> | null | undefined
 ): Record<string, EntityProminence> {
   const ep = raw?.entity_prominence;
-  if (ep && typeof ep === "object") return ep as Record<string, EntityProminence>;
-  return {};
+  if (!ep || typeof ep !== "object") return {};
+  // Validate the inner shape — this is freeform DB JSON, so a malformed/legacy
+  // value must never leak a non-finite strength/position into the weighting math
+  // (which would silently corrupt the whole leaderboard with NaN).
+  const out: Record<string, EntityProminence> = {};
+  for (const [name, v] of Object.entries(ep as Record<string, unknown>)) {
+    if (!v || typeof v !== "object") continue;
+    const { strength, position } = v as { strength?: unknown; position?: unknown };
+    if (typeof strength === "number" && Number.isFinite(strength) &&
+        typeof position === "number" && Number.isFinite(position)) {
+      out[name] = { strength, position };
+    }
+  }
+  return out;
 }
 
 export function calculateShareOfVoice(

@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { verifyProjectAccess } from "@/lib/security/project-access";
-import { apiError, apiForbidden, apiUnauthorized } from "@/lib/security/api-response";
+import { apiError, apiForbidden, apiUnauthorized, readJsonBody } from "@/lib/security/api-response";
 import { getValidOAuthToken } from "@/lib/oauth/tokens";
 import { fetchGscPagePerformance, type GscPageRow } from "@/lib/engines/gsc-queries";
 import {
@@ -48,7 +48,7 @@ export async function POST(request: NextRequest) {
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) return apiUnauthorized();
 
-  const body = await request.json();
+  const body = await readJsonBody(request);
   const { projectId, action, logText } = body as {
     projectId: string;
     action: "coverage" | "crawler_logs";

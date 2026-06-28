@@ -9,7 +9,7 @@ import {
   scoreSingleKeyword,
 } from "@/lib/engines/keyword-intelligence";
 import { verifyProjectAccess } from "@/lib/security/project-access";
-import { apiError, apiForbidden, apiUnauthorized } from "@/lib/security/api-response";
+import { apiError, apiForbidden, apiUnauthorized, readJsonBody } from "@/lib/security/api-response";
 import { getValidOAuthToken } from "@/lib/oauth/tokens";
 import { fetchGscTopQueries } from "@/lib/engines/gsc-queries";
 import { deriveGscAnchor, type VolumeAnchor } from "@/lib/engines/keyword-volume";
@@ -41,7 +41,7 @@ export async function POST(request: NextRequest) {
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) return apiUnauthorized();
 
-  const body = await request.json();
+  const body = await readJsonBody(request);
   const { projectId, seed, seeds, action, keyword } = body as {
     projectId: string;
     seed?: string;

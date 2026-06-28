@@ -7,7 +7,7 @@ import {
   importKeywordsFromPrompts,
 } from "@/lib/engines/rank-tracker-service";
 import { verifyProjectAccess } from "@/lib/security/project-access";
-import { apiError, apiForbidden, apiUnauthorized } from "@/lib/security/api-response";
+import { apiError, apiForbidden, apiUnauthorized, readJsonBody } from "@/lib/security/api-response";
 
 export async function GET(request: NextRequest) {
   const supabase = await createClient();
@@ -54,7 +54,7 @@ export async function POST(request: NextRequest) {
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) return apiUnauthorized();
 
-  const body = await request.json();
+  const body = await readJsonBody(request);
   const { projectId, keyword, location, device, action, alertId } = body as {
     projectId: string;
     keyword?: string;

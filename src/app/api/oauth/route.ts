@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { signOAuthState } from "@/lib/security/oauth-state";
 import { verifyProjectAccess } from "@/lib/security/project-access";
-import { apiError, apiUnauthorized, apiForbidden, apiServerError } from "@/lib/security/api-response";
+import { apiError, apiUnauthorized, apiForbidden, apiServerError, readJsonBody } from "@/lib/security/api-response";
 
 const OAUTH_PROVIDERS = {
   google_search_console: {
@@ -83,7 +83,7 @@ export async function POST(request: NextRequest) {
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) return apiUnauthorized();
 
-  const { projectId, provider, accessToken, refreshToken, expiresAt } = await request.json();
+  const { projectId, provider, accessToken, refreshToken, expiresAt } = await readJsonBody(request);
 
   const access = await verifyProjectAccess(supabase, projectId, user.id, "admin");
   if (!access) return apiForbidden();

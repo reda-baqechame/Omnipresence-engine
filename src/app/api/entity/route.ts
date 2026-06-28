@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { verifyProjectAccess } from "@/lib/security/project-access";
-import { apiForbidden, apiNotFound, apiUnauthorized } from "@/lib/security/api-response";
+import { apiForbidden, apiNotFound, apiUnauthorized, readJsonBody } from "@/lib/security/api-response";
 import { buildEntityProfile, generateSameAsJsonLd, detectEntityGaps } from "@/lib/engines/entity-engine";
 import { checkNapConsistency } from "@/lib/engines/nap-checker";
 import type { BrandProfile, Project } from "@/types/database";
@@ -54,7 +54,7 @@ export async function POST(request: NextRequest) {
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) return apiUnauthorized();
 
-  const { projectId, action } = await request.json();
+  const { projectId, action } = await readJsonBody(request);
   if (!projectId) return NextResponse.json({ error: "projectId required" }, { status: 400 });
 
   const access = await verifyProjectAccess(supabase, projectId, user.id, "member");

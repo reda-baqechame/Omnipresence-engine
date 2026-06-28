@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { readJsonBody } from "@/lib/security/api-response";
 import { createServiceClient } from "@/lib/supabase/server";
 import { classifyReferrer } from "@/lib/tracking/ai-referrers";
 import { enrichVisitorFromIp } from "@/lib/engines/visitor-identity";
@@ -26,7 +27,7 @@ export async function POST(request: NextRequest) {
     sessionId?: unknown;
   };
   try {
-    payload = await request.json();
+    payload = await readJsonBody(request);
   } catch {
     // Malformed body from a public beacon → clean 400, not a noisy 500.
     return NextResponse.json({ error: "Invalid JSON body" }, { status: 400 });

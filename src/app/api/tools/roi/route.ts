@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { calculateAdsEquivalent } from "@/lib/engines/ads-equivalent";
 import { guardPublicEndpoint } from "@/lib/security/public-guard";
-import { apiError } from "@/lib/security/api-response";
+import { apiError, readJsonBody } from "@/lib/security/api-response";
 
 export async function POST(request: NextRequest) {
   const limited = guardPublicEndpoint(request, "tools-roi", 20, 60 * 60 * 1000);
@@ -9,7 +9,7 @@ export async function POST(request: NextRequest) {
 
   let organicSessions: unknown, aiReferralSessions: unknown, monthlyAdSpend: unknown, industry: unknown;
   try {
-    ({ organicSessions, aiReferralSessions, monthlyAdSpend, industry } = await request.json());
+    ({ organicSessions, aiReferralSessions, monthlyAdSpend, industry } = await readJsonBody(request));
   } catch {
     return apiError("Invalid JSON body");
   }

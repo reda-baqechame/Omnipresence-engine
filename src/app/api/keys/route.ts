@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
-import { apiError, apiUnauthorized } from "@/lib/security/api-response";
+import { apiError, apiUnauthorized, readJsonBody } from "@/lib/security/api-response";
 import { generateApiKey } from "@/lib/security/api-keys";
 
 async function getOrgId(
@@ -41,7 +41,7 @@ export async function POST(request: NextRequest) {
   const orgId = await getOrgId(supabase, user.id);
   if (!orgId) return apiError("No organization");
 
-  const body = await request.json().catch(() => ({}));
+  const body = await readJsonBody(request).catch(() => ({}));
   const name = (body.name as string) || "API key";
 
   const { key, prefix, hash } = generateApiKey();

@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient, createServiceClient } from "@/lib/supabase/server";
 import { slugify } from "@/lib/utils";
-import { apiError, apiServerError, apiUnauthorized } from "@/lib/security/api-response";
+import { apiError, apiServerError, apiUnauthorized, readJsonBody } from "@/lib/security/api-response";
 
 export async function POST(request: NextRequest) {
   const supabase = await createClient();
@@ -10,7 +10,7 @@ export async function POST(request: NextRequest) {
 
   let orgName: unknown;
   try {
-    ({ orgName } = await request.json());
+    ({ orgName } = await readJsonBody(request));
   } catch {
     return apiError("Invalid JSON body");
   }

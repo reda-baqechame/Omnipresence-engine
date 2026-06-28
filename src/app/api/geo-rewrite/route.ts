@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { inngest } from "@/lib/inngest/client";
 import { verifyProjectAccess } from "@/lib/security/project-access";
-import { apiError, apiForbidden, apiUnauthorized } from "@/lib/security/api-response";
+import { apiError, apiForbidden, apiUnauthorized, readJsonBody } from "@/lib/security/api-response";
 
 /**
  * Kick off the measured GEO rewrite loop for a page: AutoGEO rewrite -> deploy
@@ -16,7 +16,7 @@ export async function POST(request: NextRequest) {
 
   let body: { projectId?: string; url?: string; waitDays?: number };
   try {
-    body = await request.json();
+    body = await readJsonBody(request);
   } catch {
     return apiError("Invalid JSON body");
   }

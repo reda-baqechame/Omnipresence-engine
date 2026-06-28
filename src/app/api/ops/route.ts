@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
-import { apiError, apiForbidden, apiUnauthorized } from "@/lib/security/api-response";
+import { apiError, apiForbidden, apiUnauthorized, readJsonBody } from "@/lib/security/api-response";
 import { verifyProjectAccess } from "@/lib/security/project-access";
 import { recordLedgerAction } from "@/lib/engines/results-ledger";
 
@@ -35,7 +35,7 @@ export async function POST(request: NextRequest) {
 
   let body: { projectId?: string; organizationId?: string; actionType?: string; title?: string; payload?: Record<string, unknown>; riskLevel?: string };
   try {
-    body = await request.json();
+    body = await readJsonBody(request);
   } catch {
     return apiError("Invalid JSON body");
   }
@@ -75,7 +75,7 @@ export async function PATCH(request: NextRequest) {
 
   let body: { id?: string; status?: string; assignedTo?: string; execute?: boolean };
   try {
-    body = await request.json();
+    body = await readJsonBody(request);
   } catch {
     return apiError("Invalid JSON body");
   }

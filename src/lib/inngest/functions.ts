@@ -50,7 +50,30 @@ import { logProviderError } from "@/lib/observability/log";
 import type { Project } from "@/types/database";
 
 export const runFullScan = inngest.createFunction(
-  { id: "run-full-scan", retries: 2, triggers: [{ event: "project/scan.requested" }] },
+  {
+    id: "run-full-scan",
+    retries: 2,
+    triggers: [{ event: "project/scan.requested" }],
+    // If the pipeline exhausts its retries, never leave the project stuck
+    // displaying "scanning" forever. Un-stick it back to "active" (so the user
+    // can retry) and mark any open run row as failed (the honest signal).
+    onFailure: async ({ event }) => {
+      const original = (event.data as { event?: { data?: { projectId?: string } } }).event;
+      const projectId = original?.data?.projectId;
+      if (!projectId) return;
+      try {
+        const supabase = await createServiceClient();
+        await supabase.from("projects").update({ status: "active" }).eq("id", projectId);
+        await supabase
+          .from("visibility_runs")
+          .update({ status: "failed" })
+          .eq("project_id", projectId)
+          .in("status", ["running", "pending"]);
+      } catch (err) {
+        logProviderError("scan.onFailure", err, { projectId });
+      }
+    },
+  },
   async ({ event, step }) => {
     const { projectId, organizationId } = event.data as { projectId: string; organizationId: string };
     const supabase = await createServiceClient();

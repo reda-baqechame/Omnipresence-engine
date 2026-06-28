@@ -9,7 +9,7 @@ import { submitIndexNow } from "@/lib/engines/indexnow";
 import { loadProjectIntegration, type CmsCredentials } from "@/lib/integrations/store";
 import { getValidOAuthToken } from "@/lib/oauth/tokens";
 import { verifyProjectAccess } from "@/lib/security/project-access";
-import { apiError, apiForbidden, apiNotFound, apiUnauthorized } from "@/lib/security/api-response";
+import { apiError, apiForbidden, apiNotFound, apiUnauthorized, readJsonBody } from "@/lib/security/api-response";
 
 const PUBLISHERS = {
   wordpress: async (
@@ -140,7 +140,7 @@ export async function POST(request: NextRequest) {
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) return apiUnauthorized();
 
-  const { assetId, platform, credentials: inlineCredentials } = await request.json();
+  const { assetId, platform, credentials: inlineCredentials } = await readJsonBody(request);
 
   const { data: asset } = await supabase
     .from("content_assets")
@@ -220,7 +220,7 @@ export async function PUT(request: NextRequest) {
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) return apiUnauthorized();
 
-  const { urls, engines, projectId } = await request.json() as {
+  const { urls, engines, projectId } = await readJsonBody(request) as {
     urls: string[];
     engines: ("google" | "bing" | "indexnow")[];
     projectId: string;
@@ -306,7 +306,7 @@ export async function PATCH(request: NextRequest) {
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) return apiUnauthorized();
 
-  const body = await request.json() as {
+  const body = await readJsonBody(request) as {
     platform: "ayrshare" | "buffer" | "gbp";
     credentials: {
       apiKey?: string;

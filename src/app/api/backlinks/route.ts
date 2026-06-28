@@ -6,7 +6,7 @@ import {
 } from "@/lib/engines/backlink-monitor";
 import { analyzeAuthorityDistribution } from "@/lib/engines/link-intelligence";
 import { verifyProjectAccess } from "@/lib/security/project-access";
-import { apiError, apiForbidden, apiUnauthorized } from "@/lib/security/api-response";
+import { apiError, apiForbidden, apiUnauthorized, readJsonBody } from "@/lib/security/api-response";
 
 export async function GET(request: NextRequest) {
   const supabase = await createClient();
@@ -52,7 +52,7 @@ export async function POST(request: NextRequest) {
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) return apiUnauthorized();
 
-  const { projectId } = await request.json() as { projectId: string };
+  const { projectId } = await readJsonBody(request) as { projectId: string };
   if (!projectId) return apiError("projectId required");
 
   const access = await verifyProjectAccess(supabase, projectId, user.id, "member");

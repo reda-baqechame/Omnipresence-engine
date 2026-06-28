@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import type { PromptCategory } from "@/types/database";
 import { verifyProjectAccess } from "@/lib/security/project-access";
-import { apiError, apiForbidden, apiUnauthorized } from "@/lib/security/api-response";
+import { apiError, apiForbidden, apiUnauthorized, readJsonBody } from "@/lib/security/api-response";
 import { fetchGscTopQueries } from "@/lib/engines/gsc-queries";
 import { getValidOAuthToken } from "@/lib/oauth/tokens";
 
@@ -112,7 +112,7 @@ export async function POST(request: NextRequest) {
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) return apiUnauthorized();
 
-  const body = await request.json();
+  const body = await readJsonBody(request);
   const { projectId, csv, prompts: inlinePrompts, action } = body as {
     projectId: string;
     csv?: string;

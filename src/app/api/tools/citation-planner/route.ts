@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { guardPublicEndpoint } from "@/lib/security/public-guard";
-import { apiError } from "@/lib/security/api-response";
+import { apiError, readJsonBody } from "@/lib/security/api-response";
 
 export async function POST(request: NextRequest) {
   const limited = guardPublicEndpoint(request, "tools-citation-planner", 20, 60 * 60 * 1000);
@@ -8,7 +8,7 @@ export async function POST(request: NextRequest) {
 
   let brand: string | undefined, industry: string | undefined, location: string | undefined;
   try {
-    ({ brand, industry, location } = await request.json());
+    ({ brand, industry, location } = await readJsonBody(request));
   } catch {
     return apiError("Invalid JSON body");
   }

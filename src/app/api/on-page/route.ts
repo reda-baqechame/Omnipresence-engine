@@ -4,7 +4,7 @@ import { runDailyOnPageAutomation, syncOnPageQueueForProject } from "@/lib/engin
 import { loadProjectIntegration, type CmsCredentials } from "@/lib/integrations/store";
 import { patchWordPressPageMeta } from "@/lib/integrations/cms-patcher";
 import { verifyProjectAccess } from "@/lib/security/project-access";
-import { apiError, apiForbidden, apiUnauthorized } from "@/lib/security/api-response";
+import { apiError, apiForbidden, apiUnauthorized, readJsonBody } from "@/lib/security/api-response";
 
 export async function GET(request: NextRequest) {
   const supabase = await createClient();
@@ -33,7 +33,7 @@ export async function POST(request: NextRequest) {
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) return apiUnauthorized();
 
-  const { projectId, action } = await request.json() as { projectId: string; action?: string };
+  const { projectId, action } = await readJsonBody(request) as { projectId: string; action?: string };
   if (!projectId) return apiError("projectId required");
 
   const access = await verifyProjectAccess(supabase, projectId, user.id, "member");
@@ -60,7 +60,7 @@ export async function PATCH(request: NextRequest) {
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) return apiUnauthorized();
 
-  const { queueId, apply } = await request.json() as { queueId: string; apply?: boolean };
+  const { queueId, apply } = await readJsonBody(request) as { queueId: string; apply?: boolean };
   if (!queueId) return apiError("queueId required");
 
   const { data: item } = await supabase.from("ops_queue").select("*").eq("id", queueId).single();

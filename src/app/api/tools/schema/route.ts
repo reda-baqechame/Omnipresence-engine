@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { scrapePage } from "@/lib/providers/firecrawl";
 import { assertPublicDomain, DomainValidationError } from "@/lib/security/domain";
 import { guardPublicEndpoint } from "@/lib/security/public-guard";
-import { apiError } from "@/lib/security/api-response";
+import { apiError, readJsonBody } from "@/lib/security/api-response";
 
 const RECOMMENDED = ["Organization", "LocalBusiness", "WebSite", "FAQPage", "Product", "Service"];
 
@@ -12,7 +12,7 @@ export async function POST(request: NextRequest) {
 
   let domain: string | undefined;
   try {
-    ({ domain } = await request.json());
+    ({ domain } = await readJsonBody(request));
   } catch {
     return apiError("Invalid JSON body");
   }

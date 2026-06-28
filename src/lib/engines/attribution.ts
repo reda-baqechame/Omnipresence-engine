@@ -1,5 +1,6 @@
 import type { AttributionMetric } from "@/types/database";
 import { logProviderError } from "@/lib/observability/log";
+import { fetchWithTimeout } from "@/lib/providers/http";
 
 export interface AttributionInputs {
   organicTraffic: number;
@@ -211,7 +212,7 @@ export async function syncGoogleSearchConsole(
 ): Promise<{ clicks: number; impressions: number; ctr: number; position: number; available: boolean }> {
   try {
     const url = `https://www.googleapis.com/webmasters/v3/sites/${encodeURIComponent(siteUrl)}/searchAnalytics/query`;
-    const response = await fetch(url, {
+    const response = await fetchWithTimeout(url, {
       method: "POST",
       headers: {
         Authorization: `Bearer ${accessToken}`,
@@ -254,7 +255,7 @@ export async function syncBingWebmaster(
   siteUrl: string
 ): Promise<{ clicks: number; impressions: number; aiCitations: number; available: boolean }> {
   try {
-    const response = await fetch(
+    const response = await fetchWithTimeout(
       `https://ssl.bing.com/webmaster/api.svc/json/GetQueryStats?siteUrl=${encodeURIComponent(siteUrl)}`,
       {
         headers: { Authorization: `Bearer ${accessToken}` },
@@ -312,7 +313,7 @@ export async function discoverGa4Property(
   domain: string
 ): Promise<string | null> {
   try {
-    const response = await fetch(
+    const response = await fetchWithTimeout(
       "https://analyticsadmin.googleapis.com/v1beta/accountSummaries",
       { headers: { Authorization: `Bearer ${accessToken}` } }
     );
@@ -346,7 +347,7 @@ export async function syncGoogleAnalytics(
   endDate: string
 ): Promise<{ sessions: number; aiReferrals: number; leads: number; revenue: number; available: boolean }> {
   try {
-    const response = await fetch(
+    const response = await fetchWithTimeout(
       `https://analyticsdata.googleapis.com/v1beta/${propertyId}:runReport`,
       {
         method: "POST",
@@ -422,7 +423,7 @@ export async function syncGa4LandingPages(
   limit = 50
 ): Promise<LandingPageRevenue[]> {
   try {
-    const response = await fetch(
+    const response = await fetchWithTimeout(
       `https://analyticsdata.googleapis.com/v1beta/${propertyId}:runReport`,
       {
         method: "POST",
@@ -466,7 +467,7 @@ export interface Ga4PropertyOption {
 
 export async function listGa4Properties(accessToken: string): Promise<Ga4PropertyOption[]> {
   try {
-    const response = await fetch(
+    const response = await fetchWithTimeout(
       "https://analyticsadmin.googleapis.com/v1beta/accountSummaries",
       { headers: { Authorization: `Bearer ${accessToken}` } }
     );
@@ -508,7 +509,7 @@ export async function syncPlausible(
       "Content-Type": "application/json",
     };
 
-    const aggregateRes = await fetch(
+    const aggregateRes = await fetchWithTimeout(
       `${baseUrl}/aggregate?site_id=${encodeURIComponent(siteId)}&period=30d&metrics=visitors,pageviews`,
       { headers }
     );
@@ -518,7 +519,7 @@ export async function syncPlausible(
       results: { visitors: { value: number }; pageviews: { value: number } };
     };
 
-    const breakdownRes = await fetch(
+    const breakdownRes = await fetchWithTimeout(
       `${baseUrl}/breakdown?site_id=${encodeURIComponent(siteId)}&period=30d&property=visit:source&metrics=visitors&limit=50`,
       { headers }
     );

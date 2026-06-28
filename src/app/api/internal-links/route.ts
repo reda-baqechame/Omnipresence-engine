@@ -3,7 +3,7 @@ import { createClient } from "@/lib/supabase/server";
 import { analyzeInternalLinks } from "@/lib/engines/internal-linking";
 import { loadProjectIntegration, type CmsCredentials } from "@/lib/integrations/store";
 import { verifyProjectAccess } from "@/lib/security/project-access";
-import { apiError, apiForbidden, apiUnauthorized } from "@/lib/security/api-response";
+import { apiError, apiForbidden, apiUnauthorized, readJsonBody } from "@/lib/security/api-response";
 
 export async function GET(request: NextRequest) {
   const supabase = await createClient();
@@ -30,7 +30,7 @@ export async function POST(request: NextRequest) {
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) return apiUnauthorized();
 
-  const { projectId, maxPages } = await request.json() as { projectId: string; maxPages?: number };
+  const { projectId, maxPages } = await readJsonBody(request) as { projectId: string; maxPages?: number };
   if (!projectId) return apiError("projectId required");
 
   const access = await verifyProjectAccess(supabase, projectId, user.id, "member");
@@ -69,7 +69,7 @@ export async function PATCH(request: NextRequest) {
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) return apiUnauthorized();
 
-  const { id, status, apply } = await request.json() as { id: string; status: string; apply?: boolean };
+  const { id, status, apply } = await readJsonBody(request) as { id: string; status: string; apply?: boolean };
   if (!id || !status) return apiError("id and status required");
 
   const { data: row } = await supabase

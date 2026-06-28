@@ -5,7 +5,7 @@ import {
   maskCredentials,
 } from "@/lib/security/credential-vault";
 import { verifyProjectAccess } from "@/lib/security/project-access";
-import { apiError, apiForbidden, apiUnauthorized } from "@/lib/security/api-response";
+import { apiError, apiForbidden, apiUnauthorized, readJsonBody } from "@/lib/security/api-response";
 
 const VALID_PROVIDERS = new Set(["wordpress", "webflow", "shopify", "buffer", "ayrshare", "gbp", "clarity"]);
 
@@ -33,7 +33,7 @@ export async function POST(request: NextRequest) {
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) return apiUnauthorized();
 
-  const { projectId, provider, credentials, metadata } = await request.json() as {
+  const { projectId, provider, credentials, metadata } = await readJsonBody(request) as {
     projectId: string;
     provider: string;
     credentials: Record<string, unknown>;

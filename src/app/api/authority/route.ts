@@ -3,7 +3,7 @@ import { createClient } from "@/lib/supabase/server";
 import { generateOutreachEmail, sendOutreachEmail } from "@/lib/engines/authority-finder";
 import { verifyProjectAccess } from "@/lib/security/project-access";
 import { trackApiUsage } from "@/lib/metering/api-usage";
-import { apiError, apiForbidden, apiNotFound, apiServerError, apiUnauthorized } from "@/lib/security/api-response";
+import { apiError, apiForbidden, apiNotFound, apiServerError, apiUnauthorized, readJsonBody } from "@/lib/security/api-response";
 
 const VALID_STATUSES = new Set([
   "identified",
@@ -20,7 +20,7 @@ export async function POST(request: NextRequest) {
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) return apiUnauthorized();
 
-  const { opportunityId } = await request.json();
+  const { opportunityId } = await readJsonBody(request);
   if (!opportunityId) return apiError("opportunityId required");
 
   const { data: opportunity } = await supabase
@@ -59,7 +59,7 @@ export async function PATCH(request: NextRequest) {
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) return apiUnauthorized();
 
-  const { opportunityId, status } = await request.json();
+  const { opportunityId, status } = await readJsonBody(request);
   if (!opportunityId || !status) return apiError("opportunityId and status required");
   if (!VALID_STATUSES.has(status)) return apiError("Invalid status");
 
@@ -90,7 +90,7 @@ export async function PUT(request: NextRequest) {
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) return apiUnauthorized();
 
-  const { opportunityId, to, subject } = await request.json();
+  const { opportunityId, to, subject } = await readJsonBody(request);
   if (!opportunityId || !to) return apiError("opportunityId and to required");
 
   const { data: opportunity } = await supabase

@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { readJsonBody } from "@/lib/security/api-response";
 import { createServiceClient } from "@/lib/supabase/server";
 import { authenticateApiKey } from "@/lib/security/api-keys";
 import { triggerProjectScan } from "@/lib/engines/trigger-scan";
@@ -14,7 +15,7 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: "Invalid or missing API key" }, { status: 401 });
   }
 
-  const body = await request.json().catch(() => ({}));
+  const body = await readJsonBody(request).catch(() => ({}));
   const all = body.all === true;
   const requestedIds: string[] = Array.isArray(body.projectIds) ? body.projectIds : [];
 

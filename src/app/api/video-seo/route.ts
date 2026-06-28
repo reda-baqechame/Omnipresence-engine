@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { verifyProjectAccess } from "@/lib/security/project-access";
-import { apiError, apiForbidden, apiUnauthorized } from "@/lib/security/api-response";
+import { apiError, apiForbidden, apiUnauthorized, readJsonBody } from "@/lib/security/api-response";
 import { analyzeVideoSeo } from "@/lib/engines/video-seo";
 
 export async function POST(request: NextRequest) {
@@ -11,7 +11,7 @@ export async function POST(request: NextRequest) {
 
   let body: { projectId?: string; keywords?: string[] };
   try {
-    body = await request.json();
+    body = await readJsonBody(request);
   } catch {
     return apiError("Invalid JSON body");
   }

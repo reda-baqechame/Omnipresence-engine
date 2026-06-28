@@ -3,7 +3,7 @@ import { AI_BOTS } from "@/lib/providers/ai-gateway";
 import robotsParser from "robots-parser";
 import { assertPublicDomain, DomainValidationError } from "@/lib/security/domain";
 import { guardPublicEndpoint } from "@/lib/security/public-guard";
-import { apiError } from "@/lib/security/api-response";
+import { apiError, readJsonBody } from "@/lib/security/api-response";
 
 export async function POST(request: NextRequest) {
   const limited = guardPublicEndpoint(request, "tools-robots", 15, 60 * 60 * 1000);
@@ -11,7 +11,7 @@ export async function POST(request: NextRequest) {
 
   let domain: string | undefined;
   try {
-    ({ domain } = await request.json());
+    ({ domain } = await readJsonBody(request));
   } catch {
     return apiError("Invalid JSON body");
   }

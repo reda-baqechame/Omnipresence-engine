@@ -4,7 +4,7 @@ import { generateContent } from "@/lib/engines/content-generator";
 import { assertContentGenerationAllowed } from "@/lib/engines/content-guardrails";
 import { verifyProjectAccess } from "@/lib/security/project-access";
 import { trackApiUsage } from "@/lib/metering/api-usage";
-import { apiError, apiForbidden, apiNotFound, apiServerError, apiUnauthorized } from "@/lib/security/api-response";
+import { apiError, apiForbidden, apiNotFound, apiServerError, apiUnauthorized, readJsonBody } from "@/lib/security/api-response";
 import { advancePipeline, type BlogPipelineStepKey } from "@/lib/engines/blog-pipeline";
 import type { ContentAssetType } from "@/types/database";
 
@@ -43,7 +43,7 @@ export async function POST(request: NextRequest) {
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) return apiUnauthorized();
 
-  const { projectId, type, topic, additionalContext, parentAssetId, repurposeFrom, action } = await request.json() as {
+  const { projectId, type, topic, additionalContext, parentAssetId, repurposeFrom, action } = await readJsonBody(request) as {
     projectId: string;
     type?: ContentAssetType;
     topic?: string;
@@ -165,7 +165,7 @@ export async function PATCH(request: NextRequest) {
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) return apiUnauthorized();
 
-  const { assetId, status, pipelineStep } = await request.json() as {
+  const { assetId, status, pipelineStep } = await readJsonBody(request) as {
     assetId: string;
     status?: string;
     pipelineStep?: BlogPipelineStepKey;

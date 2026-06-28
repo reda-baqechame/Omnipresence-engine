@@ -11,7 +11,7 @@ import {
 } from "@/lib/engines/programmatic-seo";
 import { generateContent } from "@/lib/engines/content-generator";
 import { verifyProjectAccess } from "@/lib/security/project-access";
-import { apiError, apiForbidden, apiUnauthorized } from "@/lib/security/api-response";
+import { apiError, apiForbidden, apiUnauthorized, readJsonBody } from "@/lib/security/api-response";
 
 const VALID_TYPES = new Set<PseoTemplateType>([
   "location_page",
@@ -45,7 +45,7 @@ export async function POST(request: NextRequest) {
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) return apiUnauthorized();
 
-  const body = await request.json();
+  const body = await readJsonBody(request);
   const {
     projectId,
     name,
