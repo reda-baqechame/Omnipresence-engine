@@ -487,32 +487,50 @@ function appleBusinessConnectStatus(baseUrl: string): TechnicalAuditFinding {
   };
 }
 
+const BROWSER_UA =
+  "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36";
+
+async function statusFor(baseUrl: string, ua: string): Promise<number | null> {
+  try {
+    const response = await fetch(baseUrl, {
+      headers: { "User-Agent": ua },
+      signal: AbortSignal.timeout(10000),
+      redirect: "follow",
+    });
+    return response.status;
+  } catch {
+    return null;
+  }
+}
+
 async function checkAIBotAccess(baseUrl: string): Promise<TechnicalAuditFinding[]> {
   const findings: TechnicalAuditFinding[] = [];
   // Perplexity-User is the live user-triggered fetcher (distinct from PerplexityBot).
   const criticalBots = ["OAI-SearchBot", "PerplexityBot", "Perplexity-User", "Google-Extended"];
 
-  for (const bot of criticalBots) {
-    try {
-      const response = await fetch(baseUrl, {
-        headers: { "User-Agent": bot },
-        signal: AbortSignal.timeout(10000),
-        redirect: "follow",
-      });
+  // Baseline with a normal browser UA from THIS IP. If the site already blocks a
+  // plain browser request from our auditor (WAF/IP challenge), a bot UA getting
+  // the same block tells us nothing about bot-specific policy — reporting it as
+  // "AI bot blocked" would be a false positive. Only flag a bot when a browser
+  // succeeds from the same origin but the bot UA is rejected (real bot blocking).
+  const browserStatus = await statusFor(baseUrl, BROWSER_UA);
+  if (browserStatus === null || browserStatus >= 400) {
+    // Can't establish a clean baseline — don't fabricate per-bot blocks.
+    return findings;
+  }
 
-      if (response.status >= 400) {
-        findings.push({
-          category: "ai_bot_access",
-          severity: "high",
-          title: `${bot} receives HTTP ${response.status}`,
-          description: `When ${bot} tries to access your site, it gets an error.`,
-          impact: `Content may not be available for AI search features using ${bot}.`,
-          fix_recommendation: "Ensure your server allows access for AI crawlers.",
-          affected_url: baseUrl,
-        });
-      }
-    } catch {
-      // Network error — already covered by unreachable finding
+  for (const bot of criticalBots) {
+    const status = await statusFor(baseUrl, bot);
+    if (status !== null && status >= 400) {
+      findings.push({
+        category: "ai_bot_access",
+        severity: "high",
+        title: `${bot} blocked (HTTP ${status})`,
+        description: `A normal browser loads your site (HTTP ${browserStatus}) from the same request origin, but ${bot} receives HTTP ${status} — your server or WAF is blocking this AI crawler specifically.`,
+        impact: `Your content cannot be retrieved or cited by AI search features using ${bot}.`,
+        fix_recommendation: `Allow ${bot} in your WAF/bot-management rules (e.g. Cloudflare "Verified AI bots") and ensure no User-Agent rule rejects it.`,
+        affected_url: baseUrl,
+      });
     }
   }
 
