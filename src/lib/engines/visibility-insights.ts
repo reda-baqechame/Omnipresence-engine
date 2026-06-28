@@ -85,6 +85,54 @@ export function competitorWinPrompts(results: VisibilityResult[], limit = 25): C
     .slice(0, limit);
 }
 
+export interface EntityVisibilityRate {
+  measured: number;
+  mentioned: number;
+  cited: number;
+  mentionRate: number | null;
+  citationRate: number | null;
+}
+
+/**
+ * Per-entity (brand + each competitor) AI mention/citation rate over the same
+ * pool of measured probes. Lets the competitive matrix show head-to-head AI
+ * visibility next to authority/popularity. Competitor keys match the project's
+ * competitor identifiers (the same keys the scanner stores in
+ * competitor_mentions / competitor_citations).
+ */
+export function competitorVisibilityRates(
+  results: VisibilityResult[],
+  competitors: string[]
+): { brand: EntityVisibilityRate; competitors: Record<string, EntityVisibilityRate> } {
+  const blank = (): EntityVisibilityRate => ({ measured: 0, mentioned: 0, cited: 0, mentionRate: null, citationRate: null });
+  const brand = blank();
+  const comp: Record<string, EntityVisibilityRate> = {};
+  for (const c of competitors) comp[c] = blank();
+
+  for (const r of results) {
+    if (!isMeasured(r)) continue;
+    brand.measured += 1;
+    if (r.brand_mentioned) brand.mentioned += 1;
+    if (r.brand_cited) brand.cited += 1;
+    const mentions = r.competitor_mentions || {};
+    const citations = r.competitor_citations || {};
+    for (const c of competitors) {
+      comp[c].measured += 1;
+      if (mentions[c]) comp[c].mentioned += 1;
+      if (citations[c]) comp[c].cited += 1;
+    }
+  }
+
+  const finalize = (e: EntityVisibilityRate) => {
+    e.mentionRate = e.measured > 0 ? e.mentioned / e.measured : null;
+    e.citationRate = e.measured > 0 ? e.cited / e.measured : null;
+    return e;
+  };
+  finalize(brand);
+  for (const c of competitors) finalize(comp[c]);
+  return { brand, competitors: comp };
+}
+
 export interface PagePlay {
   prompt: string;
   engines: string[];

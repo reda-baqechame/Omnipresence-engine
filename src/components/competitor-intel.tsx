@@ -1,19 +1,23 @@
 import { getCompetitiveSnapshot, type CompetitiveSnapshot } from "@/lib/engines/competitive-snapshot";
+import type { EntityVisibilityRate } from "@/lib/engines/visibility-insights";
 
 /**
  * Server component: the head-to-head competitive matrix incumbents charge for,
  * built entirely from free signals with honest labels — Popularity Index
  * (relative, not visits), Authority Rating (DR-style blend), real-user Core Web
- * Vitals (CrUX), and best-effort tech-stack fingerprints.
+ * Vitals (CrUX), best-effort tech-stack fingerprints, and head-to-head AI
+ * visibility (mention/citation rate) when probe data is available.
  */
 export async function CompetitorIntel({
   domain,
   competitors,
   brandName,
+  aiRates,
 }: {
   domain: string;
   competitors: string[];
   brandName?: string;
+  aiRates?: Record<string, EntityVisibilityRate>;
 }) {
   const targets = [domain, ...competitors.slice(0, 4)].filter(Boolean);
   const snapshots = await Promise.all(
@@ -22,6 +26,10 @@ export async function CompetitorIntel({
       // fetching it for every competitor just burns quota and slows the page.
       safeSnapshot(t, { name: i === 0 ? brandName : undefined, includeWiki: i === 0, includeCwv: i === 0 })
     )
+  );
+
+  const hasAiData = Boolean(
+    aiRates && Object.values(aiRates).some((r) => r && r.measured > 0)
   );
 
   return (
@@ -41,11 +49,19 @@ export async function CompetitorIntel({
               <th className="p-2 text-right" title="Relative popularity (rank.to + Tranco + Common Crawl + Wikipedia + age) — NOT visit counts">Popularity</th>
               <th className="p-2 text-right" title="Authority Rating: Tranco + Common Crawl referring domains + OpenPageRank + domain age">Authority</th>
               <th className="p-2 text-right" title="rank.to global rank (lower = more popular)">Global rank</th>
+              {hasAiData && (
+                <>
+                  <th className="p-2 text-right" title="Share of measured AI answers that mention this entity">AI mention</th>
+                  <th className="p-2 text-right" title="Share of measured AI answers that cite this entity">AI cited</th>
+                </>
+              )}
               <th className="p-2 text-left" title="Real-user Core Web Vitals from Chrome UX Report">CWV (field)</th>
             </tr>
           </thead>
           <tbody>
-            {snapshots.map((s, i) => (
+            {snapshots.map((s, i) => {
+              const ai = aiRates?.[s.target];
+              return (
               <tr key={s.target} className="border-b border-border/40">
                 <td className="p-2">
                   <span className="font-medium">{cleanLabel(s.target)}</span>
@@ -60,9 +76,16 @@ export async function CompetitorIntel({
                     <span>#{s.popularity.globalRank.toLocaleString()} {trendArrow(s.popularity.rankTrend)}</span>
                   ) : "—"}
                 </td>
+                {hasAiData && (
+                  <>
+                    <td className="p-2 text-right">{ratePct(ai?.mentionRate)}</td>
+                    <td className="p-2 text-right">{ratePct(ai?.citationRate)}</td>
+                  </>
+                )}
                 <td className="p-2">{cwvBadge(s.cwv?.assessment)}</td>
               </tr>
-            ))}
+              );
+            })}
           </tbody>
         </table>
       </div>
@@ -119,6 +142,10 @@ async function safeSnapshot(
       components: { tranco: 0, referringDomains: 0, ageYears: 0, wikiViews: 0 },
     };
   }
+}
+
+function ratePct(rate?: number | null): string {
+  return typeof rate === "number" ? `${Math.round(rate * 100)}%` : "—";
 }
 
 function trendArrow(trend?: string): string {
