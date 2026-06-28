@@ -95,6 +95,11 @@ export default async function VisibilityPage({
           <span className="text-muted-foreground">
             {Math.round(metrics.measuredRate * 100)}% measured citations
           </span>
+          {metrics.sampleSize > 0 && (
+            <span className="text-muted-foreground" title="95% Wilson confidence interval on the mention rate across measured probes. A narrower band means a more certain measurement.">
+              Mention rate 95% CI: {Math.round(metrics.mentionRateCI.low * 100)}–{Math.round(metrics.mentionRateCI.high * 100)}% · {Math.round(metrics.confidence * 100)}% confidence
+            </span>
+          )}
         </div>
         <ExportButtons projectId={id} types={["visibility"]} />
       </div>

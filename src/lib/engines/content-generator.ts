@@ -66,8 +66,8 @@ CITATION OPTIMIZATION RULES (mandatory):
       user: `${brandContext}\n\nWrite a blog post about: ${topic}\n\n1000-1500 words. Include FAQ section with JSON-LD-ready Q&A. Optimize for AI citation.`,
     },
     case_study: {
-      system: "You are a case study writer. Create compelling case studies with measurable results.",
-      user: `${brandContext}\n\nCreate a case study template for: ${topic}\n\nInclude: challenge, solution, results (with placeholder metrics), and testimonial structure.`,
+      system: "You are a case study writer. Create compelling case studies with measurable results. Never invent specific statistics, percentages, dollar amounts, or quotes — a fabricated metric in a published case study is a legal and trust liability.",
+      user: `${brandContext}\n\nCreate a case study template for: ${topic}\n\nInclude: challenge, solution, results, and testimonial structure. For every metric or quote, output a clearly-marked fill-in placeholder in square brackets the customer must replace with their real data — e.g. "[INSERT REAL METRIC: % increase]", "[INSERT REAL CUSTOMER QUOTE]". Do NOT write realistic-looking numbers that could be mistaken for real results.`,
     },
     youtube_script: {
       system: "You are a YouTube scriptwriter. Create engaging educational video scripts.",

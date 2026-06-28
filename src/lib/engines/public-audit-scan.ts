@@ -7,12 +7,6 @@ import { getBacklinksFree } from "@/lib/providers/backlinks-free";
 import { searchGoogleOrganicRouter } from "@/lib/providers/serp-router";
 import { sameRegistrableDomain } from "@/lib/engines/brand-matcher";
 import type { VisibilityEngine, VisibilityResult } from "@/types/database";
-import type { TechnicalAuditFinding } from "@/lib/engines/technical-audit";
-import {
-  generateDemoPrompts,
-  generateDemoVisibilityResults,
-  generateDemoAuthorityOpportunities,
-} from "@/lib/demo/scan-data";
 
 const PUBLIC_PROJECT_ID = "00000000-0000-0000-0000-000000000001";
 const MAX_PUBLIC_PROMPTS = 5;
@@ -31,7 +25,7 @@ function selectPublicEngines(): VisibilityEngine[] {
 
 export interface PublicAuditIntelligence {
   liveData: boolean;
-  dataMode: "measured" | "demo";
+  dataMode: "measured" | "demo" | "unavailable";
   providers: ReturnType<typeof getCapabilitiesSummary>;
   visibilityResults: Array<Pick<VisibilityResult, "engine" | "prompt_text" | "brand_mentioned" | "brand_cited" | "source_domains">>;
   visibilityMetrics: ReturnType<typeof calculateVisibilityMetrics>;
@@ -67,34 +61,19 @@ export async function runPublicAuditIntelligence(input: {
   const competitors = input.competitors || [];
 
   if (!live) {
-    const demoPrompts = generateDemoPrompts(PUBLIC_PROJECT_ID, input.brandName, input.industry, location, competitors);
-    const visibilityResults = generateDemoVisibilityResults(
-      PUBLIC_PROJECT_ID,
-      "public-run",
-      input.brandName,
-      input.domain,
-      competitors,
-      demoPrompts.slice(0, MAX_PUBLIC_PROMPTS).map((p) => ({ text: p.text }))
-    );
-    const authorityOpportunities = generateDemoAuthorityOpportunities(PUBLIC_PROJECT_ID, input.industry, competitors);
+    // No live data provider is configured. This is a PROSPECT-FACING audit, so
+    // we never fabricate visibility numbers about someone's real brand — that
+    // would be exactly the "fake results" this platform refuses to ship. We
+    // return an honest "AI visibility unavailable" state; the public route still
+    // renders real keyless signals (technical audit, domain authority, PageSpeed)
+    // and a clear "connect a provider" message.
     return {
       liveData: false,
-      dataMode: "demo",
+      dataMode: "unavailable",
       providers,
-      visibilityResults: visibilityResults.map((r) => ({
-        engine: r.engine,
-        prompt_text: r.prompt_text,
-        brand_mentioned: r.brand_mentioned,
-        brand_cited: r.brand_cited,
-        source_domains: r.source_domains,
-      })),
-      visibilityMetrics: calculateVisibilityMetrics(visibilityResults),
-      authorityOpportunities: authorityOpportunities.slice(0, 8).map((o) => ({
-        type: o.type,
-        target_site: o.target_site,
-        pitch_angle: o.pitch_angle,
-        estimated_impact: o.estimated_impact,
-      })),
+      visibilityResults: [],
+      visibilityMetrics: calculateVisibilityMetrics([]),
+      authorityOpportunities: [],
       coverageGaps: [],
       coverageItems: [],
       backlinkCount: 0,

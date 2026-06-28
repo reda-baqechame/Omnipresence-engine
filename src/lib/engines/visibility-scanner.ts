@@ -82,7 +82,10 @@ async function scanSinglePrompt(
     competitor_citations: {} as Record<string, boolean>,
     source_domains: [] as string[],
     cited_urls: [] as string[],
-    data_source: "simulated" as DataQuality,
+    // Default to the honest "unavailable" rather than "simulated": every branch
+    // below overrides this, but if a future code path forgets to, an unmeasured
+    // probe must never silently read as fabricated data in a real scan.
+    data_source: "unavailable" as DataQuality,
   };
 
   const domainLower = config.brandDomain.replace(/^www\./, "").toLowerCase();
@@ -550,7 +553,24 @@ export function getResultDataSourceLabel(result: Pick<VisibilityResult, "raw_res
   return "Simulated";
 }
 
-export function calculateVisibilityMetrics(results: Array<Pick<VisibilityResult, "brand_mentioned" | "brand_cited" | "competitor_mentions" | "raw_response" | "data_source" | "recommendation_strength" | "answer_position">>) {
+/**
+ * Wilson score interval for a binomial proportion — the small-sample-robust 95%
+ * CI that polling/analytics tools use (never returns <0 or >1, and stays sane at
+ * n=1 unlike the naive normal approximation). z=1.96 ≈ 95% confidence.
+ */
+function wilsonInterval(successes: number, n: number, z = 1.96): { low: number; high: number } {
+  if (n <= 0) return { low: 0, high: 0 };
+  const phat = successes / n;
+  const denom = 1 + (z * z) / n;
+  const center = (phat + (z * z) / (2 * n)) / denom;
+  const margin = (z * Math.sqrt((phat * (1 - phat) + (z * z) / (4 * n)) / n)) / denom;
+  return {
+    low: Math.max(0, Math.round((center - margin) * 1000) / 1000),
+    high: Math.min(1, Math.round((center + margin) * 1000) / 1000),
+  };
+}
+
+export function calculateVisibilityMetrics(results: Array<Pick<VisibilityResult, "brand_mentioned" | "brand_cited" | "competitor_mentions" | "raw_response" | "data_source" | "recommendation_strength" | "answer_position" | "confidence">>) {
   const attempted = results.length;
   const EMPTY = {
     mentionRate: 0,
@@ -560,6 +580,9 @@ export function calculateVisibilityMetrics(results: Array<Pick<VisibilityResult,
     measuredRate: 0,
     prominence: 0,
     avgPosition: null as number | null,
+    confidence: 0,
+    mentionRateCI: { low: 0, high: 0 },
+    sampleSize: 0,
   };
   if (attempted === 0) return EMPTY;
 
@@ -619,6 +642,22 @@ export function calculateVisibilityMetrics(results: Array<Pick<VisibilityResult,
     ? Math.round((positions.reduce((a, b) => a + b, 0) / positions.length) * 10) / 10
     : null;
 
+  // Run-level 95% confidence interval on the mention rate (Wilson) so the
+  // headline number carries a measured uncertainty band — wide when we could
+  // only probe a few times, tight when the pool is large. This is the
+  // statistical honesty analyst tools (Profound/Peec) charge for.
+  const mentionRateCI = wilsonInterval(mentions, total);
+
+  // Aggregate confidence: mean of per-probe confidence (sample agreement for
+  // multi-run LLM reads), falling back to the data-quality prior when a probe
+  // didn't carry its own confidence. 0-1, higher = more trustworthy run.
+  const confidences = pool.map((r) =>
+    typeof r.confidence === "number" ? r.confidence : probeConfidence(dq(r) ?? "simulated")
+  );
+  const confidence = confidences.length
+    ? Math.round((confidences.reduce((a, b) => a + b, 0) / confidences.length) * 100) / 100
+    : 0;
+
   return {
     mentionRate: mentions / total,
     citationRate: citations / total,
@@ -627,6 +666,9 @@ export function calculateVisibilityMetrics(results: Array<Pick<VisibilityResult,
     measuredRate: measured / attempted,
     prominence: Math.round(prominence * 100) / 100,
     avgPosition,
+    confidence,
+    mentionRateCI,
+    sampleSize: total,
   };
 }
 

@@ -173,6 +173,7 @@ export function generateReportHTML(data: ReportData, whiteLabel?: { name: string
       </div>
       <p class="legend">Recommendation strength: ${Math.round((visibility.prominence ?? 0) * 100)}%${visibility.avgPosition !== null ? ` · Avg. answer position: #${visibility.avgPosition}` : ""} — how strongly (not just whether) AI engines recommend you when you appear.</p>
       <p class="legend">Based on ${measuredPct}% measured AI probes${maxSamples > 1 ? `, each AI prompt sampled up to ${maxSamples}× and majority-voted to control for AI response volatility` : ""}. Rates are computed only over engines we could measure this run; unmeasured engines are excluded rather than counted as zero.</p>
+      ${visibility.sampleSize > 0 ? `<p class="legend">Mention rate 95% confidence interval: <strong>${Math.round(visibility.mentionRateCI.low * 100)}%–${Math.round(visibility.mentionRateCI.high * 100)}%</strong> across ${visibility.sampleSize} measured probe${visibility.sampleSize === 1 ? "" : "s"} · overall read confidence <strong>${Math.round(visibility.confidence * 100)}%</strong>. A narrower band means a more certain measurement.</p>` : ""}
     </div>
 
     ${competitorWinPrompts.length > 0 ? `
