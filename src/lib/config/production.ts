@@ -2,6 +2,8 @@ import {
   getCapabilitiesSummary,
   hasSerpCapability,
   preferLiveData,
+  hasDirectLLMCapability,
+  activeAIEngines,
 } from "@/lib/config/capabilities";
 import { hasIntelligenceApi } from "@/lib/providers/intelligence-api";
 import { hasIntegrationEncryptionKey } from "@/lib/security/credential-vault";
@@ -82,6 +84,28 @@ export function getProductionReadiness(): {
     label: "SERP provider",
     status: hasSerpCapability() ? "ok" : "warning",
     message: "SERPER, BRAVE, or OMNIDATA_BASE_URL",
+  });
+
+  const aiEngines = activeAIEngines();
+  checks.push({
+    id: "ai_engines",
+    label: "Generative AI engines",
+    status: hasDirectLLMCapability() ? "ok" : "warning",
+    message: aiEngines.length
+      ? `Live: ${aiEngines.join(", ")}`
+      : "Add OPENAI/ANTHROPIC/GOOGLE_GENERATIVE_AI key for true AI-answer probes (SERP/AI-Overview still measured without one)",
+  });
+
+  // The cost guard is always-on in code; this surfaces that paid LLM spend is
+  // bounded so an operator can trust adding keys won't run up an open-ended bill.
+  checks.push({
+    id: "cost_guard",
+    label: "LLM cost guard",
+    status: process.env.LLM_BUDGET_DISABLED === "true" ? "warning" : "ok",
+    message:
+      process.env.LLM_BUDGET_DISABLED === "true"
+        ? "Disabled — paid LLM spend is NOT capped (set LLM_BUDGET_DISABLED!=true)"
+        : `Daily $${process.env.LLM_DAILY_BUDGET_USD || 5} / monthly $${process.env.LLM_MONTHLY_BUDGET_USD || 50} cap enforced`,
   });
 
   checks.push({

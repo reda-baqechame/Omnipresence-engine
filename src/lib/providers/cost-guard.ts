@@ -196,6 +196,33 @@ export async function recordSpend(
   }
 }
 
+/** This-month spend grouped by provider (for the in-app usage view). */
+export async function getSpendByProvider(): Promise<
+  Array<{ provider: string; calls: number; costUsd: number }>
+> {
+  try {
+    const sb = await serviceClient();
+    if (!sb) return [];
+    const { data } = await sb
+      .from("api_spend_daily")
+      .select("provider, calls, est_cost_usd")
+      .gte("day", monthStart());
+    const agg: Record<string, { calls: number; costUsd: number }> = {};
+    for (const r of data || []) {
+      const p = (r.provider as string) || "other";
+      agg[p] = agg[p] || { calls: 0, costUsd: 0 };
+      agg[p].calls += Number(r.calls) || 0;
+      agg[p].costUsd += Number(r.est_cost_usd) || 0;
+    }
+    return Object.entries(agg)
+      .map(([provider, v]) => ({ provider, ...v }))
+      .sort((a, b) => b.costUsd - a.costUsd);
+  } catch (e) {
+    logProviderError("cost-guard.byProvider", e, {});
+    return [];
+  }
+}
+
 /** Current spend snapshot for health/diagnostics. */
 export async function getSpendSnapshot(): Promise<{
   day: string;

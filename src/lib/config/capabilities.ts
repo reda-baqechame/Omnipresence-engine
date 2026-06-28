@@ -131,6 +131,25 @@ export function hasLLMMentionsCapability(): boolean {
   return hasEnv("DATAFORSEO_LOGIN") && hasEnv("DATAFORSEO_PASSWORD");
 }
 
+/** A direct generative-engine key (ChatGPT/Claude/Gemini) for true AI-answer probes. */
+export function hasDirectLLMCapability(): boolean {
+  return (
+    hasEnv("OPENAI_API_KEY") ||
+    hasEnv("ANTHROPIC_API_KEY") ||
+    hasEnv("GOOGLE_GENERATIVE_AI_API_KEY")
+  );
+}
+
+/** Which generative engines are live right now (for readiness/UI). */
+export function activeAIEngines(): string[] {
+  const out: string[] = [];
+  if (hasEnv("OPENAI_API_KEY")) out.push("ChatGPT");
+  if (hasEnv("ANTHROPIC_API_KEY")) out.push("Claude");
+  if (hasEnv("GOOGLE_GENERATIVE_AI_API_KEY")) out.push("Gemini");
+  if (hasEnv("PERPLEXITY_API_KEY")) out.push("Perplexity");
+  return out;
+}
+
 export function preferLiveData(): boolean {
   if (process.env.FORCE_DEMO_MODE === "true") return false;
   return hasAnyLiveDataProvider();
