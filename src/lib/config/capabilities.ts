@@ -61,6 +61,34 @@ function hasEnv(key: string): boolean {
   return Boolean(v && v.length > 0 && !v.startsWith("your-"));
 }
 
+/**
+ * Paid third-party vendors. In Zero-Paid-Keys mode (Wave L) the provider router
+ * (Wave H) refuses these adapters so the platform proves it runs the full loop
+ * on sovereign/self-hosted engines only.
+ */
+export const PAID_PROVIDERS: ProviderId[] = [
+  "openai",
+  "anthropic",
+  "google_genai",
+  "dataforseo",
+  "serper",
+  "perplexity",
+  "firecrawl",
+  "resend",
+  "ayrshare",
+  "buffer",
+  "clearbit",
+];
+
+/** True when the operator has opted into a fully sovereign, no-paid-keys run. */
+export function isZeroPaidKeysMode(): boolean {
+  return process.env.ZERO_PAID_KEYS === "true";
+}
+
+export function isPaidProvider(id: ProviderId): boolean {
+  return PAID_PROVIDERS.includes(id);
+}
+
 export function getProviderStatuses(): ProviderStatus[] {
   return [
     { id: "supabase", name: "Supabase", configured: hasEnv("NEXT_PUBLIC_SUPABASE_URL") && hasEnv("SUPABASE_SERVICE_ROLE_KEY"), required: true, category: "infra" },

@@ -192,6 +192,7 @@
 | 2026-06-28 | war-room-dashboards | done | Wave D: War Room, Proof Ledger, agency cockpit |
 | 2026-06-28 | snapshots-quality | done | Wave E: gsc/gbp/ai_visibility snapshots + data_quality_scores + daily cron |
 | 2026-06-28 | claims-harness | done | Wave F: claims registry + forbidden guard + benchmark.mjs in verify:all + deterministic refund shield |
+| 2026-06-28 | provider-router | done | Wave H: unified capability router (health/cost/confidence/failover) + ZERO_PAID_KEYS + serp-router delegation |
 
 ## Production hardening (complete)
 

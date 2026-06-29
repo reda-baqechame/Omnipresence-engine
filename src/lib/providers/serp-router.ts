@@ -1,11 +1,13 @@
-import {
-  searchGoogleOrganic as searchGoogleOrganicDataForSEO,
-  isOmniDataActive,
-} from "@/lib/providers/dataforseo";
-import { searchGoogleOrganicBrave } from "@/lib/providers/brave-search";
-import { searchGoogleOrganicSerper } from "@/lib/providers/serper";
-import { searchGoogleOrganicSearxng, hasSearxngCapability } from "@/lib/providers/searxng";
-import { searchGoogleOrganicFirecrawl, hasFirecrawlCapability } from "@/lib/providers/firecrawl";
+/**
+ * SERP routing facade. The ranking, failover and health logic now lives in the
+ * unified provider router (Wave H); this module preserves the long-standing
+ * `searchGoogleOrganicRouter` / `getActiveSerpProvider` API its many callers
+ * depend on, delegating to `routeSerp`.
+ */
+import { isOmniDataActive } from "@/lib/providers/dataforseo";
+import { hasSearxngCapability } from "@/lib/providers/searxng";
+import { hasFirecrawlCapability } from "@/lib/providers/firecrawl";
+import { routeSerp, rankedAdapters } from "@/lib/providers/router";
 import type { ProviderResult, SERPResult } from "./types";
 
 export type SerpProviderId = "serper" | "brave" | "searxng" | "firecrawl" | "omnidata" | "dataforseo";
@@ -15,12 +17,13 @@ function hasEnv(key: string): boolean {
   return Boolean(v && v.length > 0 && !v.startsWith("your-"));
 }
 
-/** OmniData (self-hosted) serves the DataForSEO-compatible /v3 SERP endpoint and can scrape keylessly. */
-function hasDataForSeoBackend(): boolean {
-  return isOmniDataActive() || (hasEnv("DATAFORSEO_LOGIN") && hasEnv("DATAFORSEO_PASSWORD"));
-}
-
 export function getActiveSerpProvider(): SerpProviderId | null {
+  // Honour the router's ranking (self-hosted/free first, paid optional, and
+  // Zero-Paid-Keys aware) so the "active" provider matches what actually runs.
+  const top = rankedAdapters("serp")[0];
+  if (top) return top.id as SerpProviderId;
+
+  // Defensive fallback mirroring the previous static priority.
   if (hasEnv("SERPER_API_KEY")) return "serper";
   if (hasEnv("BRAVE_SEARCH_API_KEY")) return "brave";
   if (hasSearxngCapability()) return "searxng";
@@ -30,58 +33,18 @@ export function getActiveSerpProvider(): SerpProviderId | null {
   return null;
 }
 
-/** Priority: Serper (cheap) → Brave (free tier) → SearXNG (keyless self-host) → OmniData/DataForSEO (self-hosted or paid). */
 export async function searchGoogleOrganicRouter(
   keyword: string,
   location = "United States",
   brandDomain: string,
   competitors: string[]
 ): Promise<ProviderResult<SERPResult> & { provider?: SerpProviderId }> {
-  const providers: Array<{
-    id: SerpProviderId;
-    enabled: boolean;
-    search: () => Promise<ProviderResult<SERPResult>>;
-  }> = [
-    {
-      id: "serper",
-      enabled: hasEnv("SERPER_API_KEY"),
-      search: () => searchGoogleOrganicSerper(keyword, location, brandDomain, competitors),
-    },
-    {
-      id: "brave",
-      enabled: hasEnv("BRAVE_SEARCH_API_KEY"),
-      search: () => searchGoogleOrganicBrave(keyword, location, brandDomain, competitors),
-    },
-    {
-      id: "searxng",
-      enabled: hasSearxngCapability(),
-      search: () => searchGoogleOrganicSearxng(keyword, location, brandDomain, competitors),
-    },
-    {
-      id: isOmniDataActive() ? "omnidata" : "dataforseo",
-      enabled: hasDataForSeoBackend(),
-      search: () => searchGoogleOrganicDataForSEO(keyword, location, brandDomain, competitors),
-    },
-    // Firecrawl /v1/search returns live Google organic results. Last in the
-    // chain because it costs a credit, but it's the default working SERP path
-    // in production (where a Firecrawl key is present and no dedicated SERP API).
-    {
-      id: "firecrawl",
-      enabled: hasFirecrawlCapability(),
-      search: () => searchGoogleOrganicFirecrawl(keyword, location, brandDomain, competitors),
-    },
-  ];
-
-  let lastError = "No SERP provider configured";
-
-  for (const provider of providers) {
-    if (!provider.enabled) continue;
-    const result = await provider.search();
-    if (result.success && result.data) {
-      return { ...result, provider: provider.id };
-    }
-    if (result.error) lastError = result.error;
-  }
-
-  return { success: false, error: lastError };
+  const outcome = await routeSerp(keyword, location, brandDomain, competitors);
+  return {
+    success: outcome.success,
+    data: outcome.data,
+    error: outcome.error,
+    creditsUsed: outcome.creditsUsed,
+    provider: outcome.provider as SerpProviderId | undefined,
+  };
 }
