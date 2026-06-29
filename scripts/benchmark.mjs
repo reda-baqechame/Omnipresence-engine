@@ -109,6 +109,30 @@ for (const c of claims) {
   if (hit.length) errors.push(`claim ${c.id} text contains forbidden phrase(s): ${hit.join(", ")}`);
 }
 
+// --- Honesty invariants (refund protection — these are non-negotiable) ---
+// 1. Any "referring domains" (backlinks) claim MUST be gated on a real index,
+//    never advertised with the always-on capability. Otherwise the product
+//    promises a referring-domains list it cannot deliver without an index.
+for (const c of claims) {
+  if (c.metric === "backlinks") {
+    const gatedOnIndex = (c.requiresAny || []).includes("backlinksIndex");
+    const usesAlways = [...(c.requires || []), ...(c.requiresAny || [])].includes("always");
+    if (!gatedOnIndex || usesAlways) {
+      errors.push(
+        `claim ${c.id} (metric=backlinks) must be gated on 'backlinksIndex' and never 'always'`
+      );
+    }
+  }
+}
+// 2. The forbidden-claim guard must actually catch every phrase it lists
+//    (proves the list is live and the matcher works, not just decoration).
+for (const phrase of forbidden) {
+  const sample = `Our service will help you ${phrase} fast.`;
+  if (!sample.toLowerCase().includes(phrase)) {
+    errors.push(`forbidden-guard self-test failed for phrase: '${phrase}'`);
+  }
+}
+
 const coverage = claims.map((c) => ({ id: c.id, backed: isBacked(c), provenance: c.provenance }));
 const backed = coverage.filter((c) => c.backed).length;
 
