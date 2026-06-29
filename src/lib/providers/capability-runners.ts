@@ -14,6 +14,9 @@ import { route, attachRunner, type RouteOutcome } from "./router";
 import { scrapePageKeyless, scrapePageFirecrawl } from "./firecrawl";
 import { getBacklinksFree, type BacklinkItem } from "./backlinks-free";
 import { getBacklinks } from "./dataforseo";
+import { enrichVisitorFromIp, type VisitorEnrichment } from "@/lib/engines/visitor-identity";
+import { sendEmail, type EmailMessage, type EmailSendResult } from "@/lib/email/transport";
+import { broadcastDirectSocial, type DirectPostResult } from "./social/direct";
 
 let wired = false;
 function ensureWired(): void {
@@ -36,7 +39,35 @@ function ensureWired(): void {
     (domain, limit) => getBacklinks(domain, limit)
   );
 
+  // Enrich port: free IP->ASN/org lookup (sovereign-first inside the engine).
+  attachRunner<[string], VisitorEnrichment>("enrich", "ip-asn-enrich", async (ip) => {
+    const r = await enrichVisitorFromIp(ip);
+    return r.enriched
+      ? { success: true, data: r, creditsUsed: 0 }
+      : { success: false, error: "no enrichment available" };
+  });
+
+  // Email port: self-hosted SMTP first, Resend optional (decided inside sendEmail).
+  attachRunner<[EmailMessage], EmailSendResult>("email", "smtp-email", async (msg) => {
+    const r = await sendEmail(msg);
+    return r.sent ? { success: true, data: r, creditsUsed: 0 } : { success: false, error: r.reason || "email not sent" };
+  });
+
+  // Social port: direct X/LinkedIn posting (no Buffer/Ayrshare middleman).
+  attachRunner<[string], DirectPostResult[]>("social", "direct-social", async (text) => {
+    const results = await broadcastDirectSocial(text);
+    return results.some((p) => p.success)
+      ? { success: true, data: results, creditsUsed: 0 }
+      : { success: false, error: results.map((p) => p.error).filter(Boolean).join("; ") || "no social platform posted" };
+  });
+
   wired = true;
+}
+
+/** Best-effort, sovereign-first visitor enrichment through the enrich port. */
+export function enrichVisitor(ip: string): Promise<RouteOutcome<VisitorEnrichment>> {
+  ensureWired();
+  return route<[string], VisitorEnrichment>("enrich", ip);
 }
 
 /** Crawl a single page through the sovereign-first crawl port. */

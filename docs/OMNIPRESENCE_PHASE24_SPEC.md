@@ -85,10 +85,19 @@ rankings.
 - **Live measured proof:** `/api/admin/provider-benchmark` (bearer-guarded,
   no service client) runs the real engines; `npm run benchmark:live` prints a
   sovereign-vs-paid report and writes dated evidence to `docs/benchmarks/`.
-  First run (no paid keys): sovereign crawl returned a real page in ~277ms —
-  7,399 words, 336 AEO passages, 16 headings, 1 schema type, at $0 — while
-  backlinks/SERP honestly reported `unavailable` (no OmniData/SearXNG running),
-  never faked. Configure the sovereign infra to light up those capabilities.
+  Measured with the keyless stack (SearXNG up, no paid keys):
+  - **Crawl** — real page in ~370ms: 7,399 words, 336 AEO passages, 16 headings,
+    schema, at **$0**.
+  - **SERP** — **19 real organic results via SearXNG in ~970ms at $0/query**
+    through the sovereign router.
+  - **Backlinks** — honestly `unavailable` until the OmniData Common Crawl
+    webgraph is ingested (the one genuine data dependency; never faked).
+  Bring up the keyless stack with `docker compose --profile keyless up`
+  (SearXNG + Ollama + LanguageTool) to light up SERP + generation locally.
+- **No dead adapters:** every *enabled* adapter in the router has an executable
+  runner (crawl/backlinks/enrich/email/social via `capability-runners.ts`,
+  generate via `generate-router.ts`); `route()` skips any without one. The
+  misleading single-page `omnidata-crawl` entry was removed.
 
 ## Verification & ship gates
 

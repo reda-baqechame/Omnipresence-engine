@@ -142,10 +142,12 @@ const serpAdapters: Adapter<[string, string, string, string[]], SERPResult>[] = 
   },
 ];
 
-// Catalog-only adapters (run-functions attached by Waves I/J/K). They make the
-// router's ranking + Zero-Paid-Keys audit honest across every capability.
+// Capability catalog. Run-functions are attached by the dedicated modules:
+//   crawl/backlinks -> capability-runners.ts, generate -> generate-router.ts,
+//   email -> email/transport, social -> social/direct, enrich -> visitor-identity.
+// Every ENABLED adapter has an executable runner (route() skips any without one),
+// so the ranking + Zero-Paid-Keys audit is honest across every capability.
 const catalogAdapters: Adapter[] = [
-  { id: "omnidata-crawl", capability: "crawl", paid: false, selfHosted: true, confidence: 0.9, freshness: "live", costPerCall: 0, enabled: () => isOmniDataActive() },
   { id: "playwright-crawl", capability: "crawl", paid: false, selfHosted: true, confidence: 0.85, freshness: "live", costPerCall: 0, enabled: () => true },
   { id: "firecrawl-crawl", capability: "crawl", paid: true, selfHosted: false, confidence: 0.8, freshness: "live", costPerCall: 0.002, enabled: () => hasFirecrawlCapability() },
 
