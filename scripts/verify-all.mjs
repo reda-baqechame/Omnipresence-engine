@@ -17,6 +17,7 @@ function run(cmd, args, cwd = root) {
 const steps = [
   { name: "table-coverage", ok: () => run("node", ["scripts/verify-table-coverage.mjs"]) },
   { name: "column-coverage", ok: () => run("node", ["scripts/verify-column-coverage.mjs"]) },
+  { name: "route-auth", ok: () => run("node", ["scripts/verify-route-auth.mjs"]) },
   { name: "typecheck", ok: () => run("npm", ["run", "typecheck"]) },
   { name: "lint", ok: () => run("npm", ["run", "lint"]) },
   { name: "build", ok: () => run("npm", ["run", "build"]) },
