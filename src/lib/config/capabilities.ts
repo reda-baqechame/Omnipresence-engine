@@ -40,7 +40,7 @@ export interface ProviderStatus {
   category: "ai" | "data" | "infra" | "social" | "oauth";
 }
 
-export const V2_VERSION = "0.5.0";
+export const V2_VERSION = "0.6.0";
 
 /** All execution engines are enabled — paywalls deferred. */
 export const ENGINES_ENABLED = {

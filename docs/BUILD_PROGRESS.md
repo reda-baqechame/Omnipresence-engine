@@ -197,6 +197,7 @@
 | 2026-06-28 | sovereign-ai | done | Wave J: generate-router (Ollama-first + editorial/structural-AEO gates + paid upgrade); generateWithAI delegates |
 | 2026-06-28 | sovereign-comms | done | Wave K: SMTP email transport (DKIM) + direct X/LinkedIn posting + free IP->ASN enrichment |
 | 2026-06-28 | zero-paid-keys | done | Wave L: zero-paid-keys-aware claim gates + audit:zero-paid-keys (keyless benchmark + sovereign coverage) |
+| 2026-06-28 | master-ship | done | Wave M: Phase 24 spec + manifest v24 + loop skill row + .env notes; verify:all + zero-paid-keys audit green (audit:live needs real keys) |
 
 ## Production hardening (complete)
 
