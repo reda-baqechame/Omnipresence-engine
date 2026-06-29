@@ -14,6 +14,7 @@ import { rankedAdapters, attachRunner } from "./router";
 import { generateWithOllama } from "./ollama";
 import { assertWithinBudget, recordSpend, maxOutputTokens } from "./cost-guard";
 import { computeReadability } from "@/lib/engines/editorial-qa";
+import { findForbiddenClaims } from "@/lib/config/claims";
 
 // ---------------------------------------------------------------------------
 // Quality gates
@@ -56,6 +57,8 @@ export interface QualityResult {
   readingEase: number;
   structureScore: number;
   reasons: string[];
+  /** True when the text contains an outcome promise we refuse to make. */
+  forbidden: boolean;
 }
 
 export function evaluateQuality(text: string, opts: QualityGateOptions = {}): QualityResult {
@@ -78,8 +81,16 @@ export function evaluateQuality(text: string, opts: QualityGateOptions = {}): Qu
     reasons.push(`weak structure (AEO ${structure.score} < ${opts.minStructureScore ?? 50})`);
   }
 
+  // Hard honesty gate: never let generated copy ship an outcome promise we
+  // refuse to make (rank #1, guaranteed traffic, "appear everywhere in AI").
+  const forbidden = findForbiddenClaims(trimmed);
+  if (forbidden.length > 0) {
+    reasons.push(`forbidden outcome promise: ${forbidden.join(", ")}`);
+  }
+
   return {
     passed: reasons.length === 0,
+    forbidden: forbidden.length > 0,
     words,
     readingEase: readability.fleschReadingEase,
     structureScore: structure.score,
@@ -192,6 +203,12 @@ export async function generateContent(
       return { success: true, data: result.data, provider: adapter.id, quality, trail, creditsUsed: result.creditsUsed };
     }
     trail.push({ id: adapter.id, ok: false, reason: quality.reasons.join("; ") });
+    // A forbidden outcome promise is a hard fail: never keep it, even as a
+    // degraded fallback — we would rather return nothing than ship the claim.
+    if (quality.forbidden) {
+      lastError = `output rejected: ${quality.reasons.join("; ")}`;
+      continue;
+    }
     // Keep the best degraded candidate (by structure score) in case nothing passes.
     if (!best || quality.structureScore > (best.quality?.structureScore ?? -1)) {
       best = { success: true, data: result.data, provider: adapter.id, quality, degraded: true, trail, creditsUsed: result.creditsUsed };

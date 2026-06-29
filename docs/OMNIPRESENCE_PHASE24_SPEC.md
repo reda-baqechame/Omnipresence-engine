@@ -109,6 +109,22 @@ rankings.
   generate via `generate-router.ts`); `route()` skips any without one. The
   misleading single-page `omnidata-crawl` entry was removed.
 
+### Phase 24.2 — claims honesty hardening (refund protection)
+
+- **Claim split (no overclaim):** the old `backlink_intelligence` claim was
+  advertised with `requires: ["always"]`, i.e. it promised "referring domains"
+  even with no index. It is now split into two honest claims: `domain_authority`
+  (keyless Tranco/rank.to, **always backed** — we deliver 0-100 DR at $0) and
+  `backlink_intelligence` (the referring-domains *list*, gated on a real index
+  via `backlinksIndex` → OmniData web graph or DataForSEO). With no index the
+  referring-domains claim auto-hides instead of becoming a promise we can't keep.
+- **Generation honesty gate:** `evaluateQuality` now hard-fails any generated
+  copy containing a forbidden outcome promise (rank #1, guaranteed traffic,
+  "appear everywhere in AI"). Forbidden output is never returned — not even as a
+  `degraded` fallback — so the engine cannot auto-publish a claim we refuse to make.
+- Both the runtime registry (`claims.ts`) and the offline harness
+  (`benchmark.mjs`) share the same capability keys, kept in sync.
+
 ## Verification & ship gates
 
 - Every iteration: `npm run verify:all` (now includes `claims-benchmark`) and

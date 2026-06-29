@@ -1,5 +1,5 @@
 {
-  "version": "24.0.0",
+  "version": "24.1.0",
   "forbiddenPhrases": [
     "rank #1",
     "rank number 1",
@@ -60,11 +60,19 @@
       "category": "merchant"
     },
     {
+      "id": "domain_authority",
+      "text": "Score any domain's authority — free and keyless, from open ranking data",
+      "metric": "domain_authority",
+      "requires": ["domainAuthority"],
+      "provenance": "measured",
+      "category": "authority"
+    },
+    {
       "id": "backlink_intelligence",
-      "text": "Discover backlinks and referring domains from the open web graph",
+      "text": "Discover referring domains from a real backlink index (Common Crawl web graph or DataForSEO)",
       "metric": "backlinks",
-      "requires": ["always"],
-      "provenance": "estimated",
+      "requiresAny": ["backlinksIndex"],
+      "provenance": "measured",
       "category": "authority"
     },
     {

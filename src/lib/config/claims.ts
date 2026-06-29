@@ -17,6 +17,7 @@ import {
   hasKeylessSerpCapability,
   hasCitationTrackingCapability,
   hasDirectLLMCapability,
+  hasBacklinksIndexCapability,
   isZeroPaidKeysMode,
 } from "./capabilities";
 
@@ -58,6 +59,9 @@ export const CAPABILITY_CHECKS: Record<string, () => boolean> = {
   // has no honest keyless equivalent, so it is unbacked in Zero-Paid-Keys mode.
   directLLM: () => (isZeroPaidKeysMode() ? false : hasDirectLLMCapability()),
   aiUiCapture: hasAiUiCapture,
+  // Referring-domains LIST needs a real index; domain AUTHORITY is keyless-always.
+  backlinksIndex: () => hasBacklinksIndexCapability(),
+  domainAuthority: () => true,
 };
 
 export function isClaimBacked(claim: Claim): boolean {

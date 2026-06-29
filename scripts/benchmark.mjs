@@ -49,6 +49,12 @@ function hasCitation() {
 function hasAiUiCapture() {
   return process.env.ENABLE_AI_UI_CAPTURE === "true" && hasEnv("AI_UI_CAPTURE_URL");
 }
+function hasBacklinksIndex() {
+  const omnidata = hasEnv("OMNIDATA_BASE_URL") && hasEnv("OMNIDATA_API_KEY");
+  const dataforseo = hasEnv("DATAFORSEO_LOGIN") && hasEnv("DATAFORSEO_PASSWORD");
+  if (process.env.ZERO_PAID_KEYS === "true") return omnidata;
+  return omnidata || dataforseo;
+}
 
 const CAP = {
   always: () => true,
@@ -56,6 +62,8 @@ const CAP = {
   citation: hasCitation,
   directLLM: hasDirectLLM,
   aiUiCapture: hasAiUiCapture,
+  backlinksIndex: hasBacklinksIndex,
+  domainAuthority: () => true,
 };
 
 function isBacked(claim) {

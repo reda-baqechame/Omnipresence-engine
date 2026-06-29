@@ -153,6 +153,18 @@ export function hasKeylessSerpCapability(): boolean {
   );
 }
 
+/**
+ * A REAL referring-domain index: self-hosted Common Crawl webgraph (OmniData) or
+ * DataForSEO. Without one we can resolve domain authority (keyless) but NOT a
+ * referring-domains list — so the "discover backlinks" claim is gated on this.
+ */
+export function hasBacklinksIndexCapability(): boolean {
+  const omnidata = hasEnv("OMNIDATA_BASE_URL") && hasEnv("OMNIDATA_API_KEY");
+  const dataforseo = hasEnv("DATAFORSEO_LOGIN") && hasEnv("DATAFORSEO_PASSWORD");
+  if (isZeroPaidKeysMode()) return omnidata; // DataForSEO is a paid vendor
+  return omnidata || dataforseo;
+}
+
 /** DIY citation stack — replaces DataForSEO LLM Mentions as the default path. */
 export function hasCitationTrackingCapability(): boolean {
   return (
