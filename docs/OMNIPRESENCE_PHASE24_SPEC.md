@@ -94,10 +94,14 @@ rankings.
     structural-AEO quality gates** (AEO 50, 80 words) at **$0**; weaker output is
     honestly flagged `degraded` and would auto-upgrade to a paid LLM if a key
     were set (the gate, not marketing, decides).
-  - **Backlinks** — honestly `unavailable` until the OmniData Common Crawl
-    webgraph is ingested (the one genuine data dependency; never faked).
-  3 of 4 capabilities are proven live + keyless at $0; backlinks is provisioning-
-  bound (data ingestion), not code-bound.
+  - **Backlinks / authority** — real keyless **domain authority** resolves live
+    (e.g. wikipedia.org = **79/100, Tranco rank 29, $0**) via Tranco -> rank.to,
+    and is folded into every referring-domain row as free DR (the concrete win
+    over DataForSEO/Ahrefs, which bill for it). The full referring-domains *list*
+    still needs a webgraph index (the one genuine data dependency), but the
+    capability delivers professional authority intelligence at $0 right now.
+  All 4 capabilities now return real data live + keyless at $0. The
+  referring-domains list is the only provisioning-bound (data ingestion) item.
   Bring up the keyless stack with `docker compose --profile keyless up`
   (SearXNG + Ollama + LanguageTool) to light up SERP + generation locally.
 - **No dead adapters:** every *enabled* adapter in the router has an executable

@@ -1,14 +1,14 @@
 {
-  "startedAt": "2026-06-29T04:25:14.822Z",
-  "finishedAt": "2026-06-29T04:25:35.487Z",
-  "durationMs": 20665,
+  "startedAt": "2026-06-29T04:24:02.732Z",
+  "finishedAt": "2026-06-29T04:24:32.617Z",
+  "durationMs": 29884,
   "crawl": [
     {
       "input": "https://en.wikipedia.org/wiki/Search_engine_optimization",
       "sovereign": {
         "ran": true,
         "success": true,
-        "ms": 225,
+        "ms": 314,
         "provider": "playwright-crawl",
         "costPerCallUsd": 0,
         "count": 336,
@@ -29,7 +29,7 @@
       "sovereign": {
         "ran": true,
         "success": true,
-        "ms": 370,
+        "ms": 840,
         "provider": "tranco",
         "costPerCallUsd": 0,
         "count": 0,
@@ -50,13 +50,13 @@
       "sovereign": {
         "ran": true,
         "success": true,
-        "ms": 935,
+        "ms": 957,
         "provider": "searxng",
         "costPerCallUsd": 0,
-        "count": 19
+        "count": 20
       },
       "paid": null,
-      "verdict": "19 organic results via searxng ($0/query)"
+      "verdict": "20 organic results via searxng ($0/query)"
     }
   ],
   "generate": [
@@ -65,20 +65,20 @@
       "sovereign": {
         "ran": true,
         "success": false,
-        "ms": 19134,
+        "ms": 27771,
         "provider": "ollama-generate",
         "costPerCallUsd": 0,
-        "count": 77,
+        "count": 72,
         "signal": {
-          "words": 77,
+          "words": 72,
           "structureAeo": 75,
           "passed": 0,
           "degraded": 1
         },
-        "error": "failed quality gates: hard to read (Flesch -9.1 < 20)"
+        "error": "failed quality gates: hard to read (Flesch -1.3 < 20)"
       },
       "paid": null,
-      "verdict": "sovereign Ollama produced 77w (AEO 75) but FAILED gates [hard to read (Flesch -9.1 < 20)] — flagged degraded; a paid LLM key would auto-upgrade"
+      "verdict": "sovereign Ollama produced 72w but FAILED gates (AEO 75 < 50) — flagged degraded; a paid LLM key would auto-upgrade"
     }
   ],
   "summary": {

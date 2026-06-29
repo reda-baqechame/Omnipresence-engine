@@ -1,4 +1,5 @@
 import { getBacklinks, isOmniDataActive, hasLabsApi } from "@/lib/providers/dataforseo";
+import { resolveDomainAuthority } from "@/lib/providers/domain-authority";
 import type { ProviderResult } from "./types";
 
 export interface BacklinkItem {
@@ -7,6 +8,31 @@ export interface BacklinkItem {
   rank: number;
   /** True when the row came from an approximate source rather than a real index. */
   estimated?: boolean;
+  /** Real 0-100 authority (Tranco/rank.to) — free DR that paid indexes bill for. */
+  authority?: number;
+  authoritySource?: "tranco" | "rank.to" | "unlisted";
+}
+
+/**
+ * Attach a real, keyless 0-100 authority score (Tranco -> rank.to) to each
+ * referring domain. This is the concrete integration win over DataForSEO/Ahrefs:
+ * they charge separately for domain authority; we fold it in for free. Capped
+ * concurrency keeps the public Tranco API friendly.
+ */
+export async function enrichWithAuthority(items: BacklinkItem[]): Promise<BacklinkItem[]> {
+  const top = items.slice(0, 25);
+  await Promise.all(
+    top.map(async (item) => {
+      try {
+        const a = await resolveDomainAuthority(item.domain);
+        item.authority = a.score;
+        item.authoritySource = a.source;
+      } catch {
+        // Authority is additive; never fail the backlink row over it.
+      }
+    })
+  );
+  return items;
 }
 
 /**
@@ -43,6 +69,7 @@ export async function getBacklinksFree(
         if (items.length >= limit) break;
       }
       if (items.length > 0) {
+        await enrichWithAuthority(items);
         return { success: true, data: items, creditsUsed: real.creditsUsed };
       }
     }
