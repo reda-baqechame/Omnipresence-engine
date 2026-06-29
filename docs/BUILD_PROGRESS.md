@@ -193,6 +193,7 @@
 | 2026-06-28 | snapshots-quality | done | Wave E: gsc/gbp/ai_visibility snapshots + data_quality_scores + daily cron |
 | 2026-06-28 | claims-harness | done | Wave F: claims registry + forbidden guard + benchmark.mjs in verify:all + deterministic refund shield |
 | 2026-06-28 | provider-router | done | Wave H: unified capability router (health/cost/confidence/failover) + ZERO_PAID_KEYS + serp-router delegation |
+| 2026-06-28 | sovereign-data | done | Wave I: proxy-pool scraper + multi-instance SearXNG + Common Crawl authority ranks (getDomainAuthority) + parity tests |
 
 ## Production hardening (complete)
 

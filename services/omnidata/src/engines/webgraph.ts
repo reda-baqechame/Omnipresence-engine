@@ -79,6 +79,20 @@ function unreverseHost(rev: string): string {
   return rev.split(".").reverse().join(".");
 }
 
+/**
+ * Map a Common Crawl harmonic-centrality rank position to a 0..100 authority
+ * score (lower position = more authoritative). Pure + log-scaled so the top
+ * domains compress near 100 and the long tail spreads out — comparable in
+ * spirit to DR/DA without the paid index. `total` defaults to the ~100M domains
+ * in a recent crawl.
+ */
+export function normalizeAuthority(rankPosition: number, total = 100_000_000): number {
+  if (!Number.isFinite(rankPosition) || rankPosition <= 0) return 0;
+  const clamped = Math.min(rankPosition, total);
+  const score = 100 * (1 - Math.log10(clamped) / Math.log10(total));
+  return Math.max(0, Math.min(100, Math.round(score)));
+}
+
 function sanitizeRelease(release: string): string {
   if (!/^[a-z0-9-]+$/i.test(release)) {
     throw new Error(`Invalid crawl release id: ${release}`);
@@ -121,6 +135,24 @@ export async function ingestWebgraph(release: string): Promise<{ ok: boolean; me
                        columns={'column0':'VARCHAR','column1':'VARCHAR'});`
     );
     await conn.run("CREATE INDEX IF NOT EXISTS idx_edges_to ON edges(to_id);");
+    // Authority ranks (harmonic centrality + pagerank) — the part that lets us
+    // attach a real, free authority score to every referring domain. Best-effort:
+    // a missing/changed ranks file must not fail the core vertices/edges ingest.
+    try {
+      await conn.run(
+        `CREATE OR REPLACE TABLE ranks AS
+           SELECT CAST(column0 AS BIGINT) AS harmonic_pos,
+                  CAST(column1 AS DOUBLE) AS harmonic_val,
+                  CAST(column2 AS BIGINT) AS pr_pos,
+                  CAST(column3 AS DOUBLE) AS pr_val,
+                  column4 AS rev_host
+           FROM read_csv('${base}-ranks.txt.gz', delim=' ', header=false,
+                         columns={'column0':'VARCHAR','column1':'VARCHAR','column2':'VARCHAR','column3':'VARCHAR','column4':'VARCHAR'});`
+      );
+      await conn.run("CREATE INDEX IF NOT EXISTS idx_ranks_host ON ranks(rev_host);");
+    } catch (e) {
+      console.warn(`[webgraph] ranks ingest skipped: ${e instanceof Error ? e.message : "unknown"}`);
+    }
     await conn.run(
       `CREATE OR REPLACE TABLE meta AS SELECT '${rel}' AS release, now() AS ingested_at,
          (SELECT COUNT(*) FROM vertices) AS vertex_count,
@@ -231,6 +263,42 @@ export async function getInboundLinks(host: string, limit = 100): Promise<Inboun
       source_domain: unreverseHost(String(r.source_rev)),
       link_count: Number(r.link_count ?? 1),
     }));
+  } catch {
+    return null;
+  }
+}
+
+export interface DomainAuthority {
+  host: string;
+  harmonic_pos: number | null;
+  pr_pos: number | null;
+  /** 0..100 authority score derived from harmonic centrality rank. */
+  authority: number;
+}
+
+/**
+ * Real domain authority from the Common Crawl rank index — the free replacement
+ * for DataForSEO/Ahrefs DR. Returns null when ranks aren't ingested (caller
+ * falls back to OpenPageRank/Tranco).
+ */
+export async function getDomainAuthority(host: string): Promise<DomainAuthority | null> {
+  const conn = await getConnection();
+  if (!conn) return null;
+  try {
+    const rev = sanitizeRevHost(reverseHost(host));
+    const reader = await conn.runAndReadAll(
+      `SELECT harmonic_pos, pr_pos FROM ranks WHERE rev_host = '${rev}' LIMIT 1;`
+    );
+    const row = reader.getRowObjects()[0];
+    if (!row) return null;
+    const harmonicPos = row.harmonic_pos != null ? Number(row.harmonic_pos) : null;
+    const prPos = row.pr_pos != null ? Number(row.pr_pos) : null;
+    return {
+      host: host.replace(/^www\./, ""),
+      harmonic_pos: harmonicPos,
+      pr_pos: prPos,
+      authority: harmonicPos != null ? normalizeAuthority(harmonicPos) : 0,
+    };
   } catch {
     return null;
   }

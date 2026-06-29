@@ -22,6 +22,36 @@ export function isScrapeEnabled(): boolean {
   return SCRAPE_ENABLED;
 }
 
+/**
+ * Proxy pool for keyless SERP scraping at scale. Set OMNIDATA_PROXIES to a
+ * comma-separated list of proxy server URLs (e.g.
+ * "http://user:pass@host1:port,http://host2:port"). Requests rotate through the
+ * pool round-robin so no single egress IP gets rate-limited/blocked. Empty pool
+ * = direct connection (fine for low volume).
+ */
+export function parseProxyPool(raw: string | undefined): string[] {
+  if (!raw) return [];
+  return raw
+    .split(",")
+    .map((s) => s.trim())
+    .filter((s) => s.length > 0);
+}
+
+let proxyCursor = 0;
+
+/** Round-robin pick from a proxy pool; returns null when the pool is empty. */
+export function pickProxy(pool: string[], cursor: number): string | null {
+  if (pool.length === 0) return null;
+  return pool[cursor % pool.length];
+}
+
+function nextProxy(): string | null {
+  const pool = parseProxyPool(process.env.OMNIDATA_PROXIES);
+  const chosen = pickProxy(pool, proxyCursor);
+  if (chosen) proxyCursor += 1;
+  return chosen;
+}
+
 interface BrowserLike {
   newPage(opts?: unknown): Promise<PageLike>;
   close(): Promise<void>;
@@ -40,7 +70,10 @@ async function launchBrowser(): Promise<BrowserLike | null> {
   try {
     const spec = "playwright";
     const pw = (await import(spec)) as unknown as { chromium: ChromiumLike };
-    return await pw.chromium.launch({ headless: true, args: ["--no-sandbox"] });
+    const proxyServer = nextProxy();
+    const launchOpts: Record<string, unknown> = { headless: true, args: ["--no-sandbox"] };
+    if (proxyServer) launchOpts.proxy = { server: proxyServer };
+    return await pw.chromium.launch(launchOpts);
   } catch {
     return null;
   }

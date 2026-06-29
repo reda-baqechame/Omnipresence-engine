@@ -1,9 +1,10 @@
 import { test, describe } from "node:test";
 import assert from "node:assert/strict";
 import { dfsResponse } from "../api/response.js";
-import { reverseHost } from "../engines/webgraph.js";
+import { reverseHost, normalizeAuthority } from "../engines/webgraph.js";
 import { detectFromResponse } from "../engines/techstack.js";
 import { computeDifficulty } from "../engines/keyword-difficulty.js";
+import { parseProxyPool, pickProxy } from "../engines/scrape.js";
 
 /**
  * Parity checks: the OmniData engine must speak DataForSEO's response shape so
@@ -33,6 +34,38 @@ describe("webgraph host reversal parity (Common Crawl format)", () => {
   test("reverses host to Common Crawl reversed-domain form", () => {
     assert.equal(reverseHost("example.com"), "com.example");
     assert.equal(reverseHost("https://www.sub.example.co.uk/path"), "uk.co.example.sub");
+  });
+});
+
+describe("Common Crawl domain authority (Wave I sovereign backlinks)", () => {
+  test("top-ranked domains score near 100, long tail scores lower", () => {
+    const top = normalizeAuthority(1);
+    const mid = normalizeAuthority(10_000);
+    const tail = normalizeAuthority(50_000_000);
+    assert.ok(top >= 95, `expected ~100 for rank 1, got ${top}`);
+    assert.ok(top > mid && mid > tail, `expected monotonic decay: ${top} > ${mid} > ${tail}`);
+    assert.ok(tail >= 0 && tail <= 100);
+  });
+
+  test("invalid rank positions score 0", () => {
+    assert.equal(normalizeAuthority(0), 0);
+    assert.equal(normalizeAuthority(-5), 0);
+    assert.equal(normalizeAuthority(Number.NaN), 0);
+  });
+});
+
+describe("keyless scrape proxy rotation (Wave I sovereign SERP)", () => {
+  test("parses a comma-separated proxy pool", () => {
+    assert.deepEqual(parseProxyPool("http://a:1, http://b:2 ,"), ["http://a:1", "http://b:2"]);
+    assert.deepEqual(parseProxyPool(undefined), []);
+  });
+
+  test("round-robin pick wraps around the pool", () => {
+    const pool = ["p0", "p1", "p2"];
+    assert.equal(pickProxy(pool, 0), "p0");
+    assert.equal(pickProxy(pool, 1), "p1");
+    assert.equal(pickProxy(pool, 3), "p0");
+    assert.equal(pickProxy([], 0), null);
   });
 });
 
