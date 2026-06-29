@@ -257,7 +257,7 @@ function computeAuthority(inputs: AeoReadinessInputs): number {
   const published = opps.filter((o) => o.status === "published").length;
   const publishedScore = opps.length > 0 ? Math.min((published / opps.length) * 100, 100) : 0;
   const sourceDomains = new Set(
-    inputs.visibilityResults.flatMap((r) => r.source_domains || [])
+    inputs.visibilityResults.flatMap((r) => (Array.isArray(r.source_domains) ? r.source_domains : []))
   );
   const sourceScore = Math.min(sourceDomains.size * 10, 100);
 

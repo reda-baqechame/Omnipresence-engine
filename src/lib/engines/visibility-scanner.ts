@@ -632,6 +632,17 @@ function wilsonInterval(successes: number, n: number, z = 1.96): { low: number; 
   };
 }
 
+/**
+ * Safe truthy-check over the competitor_mentions JSON column. The column is
+ * typed Record<string,boolean> but is freeform DB JSON, so legacy/partial rows
+ * can hold null or the wrong container — a raw Object.values(null) would throw
+ * and crash metric computation (which runs on the dashboard and in scoring).
+ */
+function anyCompetitorMentioned(cm: unknown): boolean {
+  if (!cm || typeof cm !== "object" || Array.isArray(cm)) return false;
+  return Object.values(cm as Record<string, unknown>).some(Boolean);
+}
+
 export function calculateVisibilityMetrics(results: Array<Pick<VisibilityResult, "brand_mentioned" | "brand_cited" | "competitor_mentions" | "raw_response" | "data_source" | "recommendation_strength" | "answer_position" | "confidence">>) {
   const attempted = results.length;
   const EMPTY = {
@@ -666,17 +677,17 @@ export function calculateVisibilityMetrics(results: Array<Pick<VisibilityResult,
   const citations = pool.filter((r) => r.brand_cited).length;
 
   const brandWins = pool.filter((r) => {
-    const compMentioned = Object.values(r.competitor_mentions).some(Boolean);
+    const compMentioned = anyCompetitorMentioned(r.competitor_mentions);
     return r.brand_mentioned && !compMentioned;
   }).length;
 
   const brandAndCompBoth = pool.filter((r) => {
-    const compMentioned = Object.values(r.competitor_mentions).some(Boolean);
+    const compMentioned = anyCompetitorMentioned(r.competitor_mentions);
     return r.brand_mentioned && compMentioned;
   }).length;
 
   const compOnly = pool.filter((r) => {
-    const compMentioned = Object.values(r.competitor_mentions).some(Boolean);
+    const compMentioned = anyCompetitorMentioned(r.competitor_mentions);
     return !r.brand_mentioned && compMentioned;
   }).length;
 
@@ -877,9 +888,11 @@ export function extractCitationSources(
       ? r.raw_response.aiSearchVolume
       : undefined;
 
-    for (let i = 0; i < r.source_domains.length; i++) {
-      const domain = r.source_domains[i];
-      const url = r.cited_urls[i];
+    const srcDomains = Array.isArray(r.source_domains) ? r.source_domains : [];
+    const citedUrls = Array.isArray(r.cited_urls) ? r.cited_urls : [];
+    for (let i = 0; i < srcDomains.length; i++) {
+      const domain = srcDomains[i];
+      const url = citedUrls[i];
       const citesBrand =
         r.brand_cited ||
         (brandDomain ? sameRegistrableDomain(domain, brandDomain) : false);

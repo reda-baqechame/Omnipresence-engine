@@ -74,7 +74,7 @@ export function calculateOmniPresenceScore(inputs: ScoreInputs): Omit<OmniPresen
   const hasAuthoritySignal =
     inputs.authorityOpportunities.length > 0 ||
     (typeof inputs.domainAuthority === "number" && inputs.domainAuthority > 0) ||
-    pool.some((r) => r.source_domains.length > 0);
+    pool.some((r) => Array.isArray(r.source_domains) && r.source_domains.length > 0);
 
   const dimensions = {
     ai_visibility: { value: calculateAIVisibility(pool), available: aiResults.length > 0 },
@@ -151,7 +151,9 @@ function calculateAIVisibility(results: VisibilityResult[]): number {
   const citationRate = aiResults.filter((r) => r.brand_cited).length / aiResults.length;
 
   const competitorMentionTotal = aiResults.reduce((sum, r) => {
-    return sum + Object.values(r.competitor_mentions).filter(Boolean).length;
+    const cm = r.competitor_mentions;
+    if (!cm || typeof cm !== "object" || Array.isArray(cm)) return sum;
+    return sum + Object.values(cm).filter(Boolean).length;
   }, 0);
   const brandMentionTotal = aiResults.filter((r) => r.brand_mentioned).length;
   const competitiveRatio =
@@ -213,7 +215,7 @@ function calculateAuthorityMentions(
   const opportunityScore = identified > 0 ? (published / identified) * 50 : 0;
 
   const uniqueSourceDomains = new Set(
-    visibilityResults.flatMap((r) => r.source_domains)
+    visibilityResults.flatMap((r) => (Array.isArray(r.source_domains) ? r.source_domains : []))
   );
   const sourceScore = Math.min(uniqueSourceDomains.size * 5, 50);
 
