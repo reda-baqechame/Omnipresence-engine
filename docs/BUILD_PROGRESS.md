@@ -191,6 +191,7 @@
 | 2026-06-28 | ai-ui-capture | done | Wave C: Playwright capture microservice + grounding_mode=ui_capture |
 | 2026-06-28 | war-room-dashboards | done | Wave D: War Room, Proof Ledger, agency cockpit |
 | 2026-06-28 | snapshots-quality | done | Wave E: gsc/gbp/ai_visibility snapshots + data_quality_scores + daily cron |
+| 2026-06-28 | claims-harness | done | Wave F: claims registry + forbidden guard + benchmark.mjs in verify:all + deterministic refund shield |
 
 ## Production hardening (complete)
 

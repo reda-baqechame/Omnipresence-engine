@@ -1,0 +1,111 @@
+{
+  "version": "24.0.0",
+  "forbiddenPhrases": [
+    "rank #1",
+    "rank number 1",
+    "#1 on google",
+    "number 1 on google",
+    "guaranteed ranking",
+    "guarantee rankings",
+    "guaranteed rankings",
+    "guaranteed #1",
+    "guaranteed traffic",
+    "guaranteed top of google",
+    "top of google guaranteed",
+    "appear everywhere in ai",
+    "always be cited",
+    "always cited by ai",
+    "guaranteed to rank",
+    "we guarantee you will rank"
+  ],
+  "claims": [
+    {
+      "id": "ai_visibility_tracking",
+      "text": "Track how often AI engines mention and cite your brand",
+      "metric": "ai_mention_rate",
+      "requiresAny": ["citation"],
+      "provenance": "measured",
+      "category": "visibility"
+    },
+    {
+      "id": "source_citation_graph",
+      "text": "Map the sources AI engines learn from and where your brand is absent",
+      "metric": "source_graph",
+      "requiresAny": ["citation"],
+      "provenance": "measured",
+      "category": "visibility"
+    },
+    {
+      "id": "real_ai_answer_capture",
+      "text": "Measure what the real ChatGPT and Perplexity say about you",
+      "metric": "grounded_ai_capture",
+      "requiresAny": ["aiUiCapture", "directLLM"],
+      "provenance": "measured",
+      "category": "visibility"
+    },
+    {
+      "id": "serp_rank_tracking",
+      "text": "Track your Google search rankings over time",
+      "metric": "serp_position",
+      "requiresAny": ["serp"],
+      "provenance": "measured",
+      "category": "search"
+    },
+    {
+      "id": "product_ai_visibility",
+      "text": "See where your products surface in Shopping and AI recommendations",
+      "metric": "product_visibility",
+      "requiresAny": ["serp", "directLLM"],
+      "provenance": "measured",
+      "category": "merchant"
+    },
+    {
+      "id": "backlink_intelligence",
+      "text": "Discover backlinks and referring domains from the open web graph",
+      "metric": "backlinks",
+      "requires": ["always"],
+      "provenance": "estimated",
+      "category": "authority"
+    },
+    {
+      "id": "technical_audit",
+      "text": "Audit crawlability, indexation and technical SEO health",
+      "metric": "technical_findings",
+      "requires": ["always"],
+      "provenance": "measured",
+      "category": "technical"
+    },
+    {
+      "id": "schema_deployment",
+      "text": "Generate and deploy structured data that we verify is live",
+      "metric": "schema_live",
+      "requires": ["always"],
+      "provenance": "measured",
+      "category": "execution"
+    },
+    {
+      "id": "content_optimization",
+      "text": "Score and improve content for answer-engine readiness",
+      "metric": "content_score",
+      "requires": ["always"],
+      "provenance": "measured",
+      "category": "content"
+    },
+    {
+      "id": "attribution_proof",
+      "text": "Prove organic and AI-referral lift from connected analytics",
+      "metric": "attribution",
+      "requires": ["always"],
+      "provenance": "first_party_when_connected",
+      "category": "proof"
+    },
+    {
+      "id": "guarantee_deterministic",
+      "text": "A deterministic guarantee on the work we control, with auto-collected evidence",
+      "metric": "guarantee",
+      "requires": ["always"],
+      "provenance": "measured",
+      "category": "proof"
+    }
+  ]
+}

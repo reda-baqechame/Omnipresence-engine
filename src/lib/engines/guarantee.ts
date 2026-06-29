@@ -2,6 +2,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import Stripe from "stripe";
 import type { ResultsLedgerEntry } from "@/types/database";
 import type { AeoLever } from "@/lib/engines/aeo-readiness";
+import { findForbiddenClaims } from "@/lib/config/claims";
 
 export interface DeterministicDeliverable {
   id: string;
@@ -328,6 +329,58 @@ export async function approveClaimWithStripeCredit(
       error: err instanceof Error ? err.message : "Stripe credit failed",
     };
   }
+}
+
+/**
+ * Marketing-copy audit (Wave F refund-shield): scans copy for outcome promises
+ * we will never make (rank #1, "appear everywhere in AI"). Used before any
+ * guarantee/marketing string is shown so we never advertise an unmeetable claim
+ * that would create refund liability.
+ */
+export function auditMarketingCopy(text: string): { allowed: boolean; violations: string[] } {
+  const violations = findForbiddenClaims(text);
+  return { allowed: violations.length === 0, violations };
+}
+
+export interface DeterministicGuaranteeReport {
+  /** Only deliverables fully within our control (audit, schema-live, entity, GSC movement we caused). */
+  deliverables: OperationalGuaranteeRecord[];
+  allMet: boolean;
+  /**
+   * Refund is triggered ONLY when a deterministic deliverable we promised was
+   * not delivered — never on rankings or AI ubiquity. This is the honest,
+   * defensible contract that backs the reimbursement promise.
+   */
+  refundEligible: boolean;
+  evidenceCount: number;
+  copyAudit: { allowed: boolean; violations: string[] };
+  disclaimer: string;
+}
+
+const GUARANTEE_DISCLAIMER =
+  "We guarantee only the work we control and can verify: completed audits, deployed-and-live schema, entity coverage, and measurable changes we caused. We never guarantee search rankings or that you will appear in every AI answer.";
+
+/**
+ * Build the deterministic-only guarantee: refund eligibility derives purely from
+ * controllable deliverables (auto-evidenced by the results ledger), with a
+ * marketing-copy audit so we never pair it with a forbidden promise.
+ */
+export function buildDeterministicGuarantee(
+  operational: OperationalGuaranteeRecord[],
+  ledgerEvidence: ResultsLedgerEntry[] = [],
+  marketingCopy = ""
+): DeterministicGuaranteeReport {
+  const allMet = operational.length > 0 && operational.every((d) => d.met);
+  const refundEligible = operational.some((d) => !d.met);
+  const copyAudit = auditMarketingCopy(`${GUARANTEE_DISCLAIMER} ${marketingCopy}`.trim());
+  return {
+    deliverables: operational,
+    allMet,
+    refundEligible,
+    evidenceCount: ledgerEvidence.filter((e) => e.status === "completed" || e.status === "verified").length,
+    copyAudit,
+    disclaimer: GUARANTEE_DISCLAIMER,
+  };
 }
 
 export function buildGuaranteeReportFromLedger(

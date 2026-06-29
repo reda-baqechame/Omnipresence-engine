@@ -1,0 +1,94 @@
+/**
+ * Claims registry + provenance gate (Phase 23 / manifest v24, Wave F).
+ *
+ * Every marketing claim is mapped to a capability check. The UI must refuse to
+ * render a claim that isn't currently backed by a real capability (see
+ * `getBackedClaims` / `isClaimBacked`), and a forbidden-claim guard catches
+ * outcome promises we will never make (rank #1, "appear everywhere in AI").
+ *
+ * This is what keeps the product honest by construction: in Zero-Paid-Keys mode
+ * (Wave L) claims that lose their data backing simply stop being advertised
+ * instead of becoming lies. The data lives in `claims.json` so the offline
+ * benchmark harness (`scripts/benchmark.mjs`) reads the exact same source.
+ */
+import claimsData from "./claims.json";
+import {
+  hasSerpCapability,
+  hasCitationTrackingCapability,
+  hasDirectLLMCapability,
+} from "./capabilities";
+
+export type ClaimProvenance = "measured" | "estimated" | "first_party_when_connected";
+
+export interface Claim {
+  id: string;
+  text: string;
+  metric: string;
+  requires?: string[];
+  requiresAny?: string[];
+  provenance: ClaimProvenance;
+  category: string;
+}
+
+export const FORBIDDEN_PHRASES: string[] = claimsData.forbiddenPhrases;
+export const CLAIMS: Claim[] = claimsData.claims as Claim[];
+
+function hasAiUiCapture(): boolean {
+  const url = process.env.AI_UI_CAPTURE_URL;
+  return process.env.ENABLE_AI_UI_CAPTURE === "true" && Boolean(url && url.length > 0);
+}
+
+/** Capability-key -> live check. Keys are referenced by claims.json. */
+export const CAPABILITY_CHECKS: Record<string, () => boolean> = {
+  always: () => true,
+  serp: hasSerpCapability,
+  citation: hasCitationTrackingCapability,
+  directLLM: hasDirectLLMCapability,
+  aiUiCapture: hasAiUiCapture,
+};
+
+export function isClaimBacked(claim: Claim): boolean {
+  const allOk = (claim.requires ?? []).every((k) => CAPABILITY_CHECKS[k]?.() ?? false);
+  const anyOk =
+    !claim.requiresAny || claim.requiresAny.length === 0
+      ? true
+      : claim.requiresAny.some((k) => CAPABILITY_CHECKS[k]?.() ?? false);
+  return allOk && anyOk;
+}
+
+/** Claims currently backed by real capabilities — the only ones the UI may advertise. */
+export function getBackedClaims(): Claim[] {
+  return CLAIMS.filter(isClaimBacked);
+}
+
+export interface ClaimCoverage {
+  claim: Claim;
+  backed: boolean;
+}
+
+export function getClaimsCoverage(): ClaimCoverage[] {
+  return CLAIMS.map((claim) => ({ claim, backed: isClaimBacked(claim) }));
+}
+
+/**
+ * Forbidden-claim guard: returns the list of forbidden phrases found in a piece
+ * of copy. A non-empty result means the copy must NOT be rendered/shipped.
+ */
+export function findForbiddenClaims(text: string): string[] {
+  const lower = text.toLowerCase();
+  return FORBIDDEN_PHRASES.filter((p) => lower.includes(p));
+}
+
+export function isCopyAllowed(text: string): boolean {
+  return findForbiddenClaims(text).length === 0;
+}
+
+/**
+ * Render gate for a single claim id: only renderable when the claim exists, is
+ * currently backed, and its own text contains no forbidden promise.
+ */
+export function canRenderClaim(claimId: string): boolean {
+  const claim = CLAIMS.find((c) => c.id === claimId);
+  if (!claim) return false;
+  return isClaimBacked(claim) && isCopyAllowed(claim.text);
+}
