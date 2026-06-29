@@ -118,6 +118,19 @@ export async function scrapePage(url: string): Promise<ProviderResult<CrawlResul
   return scrapeWithFetch(url);
 }
 
+/** Keyless, self-hosted single-page crawl (sovereign default for the crawl port). */
+export function scrapePageKeyless(url: string): Promise<ProviderResult<CrawlResult>> {
+  return scrapeWithFetch(url);
+}
+
+/** Firecrawl single-page crawl (optional paid adapter). */
+export function scrapePageFirecrawl(url: string): Promise<ProviderResult<CrawlResult>> {
+  if (!hasFirecrawlCapability()) {
+    return Promise.resolve({ success: false, error: "Firecrawl not configured" });
+  }
+  return scrapeWithFirecrawl(url, process.env.FIRECRAWL_API_KEY!);
+}
+
 async function scrapeWithFirecrawl(
   url: string,
   apiKey: string

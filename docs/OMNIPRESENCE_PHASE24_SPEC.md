@@ -68,11 +68,27 @@ guarantee is **deterministic-only**: refund eligibility derives purely from
 controllable deliverables we auto-evidence from the results ledger — never
 rankings.
 
+## Phase 24.1 — executable ports + superiority proof
+
+- **Crawl + backlinks are now executable through the router.**
+  `src/lib/providers/capability-runners.ts` attaches sovereign-first runners
+  (keyless fetch crawler before Firecrawl; Common Crawl webgraph before
+  DataForSEO) and exposes `crawlContent(url)` / `fetchBacklinks(domain)` with the
+  same failover + health as `serp`/`generate`.
+- **`compareCapabilities()`** (router) returns, per capability, the best
+  sovereign vs paid adapter with cost/confidence/freshness — surfaced on
+  `/api/capabilities` and asserted by `npm run audit:superiority`.
+- **Honest "outperform" scope:** the sovereign adapters win on cost (free),
+  provenance, freshness and integration (e.g. free DR-style authority on
+  backlinks, inline AEO passages on crawl, gated generation). We do **not** claim
+  to beat paid indexes on raw breadth — the claims harness forbids it.
+
 ## Verification & ship gates
 
 - Every iteration: `npm run verify:all` (now includes `claims-benchmark`) and
   `npm run omnidata:parity` when `services/omnidata` changes.
 - Keyless guarantee: `npm run audit:zero-paid-keys`.
+- Superiority proof: `npm run audit:superiority`.
 - Final: `npm run production:ready` → `npm run audit:live` (real keys) →
   `npm run audit:zero-paid-keys`.
 

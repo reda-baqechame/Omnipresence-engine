@@ -300,6 +300,54 @@ export function describeProviders(): AdapterStatus[] {
   }));
 }
 
+export interface CapabilityComparison {
+  capability: Capability;
+  /** Best sovereign (non-paid) adapter by confidence, if any. */
+  sovereign: { id: string; confidence: number; costPerCall: number; freshness: Freshness } | null;
+  /** Best paid adapter by confidence, if any. */
+  paid: { id: string; confidence: number; costPerCall: number; freshness: Freshness } | null;
+  /** Per-call USD saved by using the sovereign adapter instead of the paid one. */
+  costSavingPerCall: number;
+  /** Confidence gap (paid - sovereign); negative means sovereign is also higher confidence. */
+  confidenceGap: number;
+  /** True when a sovereign adapter exists and costs no more than the paid one. */
+  sovereignWins: boolean;
+}
+
+function bestByConfidence(adapters: Adapter[]): Adapter | null {
+  if (adapters.length === 0) return null;
+  return [...adapters].sort((a, b) => b.confidence - a.confidence)[0];
+}
+
+/**
+ * Sovereign-vs-paid comparison per capability. The honest "outperform" proof:
+ * we win on the axes we control (cost, coverage, freshness, integration) — this
+ * exposes those deltas rather than claiming we beat paid indexes on raw breadth.
+ */
+export function compareCapabilities(): CapabilityComparison[] {
+  const caps = Object.keys(registry) as Capability[];
+  return caps.map((capability) => {
+    const sov = bestByConfidence(registry[capability].filter((a) => !a.paid));
+    const paid = bestByConfidence(registry[capability].filter((a) => a.paid));
+    const sovereign = sov
+      ? { id: sov.id, confidence: sov.confidence, costPerCall: sov.costPerCall, freshness: sov.freshness }
+      : null;
+    const paidInfo = paid
+      ? { id: paid.id, confidence: paid.confidence, costPerCall: paid.costPerCall, freshness: paid.freshness }
+      : null;
+    const costSavingPerCall = sov && paid ? Math.max(0, paid.costPerCall - sov.costPerCall) : sov ? 0 : 0;
+    const confidenceGap = sov && paid ? paid.confidence - sov.confidence : 0;
+    return {
+      capability,
+      sovereign,
+      paid: paidInfo,
+      costSavingPerCall,
+      confidenceGap,
+      sovereignWins: Boolean(sov && (!paid || sov.costPerCall <= paid.costPerCall)),
+    };
+  });
+}
+
 /**
  * Zero-Paid-Keys readiness: which capabilities still have a usable sovereign
  * adapter when all paid vendors are removed. Powers the Wave L audit gate.
