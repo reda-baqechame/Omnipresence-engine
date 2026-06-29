@@ -14,8 +14,10 @@
 import claimsData from "./claims.json";
 import {
   hasSerpCapability,
+  hasKeylessSerpCapability,
   hasCitationTrackingCapability,
   hasDirectLLMCapability,
+  isZeroPaidKeysMode,
 } from "./capabilities";
 
 export type ClaimProvenance = "measured" | "estimated" | "first_party_when_connected";
@@ -38,12 +40,23 @@ function hasAiUiCapture(): boolean {
   return process.env.ENABLE_AI_UI_CAPTURE === "true" && Boolean(url && url.length > 0);
 }
 
-/** Capability-key -> live check. Keys are referenced by claims.json. */
+/**
+ * Capability-key -> live check (referenced by claims.json). The checks are
+ * Zero-Paid-Keys aware: when ZERO_PAID_KEYS is on, paid-only capabilities
+ * collapse to their keyless equivalents so claims auto-downgrade instead of
+ * silently relying on a paid key that the operator has opted out of.
+ */
 export const CAPABILITY_CHECKS: Record<string, () => boolean> = {
   always: () => true,
-  serp: hasSerpCapability,
-  citation: hasCitationTrackingCapability,
-  directLLM: hasDirectLLMCapability,
+  serp: () => (isZeroPaidKeysMode() ? hasKeylessSerpCapability() : hasSerpCapability()),
+  citation: () =>
+    isZeroPaidKeysMode()
+      ? hasKeylessSerpCapability() ||
+        Boolean(process.env.OLLAMA_BASE_URL && process.env.OLLAMA_BASE_URL.trim())
+      : hasCitationTrackingCapability(),
+  // Measuring the real commercial ChatGPT/Claude/Gemini needs a paid key — it
+  // has no honest keyless equivalent, so it is unbacked in Zero-Paid-Keys mode.
+  directLLM: () => (isZeroPaidKeysMode() ? false : hasDirectLLMCapability()),
   aiUiCapture: hasAiUiCapture,
 };
 
