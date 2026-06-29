@@ -1,35 +1,18 @@
-import { Resend } from "resend";
 import { generateReportHTML, type ReportData } from "@/lib/engines/report-generator";
-
-let resendClient: Resend | null = null;
-
-function getResend(): Resend | null {
-  if (!process.env.RESEND_API_KEY) return null;
-  if (!resendClient) resendClient = new Resend(process.env.RESEND_API_KEY);
-  return resendClient;
-}
+import { sendEmail } from "@/lib/email/transport";
 
 export async function sendWeeklyReport(
   toEmail: string,
   reportData: ReportData,
   whiteLabel?: { name: string; color: string }
 ): Promise<boolean> {
-  const resend = getResend();
-  if (!resend) return false;
-
   const html = generateReportHTML(reportData, whiteLabel);
-
-  try {
-    await resend.emails.send({
-      from: process.env.RESEND_FROM_EMAIL || "reports@presenceos.app",
-      to: toEmail,
-      subject: `Weekly OmniPresence Report — ${reportData.project.name} (Score: ${Math.round(reportData.score.omnipresence_score)}/100)`,
-      html,
-    });
-    return true;
-  } catch {
-    return false;
-  }
+  const res = await sendEmail({
+    to: toEmail,
+    subject: `Weekly OmniPresence Report — ${reportData.project.name} (Score: ${Math.round(reportData.score.omnipresence_score)}/100)`,
+    html,
+  });
+  return res.sent;
 }
 
 export async function sendAuditLeadEmail(
@@ -37,15 +20,10 @@ export async function sendAuditLeadEmail(
   domain: string,
   score: number
 ): Promise<boolean> {
-  const resend = getResend();
-  if (!resend) return false;
-
-  try {
-    await resend.emails.send({
-      from: process.env.RESEND_FROM_EMAIL || "reports@presenceos.app",
-      to: toEmail,
-      subject: `Your OmniPresence preview — ${domain} scored ${Math.round(score)}/100`,
-      html: `
+  const res = await sendEmail({
+    to: toEmail,
+    subject: `Your OmniPresence preview — ${domain} scored ${Math.round(score)}/100`,
+    html: `
         <div style="font-family: sans-serif; max-width: 600px; margin: 0 auto;">
           <h1 style="color: #6366f1;">Your Free Visibility Preview</h1>
           <p>We analyzed <strong>${domain}</strong> across technical readiness and AI visibility signals.</p>
@@ -54,11 +32,8 @@ export async function sendAuditLeadEmail(
           <a href="${process.env.NEXT_PUBLIC_APP_URL}/signup" style="display: inline-block; background: #6366f1; color: white; padding: 12px 24px; border-radius: 8px; text-decoration: none;">Get Full Audit</a>
         </div>
       `,
-    });
-    return true;
-  } catch {
-    return false;
-  }
+  });
+  return res.sent;
 }
 
 export async function sendScoreDropAlert(
@@ -68,18 +43,13 @@ export async function sendScoreDropAlert(
   newScore: number,
   projectId: string
 ): Promise<boolean> {
-  const resend = getResend();
-  if (!resend) return false;
-
   const drop = previousScore - newScore;
   if (drop < 5) return false;
 
-  try {
-    await resend.emails.send({
-      from: process.env.RESEND_FROM_EMAIL || "reports@presenceos.app",
-      to: toEmail,
-      subject: `Score alert — ${projectName} dropped ${Math.round(drop)} points`,
-      html: `
+  const res = await sendEmail({
+    to: toEmail,
+    subject: `Score alert — ${projectName} dropped ${Math.round(drop)} points`,
+    html: `
         <div style="font-family: sans-serif; max-width: 600px; margin: 0 auto;">
           <h1 style="color: #ef4444;">OmniPresence Score Alert</h1>
           <p>Your score for <strong>${projectName}</strong> decreased after the latest scan.</p>
@@ -92,11 +62,8 @@ export async function sendScoreDropAlert(
           <a href="${process.env.NEXT_PUBLIC_APP_URL}/app/projects/${projectId}" style="display: inline-block; background: #6366f1; color: white; padding: 12px 24px; border-radius: 8px; text-decoration: none;">View Dashboard</a>
         </div>
       `,
-    });
-    return true;
-  } catch {
-    return false;
-  }
+  });
+  return res.sent;
 }
 
 export async function sendCitationDropAlert(
@@ -106,18 +73,13 @@ export async function sendCitationDropAlert(
   newCitations: number,
   projectId: string
 ): Promise<boolean> {
-  const resend = getResend();
-  if (!resend) return false;
-
   const drop = previousCitations - newCitations;
   if (drop <= 0) return false;
 
-  try {
-    await resend.emails.send({
-      from: process.env.RESEND_FROM_EMAIL || "reports@presenceos.app",
-      to: toEmail,
-      subject: `AI citation alert — ${projectName} lost ${drop} AI citation${drop === 1 ? "" : "s"}`,
-      html: `
+  const res = await sendEmail({
+    to: toEmail,
+    subject: `AI citation alert — ${projectName} lost ${drop} AI citation${drop === 1 ? "" : "s"}`,
+    html: `
         <div style="font-family: sans-serif; max-width: 600px; margin: 0 auto;">
           <h1 style="color: #ef4444;">AI Citation Drop</h1>
           <p>The number of AI answers citing <strong>${projectName}</strong> decreased since the previous run.</p>
@@ -130,11 +92,8 @@ export async function sendCitationDropAlert(
           <a href="${process.env.NEXT_PUBLIC_APP_URL}/app/projects/${projectId}/visibility" style="display: inline-block; background: #6366f1; color: white; padding: 12px 24px; border-radius: 8px; text-decoration: none;">View Visibility</a>
         </div>
       `,
-    });
-    return true;
-  } catch {
-    return false;
-  }
+  });
+  return res.sent;
 }
 
 export interface MonitoringAlertItem {
@@ -148,8 +107,7 @@ export async function sendMonitoringAlert(
   projectId: string,
   items: MonitoringAlertItem[]
 ): Promise<boolean> {
-  const resend = getResend();
-  if (!resend || items.length === 0) return false;
+  if (items.length === 0) return false;
 
   const rows = items
     .map(
@@ -158,12 +116,10 @@ export async function sendMonitoringAlert(
     )
     .join("");
 
-  try {
-    await resend.emails.send({
-      from: process.env.RESEND_FROM_EMAIL || "reports@presenceos.app",
-      to: toEmail,
-      subject: `Monitoring alert — ${projectName} (${items.length} change${items.length === 1 ? "" : "s"})`,
-      html: `
+  const res = await sendEmail({
+    to: toEmail,
+    subject: `Monitoring alert — ${projectName} (${items.length} change${items.length === 1 ? "" : "s"})`,
+    html: `
         <div style="font-family: sans-serif; max-width: 600px; margin: 0 auto;">
           <h1 style="color: #f59e0b;">OmniPresence Monitoring Alert</h1>
           <p>We detected ${items.length} change${items.length === 1 ? "" : "s"} for <strong>${projectName}</strong>:</p>
@@ -171,11 +127,8 @@ export async function sendMonitoringAlert(
           <a href="${process.env.NEXT_PUBLIC_APP_URL}/app/projects/${projectId}/ranks" style="display: inline-block; background: #6366f1; color: white; padding: 12px 24px; border-radius: 8px; text-decoration: none;">Review Changes</a>
         </div>
       `,
-    });
-    return true;
-  } catch {
-    return false;
-  }
+  });
+  return res.sent;
 }
 
 export async function sendScanCompleteEmail(
@@ -184,15 +137,10 @@ export async function sendScanCompleteEmail(
   score: number,
   projectId: string
 ): Promise<boolean> {
-  const resend = getResend();
-  if (!resend) return false;
-
-  try {
-    await resend.emails.send({
-      from: process.env.RESEND_FROM_EMAIL || "reports@presenceos.app",
-      to: toEmail,
-      subject: `Scan complete — ${projectName} scored ${Math.round(score)}/100`,
-      html: `
+  const res = await sendEmail({
+    to: toEmail,
+    subject: `Scan complete — ${projectName} scored ${Math.round(score)}/100`,
+    html: `
         <div style="font-family: sans-serif; max-width: 600px; margin: 0 auto;">
           <h1 style="color: #6366f1;">OmniPresence Scan Complete</h1>
           <p>Your audit for <strong>${projectName}</strong> is ready.</p>
@@ -200,9 +148,6 @@ export async function sendScanCompleteEmail(
           <a href="${process.env.NEXT_PUBLIC_APP_URL}/app/projects/${projectId}" style="display: inline-block; background: #6366f1; color: white; padding: 12px 24px; border-radius: 8px; text-decoration: none;">View Full Report</a>
         </div>
       `,
-    });
-    return true;
-  } catch {
-    return false;
-  }
+  });
+  return res.sent;
 }

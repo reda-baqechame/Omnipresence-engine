@@ -195,6 +195,7 @@
 | 2026-06-28 | provider-router | done | Wave H: unified capability router (health/cost/confidence/failover) + ZERO_PAID_KEYS + serp-router delegation |
 | 2026-06-28 | sovereign-data | done | Wave I: proxy-pool scraper + multi-instance SearXNG + Common Crawl authority ranks (getDomainAuthority) + parity tests |
 | 2026-06-28 | sovereign-ai | done | Wave J: generate-router (Ollama-first + editorial/structural-AEO gates + paid upgrade); generateWithAI delegates |
+| 2026-06-28 | sovereign-comms | done | Wave K: SMTP email transport (DKIM) + direct X/LinkedIn posting + free IP->ASN enrichment |
 
 ## Production hardening (complete)
 

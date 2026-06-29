@@ -159,7 +159,7 @@ const catalogAdapters: Adapter[] = [
   { id: "smtp-email", capability: "email", paid: false, selfHosted: true, confidence: 0.8, freshness: "live", costPerCall: 0, enabled: () => hasEnv("SMTP_HOST") },
   { id: "resend-email", capability: "email", paid: true, selfHosted: false, confidence: 0.9, freshness: "live", costPerCall: 0.0004, enabled: () => hasEnv("RESEND_API_KEY") },
 
-  { id: "direct-social", capability: "social", paid: false, selfHosted: true, confidence: 0.75, freshness: "live", costPerCall: 0, enabled: () => hasEnv("X_API_KEY") || hasEnv("LINKEDIN_ACCESS_TOKEN") },
+  { id: "direct-social", capability: "social", paid: false, selfHosted: true, confidence: 0.75, freshness: "live", costPerCall: 0, enabled: () => hasEnv("X_ACCESS_TOKEN") || hasEnv("LINKEDIN_ACCESS_TOKEN") },
   { id: "buffer-social", capability: "social", paid: true, selfHosted: false, confidence: 0.85, freshness: "live", costPerCall: 0, enabled: () => hasEnv("BUFFER_ACCESS_TOKEN") },
   { id: "ayrshare-social", capability: "social", paid: true, selfHosted: false, confidence: 0.85, freshness: "live", costPerCall: 0, enabled: () => hasEnv("AYRSHARE_API_KEY") },
 
