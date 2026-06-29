@@ -6,12 +6,15 @@ import { cn } from "@/lib/utils";
 
 const TABS = [
   { href: "", label: "Overview" },
+  { href: "/war-room", label: "War Room" },
   { href: "/proof", label: "Proof" },
+  { href: "/proof-ledger", label: "Proof Ledger" },
   { href: "/geo-lift", label: "GEO Lift" },
   { href: "/visibility", label: "Visibility" },
   { href: "/crawlers", label: "AI Crawlers" },
   { href: "/aeo-readiness", label: "AEO Readiness" },
   { href: "/frontier", label: "Frontier" },
+  { href: "/source-graph", label: "Source Graph" },
   { href: "/prompts", label: "Prompts" },
   { href: "/intelligence", label: "AEO Intel" },
   { href: "/keywords", label: "Keywords" },

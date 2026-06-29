@@ -37,6 +37,7 @@
   ],
   "exclude": [
     "node_modules",
-    "services/omnidata"
+    "services/omnidata",
+    "services/ai-ui-capture"
   ]
 }

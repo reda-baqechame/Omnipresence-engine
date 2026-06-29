@@ -26,6 +26,7 @@ import {
 } from "@/lib/demo/scan-data";
 import { resolveAndPersistCompetitors } from "@/lib/engines/competitor-resolver";
 import { syncExecutionTasks, verifyTaskResolution } from "@/lib/engines/execution-tasks";
+import { buildSourceGraph } from "@/lib/engines/source-graph";
 import type {
   Project,
   TechnicalFinding,
@@ -168,6 +169,8 @@ export async function runProjectScan(
     if (citationRows.length > 0) {
       await supabase.from("citation_sources").insert(citationRows);
     }
+    // Rebuild the market-specific Source/Citation Graph from the fresh citations.
+    await buildSourceGraph(projectId);
   }
 
   // Unify the failure gate with the step-based pipeline: a live scan that

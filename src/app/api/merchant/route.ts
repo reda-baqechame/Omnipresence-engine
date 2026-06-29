@@ -10,6 +10,7 @@ import {
   buildProductJsonLd,
   type FeedFormat,
 } from "@/lib/engines/merchant-feed";
+import { runProductVisibility, getProductVisibility } from "@/lib/engines/product-visibility";
 
 async function getProjectOrg(
   supabase: Awaited<ReturnType<typeof createClient>>,
@@ -42,7 +43,9 @@ export async function GET(request: NextRequest) {
     ? Math.round(rows.reduce((s, p) => s + (p.score || 0), 0) / rows.length)
     : 0;
 
-  return NextResponse.json({ products: rows, summary: { total: rows.length, averageScore } });
+  const visibility = await getProductVisibility(projectId);
+
+  return NextResponse.json({ products: rows, summary: { total: rows.length, averageScore }, visibility });
 }
 
 export async function POST(request: NextRequest) {
@@ -50,15 +53,14 @@ export async function POST(request: NextRequest) {
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) return apiUnauthorized();
 
-  let body: { projectId?: string; content?: string; format?: FeedFormat; optimize?: boolean; optimizeLimit?: number };
+  let body: { projectId?: string; action?: string; content?: string; format?: FeedFormat; optimize?: boolean; optimizeLimit?: number };
   try {
     body = await readJsonBody(request);
   } catch {
     return apiError("Invalid JSON body");
   }
-  const { projectId, content, format, optimize, optimizeLimit } = body;
+  const { projectId, action, content, format, optimize, optimizeLimit } = body;
   if (!projectId) return apiError("projectId required");
-  if (!content || !format) return apiError("content and format (xml|tsv) required");
 
   const access = await verifyProjectAccess(supabase, projectId, user.id, "member");
   if (!access) return apiForbidden();
@@ -69,6 +71,14 @@ export async function POST(request: NextRequest) {
   if (!hasMerchantAccess(plan)) {
     return apiError("The Merchant/Shopping engine requires a higher plan tier.", 402);
   }
+
+  // Product / Shopping AI visibility scan (no feed upload required).
+  if (action === "visibility") {
+    const result = await runProductVisibility(projectId);
+    return NextResponse.json(result);
+  }
+
+  if (!content || !format) return apiError("content and format (xml|tsv) required");
 
   const products = parseProductFeed(content, format).slice(0, 1000);
   if (products.length === 0) return apiError("No products parsed from feed");

@@ -46,6 +46,7 @@ import {
   recordRewriteLift,
 } from "@/lib/engines/geo-rewrite-loop";
 import { fetchFirehoseMentions } from "@/lib/engines/community-mentions";
+import { runProjectSnapshots } from "@/lib/engines/snapshots";
 import { logProviderError } from "@/lib/observability/log";
 import type { Project } from "@/types/database";
 
@@ -618,6 +619,34 @@ export const dailyRankCheck = inngest.createFunction(
   }
 );
 
+export const dailySnapshots = inngest.createFunction(
+  { id: "daily-snapshots", retries: 1, triggers: [{ cron: "0 1 * * *" }] },
+  async ({ step }) => {
+    const supabase = await createServiceClient();
+
+    const projects = await step.run("fetch-projects", async () => {
+      const { data } = await supabase.from("projects").select("id");
+      return data || [];
+    });
+
+    let captured = 0;
+    for (const project of projects) {
+      await step.run(`snapshot-${project.id}`, async () => {
+        try {
+          const summary = await runProjectSnapshots(supabase, project.id);
+          return summary.qualityScore;
+        } catch (error) {
+          logProviderError("cron:snapshots", error, { projectId: project.id });
+          return 0;
+        }
+      });
+      captured++;
+    }
+
+    return { captured };
+  }
+);
+
 export const weeklyBacklinkMonitor = inngest.createFunction(
   { id: "weekly-backlink-monitor", retries: 1, triggers: [{ cron: "0 6 * * 3" }] },
   async ({ step }) => {
@@ -1134,6 +1163,7 @@ export const functions = [
   guaranteeVerificationCron,
   weeklyRankCheck,
   dailyRankCheck,
+  dailySnapshots,
   weeklyBacklinkMonitor,
   weeklyBehaviorSync,
   dailyBrandNewsMonitor,

@@ -2088,3 +2088,253 @@ CREATE POLICY ai_crawler_hits_all ON ai_crawler_hits FOR ALL
   USING (project_id IN (SELECT id FROM projects WHERE organization_id IN (SELECT get_user_org_ids())));
 
 
+-- ========== 0048_source_graph.sql ==========
+
+-- Source/Citation Graph (Phase 23 / manifest v24, Wave A). Market-specific graph
+-- of how AI answers form: prompt_cluster -> prompt -> engine -> cited domain ->
+-- competitor / page. Built from measured citation data; every row has provenance.
+
+CREATE TABLE IF NOT EXISTS prompt_clusters (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  project_id UUID NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+  label TEXT NOT NULL,
+  intent TEXT NOT NULL DEFAULT 'informational',
+  prompt_count INT NOT NULL DEFAULT 0,
+  member_prompts JSONB NOT NULL DEFAULT '[]'::jsonb,
+  demand_index NUMERIC,
+  share_of_voice NUMERIC,
+  data_source TEXT NOT NULL DEFAULT 'measured',
+  confidence NUMERIC,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  UNIQUE (project_id, label)
+);
+
+CREATE TABLE IF NOT EXISTS source_domains (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  project_id UUID NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+  domain TEXT NOT NULL,
+  source_type TEXT NOT NULL DEFAULT 'other',
+  ai_citation_count INT NOT NULL DEFAULT 0,
+  serp_rank_count INT NOT NULL DEFAULT 0,
+  competitor_mention_count INT NOT NULL DEFAULT 0,
+  brand_mention_count INT NOT NULL DEFAULT 0,
+  authority NUMERIC,
+  authority_source TEXT,
+  reachability NUMERIC,
+  conversion_value NUMERIC,
+  influence_score NUMERIC NOT NULL DEFAULT 0,
+  first_seen_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  last_seen_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  data_source TEXT NOT NULL DEFAULT 'measured',
+  confidence NUMERIC,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  UNIQUE (project_id, domain)
+);
+
+CREATE TABLE IF NOT EXISTS source_mentions (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  project_id UUID NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+  source_domain TEXT NOT NULL,
+  source_url TEXT,
+  engine TEXT NOT NULL,
+  prompt_text TEXT,
+  prompt_cluster_id UUID REFERENCES prompt_clusters(id) ON DELETE SET NULL,
+  cites_brand BOOLEAN NOT NULL DEFAULT false,
+  cites_competitor BOOLEAN NOT NULL DEFAULT false,
+  competitor_name TEXT,
+  position INT,
+  captured_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  data_source TEXT NOT NULL DEFAULT 'measured',
+  confidence NUMERIC,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE TABLE IF NOT EXISTS source_opportunities (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  project_id UUID NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+  source_domain TEXT NOT NULL,
+  opportunity_type TEXT NOT NULL DEFAULT 'citation_gap',
+  competitor_citations INT NOT NULL DEFAULT 0,
+  brand_present BOOLEAN NOT NULL DEFAULT false,
+  difficulty INT NOT NULL DEFAULT 50,
+  influence_score NUMERIC NOT NULL DEFAULT 0,
+  tactic TEXT,
+  recommended_action TEXT,
+  status TEXT NOT NULL DEFAULT 'open',
+  evidence JSONB NOT NULL DEFAULT '{}'::jsonb,
+  data_source TEXT NOT NULL DEFAULT 'measured',
+  confidence NUMERIC,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  UNIQUE (project_id, source_domain, opportunity_type)
+);
+
+CREATE TABLE IF NOT EXISTS source_edges (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  project_id UUID NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+  edge_type TEXT NOT NULL,
+  from_kind TEXT NOT NULL,
+  from_key TEXT NOT NULL,
+  to_kind TEXT NOT NULL,
+  to_key TEXT NOT NULL,
+  weight NUMERIC NOT NULL DEFAULT 1,
+  metadata JSONB NOT NULL DEFAULT '{}'::jsonb,
+  last_seen_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  UNIQUE (project_id, edge_type, from_key, to_key)
+);
+
+CREATE INDEX IF NOT EXISTS idx_prompt_clusters_project ON prompt_clusters(project_id);
+CREATE INDEX IF NOT EXISTS idx_source_domains_project ON source_domains(project_id, influence_score DESC);
+CREATE INDEX IF NOT EXISTS idx_source_mentions_project ON source_mentions(project_id, captured_at DESC);
+CREATE INDEX IF NOT EXISTS idx_source_mentions_domain ON source_mentions(project_id, source_domain);
+CREATE INDEX IF NOT EXISTS idx_source_opportunities_project ON source_opportunities(project_id, influence_score DESC);
+CREATE INDEX IF NOT EXISTS idx_source_edges_project ON source_edges(project_id, edge_type);
+CREATE INDEX IF NOT EXISTS idx_source_edges_from ON source_edges(project_id, from_key);
+
+ALTER TABLE prompt_clusters ENABLE ROW LEVEL SECURITY;
+ALTER TABLE source_domains ENABLE ROW LEVEL SECURITY;
+ALTER TABLE source_mentions ENABLE ROW LEVEL SECURITY;
+ALTER TABLE source_opportunities ENABLE ROW LEVEL SECURITY;
+ALTER TABLE source_edges ENABLE ROW LEVEL SECURITY;
+
+DROP POLICY IF EXISTS prompt_clusters_all ON prompt_clusters;
+CREATE POLICY prompt_clusters_all ON prompt_clusters FOR ALL
+  USING (project_id IN (SELECT id FROM projects WHERE organization_id IN (SELECT get_user_org_ids())));
+
+DROP POLICY IF EXISTS source_domains_all ON source_domains;
+CREATE POLICY source_domains_all ON source_domains FOR ALL
+  USING (project_id IN (SELECT id FROM projects WHERE organization_id IN (SELECT get_user_org_ids())));
+
+DROP POLICY IF EXISTS source_mentions_all ON source_mentions;
+CREATE POLICY source_mentions_all ON source_mentions FOR ALL
+  USING (project_id IN (SELECT id FROM projects WHERE organization_id IN (SELECT get_user_org_ids())));
+
+DROP POLICY IF EXISTS source_opportunities_all ON source_opportunities;
+CREATE POLICY source_opportunities_all ON source_opportunities FOR ALL
+  USING (project_id IN (SELECT id FROM projects WHERE organization_id IN (SELECT get_user_org_ids())));
+
+DROP POLICY IF EXISTS source_edges_all ON source_edges;
+CREATE POLICY source_edges_all ON source_edges FOR ALL
+  USING (project_id IN (SELECT id FROM projects WHERE organization_id IN (SELECT get_user_org_ids())));
+
+
+-- ========== 0049_product_visibility.sql ==========
+
+-- Merchant / Product AI visibility (Phase 23 / manifest v24, Wave B). Tracks
+-- product presence in Shopping/organic SERP (measured) and AI product
+-- recommendations (model_knowledge), complementing merchant_products feed QA.
+
+CREATE TABLE IF NOT EXISTS product_visibility_snapshots (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  project_id UUID NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+  product_id TEXT,
+  query TEXT NOT NULL,
+  surface TEXT NOT NULL DEFAULT 'shopping_serp',
+  engine TEXT NOT NULL,
+  brand_present BOOLEAN NOT NULL DEFAULT false,
+  position INT,
+  competitors_present JSONB NOT NULL DEFAULT '[]'::jsonb,
+  cited_urls JSONB NOT NULL DEFAULT '[]'::jsonb,
+  data_source TEXT NOT NULL DEFAULT 'measured',
+  confidence NUMERIC,
+  captured_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE INDEX IF NOT EXISTS idx_product_visibility_project ON product_visibility_snapshots(project_id, captured_at DESC);
+CREATE INDEX IF NOT EXISTS idx_product_visibility_surface ON product_visibility_snapshots(project_id, surface);
+
+ALTER TABLE product_visibility_snapshots ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS product_visibility_snapshots_all ON product_visibility_snapshots;
+CREATE POLICY product_visibility_snapshots_all ON product_visibility_snapshots FOR ALL
+  USING (project_id IN (SELECT id FROM projects WHERE organization_id IN (SELECT get_user_org_ids())));
+
+
+-- ========== 0050_snapshots.sql ==========
+
+-- Snapshots + data-quality normalization (Phase 23 / manifest v24, Wave E).
+-- Daily point-in-time history for GSC, GBP and AI visibility, plus a per-project
+-- data-quality score quantifying measured vs unavailable signal coverage.
+
+CREATE TABLE IF NOT EXISTS gsc_snapshots (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  project_id UUID NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+  captured_on DATE NOT NULL DEFAULT CURRENT_DATE,
+  clicks INT,
+  impressions INT,
+  ctr NUMERIC,
+  avg_position NUMERIC,
+  data_source TEXT NOT NULL DEFAULT 'measured',
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  UNIQUE (project_id, captured_on)
+);
+
+CREATE TABLE IF NOT EXISTS gbp_snapshots (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  project_id UUID NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+  captured_on DATE NOT NULL DEFAULT CURRENT_DATE,
+  avg_rank NUMERIC,
+  found_cells INT,
+  total_cells INT,
+  coverage NUMERIC,
+  data_source TEXT NOT NULL DEFAULT 'measured',
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  UNIQUE (project_id, captured_on)
+);
+
+CREATE TABLE IF NOT EXISTS ai_visibility_snapshots (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  project_id UUID NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+  captured_on DATE NOT NULL DEFAULT CURRENT_DATE,
+  probe_count INT NOT NULL DEFAULT 0,
+  mention_rate NUMERIC,
+  citation_rate NUMERIC,
+  grounded_rate NUMERIC,
+  data_source TEXT NOT NULL DEFAULT 'measured',
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  UNIQUE (project_id, captured_on)
+);
+
+CREATE TABLE IF NOT EXISTS data_quality_scores (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  project_id UUID NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+  captured_on DATE NOT NULL DEFAULT CURRENT_DATE,
+  quality_score NUMERIC NOT NULL DEFAULT 0,
+  measured_signals INT NOT NULL DEFAULT 0,
+  total_signals INT NOT NULL DEFAULT 0,
+  breakdown JSONB NOT NULL DEFAULT '{}'::jsonb,
+  data_source TEXT NOT NULL DEFAULT 'measured',
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  UNIQUE (project_id, captured_on)
+);
+
+CREATE INDEX IF NOT EXISTS idx_gsc_snapshots_project ON gsc_snapshots(project_id, captured_on DESC);
+CREATE INDEX IF NOT EXISTS idx_gbp_snapshots_project ON gbp_snapshots(project_id, captured_on DESC);
+CREATE INDEX IF NOT EXISTS idx_ai_visibility_snapshots_project ON ai_visibility_snapshots(project_id, captured_on DESC);
+CREATE INDEX IF NOT EXISTS idx_data_quality_scores_project ON data_quality_scores(project_id, captured_on DESC);
+
+ALTER TABLE gsc_snapshots ENABLE ROW LEVEL SECURITY;
+ALTER TABLE gbp_snapshots ENABLE ROW LEVEL SECURITY;
+ALTER TABLE ai_visibility_snapshots ENABLE ROW LEVEL SECURITY;
+ALTER TABLE data_quality_scores ENABLE ROW LEVEL SECURITY;
+
+DROP POLICY IF EXISTS gsc_snapshots_all ON gsc_snapshots;
+CREATE POLICY gsc_snapshots_all ON gsc_snapshots FOR ALL
+  USING (project_id IN (SELECT id FROM projects WHERE organization_id IN (SELECT get_user_org_ids())));
+
+DROP POLICY IF EXISTS gbp_snapshots_all ON gbp_snapshots;
+CREATE POLICY gbp_snapshots_all ON gbp_snapshots FOR ALL
+  USING (project_id IN (SELECT id FROM projects WHERE organization_id IN (SELECT get_user_org_ids())));
+
+DROP POLICY IF EXISTS ai_visibility_snapshots_all ON ai_visibility_snapshots;
+CREATE POLICY ai_visibility_snapshots_all ON ai_visibility_snapshots FOR ALL
+  USING (project_id IN (SELECT id FROM projects WHERE organization_id IN (SELECT get_user_org_ids())));
+
+DROP POLICY IF EXISTS data_quality_scores_all ON data_quality_scores;
+CREATE POLICY data_quality_scores_all ON data_quality_scores FOR ALL
+  USING (project_id IN (SELECT id FROM projects WHERE organization_id IN (SELECT get_user_org_ids())));
+
+

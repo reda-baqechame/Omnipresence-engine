@@ -805,7 +805,9 @@ export function buildProbeTraceRows(results: VisibilityScanResult[]): ProbeTrace
       cited_sources: [...new Set(r.source_domains || [])].slice(0, 25),
       competitors_mentioned: competitorsMentioned,
       model: detail ?? null,
-      grounding_mode: r.measurement_mode ?? null,
+      // Distinguish a real product-UI capture from other grounded paths so the
+      // trace honestly records HOW the answer was grounded.
+      grounding_mode: detail === "ai_ui_capture" ? "ui_capture" : (r.measurement_mode ?? null),
       confidence: probeConfidence(r.data_source),
       data_source: r.data_source,
       checked_at: now,

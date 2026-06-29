@@ -182,6 +182,16 @@
 
 **Full stack audit:** `npm run production:ready` — local CI + e2e + live audit:full + wire:diy.
 
+## Sovereign 200x Machine (manifest v24.0.0)
+
+| Date | Task | Status | Notes |
+|------|------|--------|-------|
+| 2026-06-28 | sourcegraph | done | Wave A: source-graph schema/engine/api/UI (custom SVG graph) |
+| 2026-06-28 | merchant-visibility | done | Wave B: product_visibility_snapshots + Shopping/AI probes + merchant UI |
+| 2026-06-28 | ai-ui-capture | done | Wave C: Playwright capture microservice + grounding_mode=ui_capture |
+| 2026-06-28 | war-room-dashboards | done | Wave D: War Room, Proof Ledger, agency cockpit |
+| 2026-06-28 | snapshots-quality | done | Wave E: gsc/gbp/ai_visibility snapshots + data_quality_scores + daily cron |
+
 ## Production hardening (complete)
 
 | Date | Task | Status | Notes |
