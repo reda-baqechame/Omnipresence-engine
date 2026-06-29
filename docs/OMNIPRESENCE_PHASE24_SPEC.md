@@ -82,6 +82,13 @@ rankings.
   provenance, freshness and integration (e.g. free DR-style authority on
   backlinks, inline AEO passages on crawl, gated generation). We do **not** claim
   to beat paid indexes on raw breadth — the claims harness forbids it.
+- **Live measured proof:** `/api/admin/provider-benchmark` (bearer-guarded,
+  no service client) runs the real engines; `npm run benchmark:live` prints a
+  sovereign-vs-paid report and writes dated evidence to `docs/benchmarks/`.
+  First run (no paid keys): sovereign crawl returned a real page in ~277ms —
+  7,399 words, 336 AEO passages, 16 headings, 1 schema type, at $0 — while
+  backlinks/SERP honestly reported `unavailable` (no OmniData/SearXNG running),
+  never faked. Configure the sovereign infra to light up those capabilities.
 
 ## Verification & ship gates
 

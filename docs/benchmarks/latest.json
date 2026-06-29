@@ -1,0 +1,68 @@
+{
+  "startedAt": "2026-06-29T03:45:31.368Z",
+  "finishedAt": "2026-06-29T03:45:31.647Z",
+  "durationMs": 279,
+  "crawl": [
+    {
+      "input": "https://en.wikipedia.org/wiki/Search_engine_optimization",
+      "sovereign": {
+        "ran": true,
+        "success": true,
+        "ms": 277,
+        "provider": "playwright-crawl",
+        "costPerCallUsd": 0,
+        "count": 336,
+        "signal": {
+          "words": 7399,
+          "schemaTypes": 1,
+          "headings": 16,
+          "aeoPassages": 336
+        }
+      },
+      "paid": null,
+      "verdict": "sovereign-only (no paid crawler configured) — $0, structured AEO passages extracted"
+    }
+  ],
+  "backlinks": [
+    {
+      "input": "wikipedia.org",
+      "sovereign": {
+        "ran": true,
+        "success": false,
+        "ms": 0,
+        "costPerCallUsd": 0,
+        "count": 0,
+        "error": "No backlink index configured. Enable OmniData (keyless Common Crawl webgraph) or DataForSEO for real referring-domain data."
+      },
+      "paid": null,
+      "verdict": "sovereign backlinks unavailable (enable OmniData Common Crawl webgraph)"
+    }
+  ],
+  "serp": [
+    {
+      "input": "what is search engine optimization",
+      "sovereign": {
+        "ran": true,
+        "success": false,
+        "ms": 0,
+        "costPerCallUsd": 0,
+        "count": 0,
+        "error": "No serp provider configured"
+      },
+      "paid": null,
+      "verdict": "SERP unavailable (configure SearXNG/OmniData or a paid key)"
+    }
+  ],
+  "summary": {
+    "sovereignCostUsd": 0,
+    "paidCostUsd": 0,
+    "costSavedUsd": 0,
+    "sovereignWins": 1,
+    "total": 3,
+    "notes": [
+      "No Firecrawl key — crawl ran sovereign-only.",
+      "No DataForSEO/Labs key — backlinks ran sovereign-only.",
+      "Honest scope: cost/freshness/integration win is measured; raw paid-index breadth is not claimed."
+    ]
+  }
+}
