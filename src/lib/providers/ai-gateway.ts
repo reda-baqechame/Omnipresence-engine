@@ -121,24 +121,20 @@ export async function generateWithAI(
   userPrompt: string,
   model: "fast" | "quality" = "fast"
 ): Promise<ProviderResult<string>> {
+  // Sovereign-first: route through the generate port (Ollama before paid LLMs)
+  // with quality gates. In "quality" mode the gates are stricter, so a weak
+  // open-model draft transparently upgrades to a paid LLM when one is
+  // configured; otherwise the best sovereign output is returned.
   try {
-    await assertWithinBudget("openai");
-    const { generateText } = await import("ai");
-    const { openai } = await import("@ai-sdk/openai");
-
-    const modelId = model === "quality" ? "gpt-4o" : "gpt-4o-mini";
-    const result = await generateText({
-      model: openai(modelId),
-      system: systemPrompt,
-      prompt: userPrompt,
-      maxOutputTokens: maxOutputTokens("content"),
-      abortSignal: AbortSignal.timeout(60000),
+    const { generateContent } = await import("@/lib/providers/generate-router");
+    const outcome = await generateContent(systemPrompt, userPrompt, {
+      requireStructure: model === "quality",
+      minReadingEase: model === "quality" ? 25 : undefined,
     });
-
-    await recordSpend("openai", modelId, result.usage, {
-      fallbackOutputTokens: maxOutputTokens("content"),
-    });
-    return { success: true, data: result.text, creditsUsed: model === "quality" ? 5 : 1 };
+    if (outcome.success && outcome.data !== undefined) {
+      return { success: true, data: outcome.data, creditsUsed: outcome.creditsUsed };
+    }
+    return { success: false, error: outcome.error || "AI generation failed" };
   } catch (error) {
     return {
       success: false,
