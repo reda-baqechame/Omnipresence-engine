@@ -48,10 +48,17 @@ function ensureWired(): void {
   });
 
   // Email port: self-hosted SMTP first, Resend optional (decided inside sendEmail).
-  attachRunner<[EmailMessage], EmailSendResult>("email", "smtp-email", async (msg) => {
+  // Both adapters delegate to sendEmail() (SMTP-first, Resend fallback). The
+  // resend-email runner exists so route("email") still works on Resend-only
+  // deploys where SMTP_HOST is unset (smtp-email adapter disabled).
+  const emailRunner = async (msg: EmailMessage): Promise<ProviderResult<EmailSendResult>> => {
     const r = await sendEmail(msg);
-    return r.sent ? { success: true, data: r, creditsUsed: 0 } : { success: false, error: r.reason || "email not sent" };
-  });
+    return r.sent
+      ? { success: true, data: r, creditsUsed: r.provider === "resend" ? 1 : 0 }
+      : { success: false, error: r.reason || "email not sent" };
+  };
+  attachRunner<[EmailMessage], EmailSendResult>("email", "smtp-email", emailRunner);
+  attachRunner<[EmailMessage], EmailSendResult>("email", "resend-email", emailRunner);
 
   // Social port: direct X/LinkedIn posting (no Buffer/Ayrshare middleman).
   attachRunner<[string], DirectPostResult[]>("social", "direct-social", async (text) => {
@@ -82,4 +89,16 @@ export function fetchBacklinks(domain: string, limit = 50): Promise<RouteOutcome
   return route<[string, number], BacklinkItem[]>("backlinks", domain, limit);
 }
 
-export type { CrawlResult, BacklinkItem, ProviderResult };
+/** Send a transactional email through the sovereign-first email port (SMTP -> Resend). */
+export function sendEmailRouted(msg: EmailMessage): Promise<RouteOutcome<EmailSendResult>> {
+  ensureWired();
+  return route<[EmailMessage], EmailSendResult>("email", msg);
+}
+
+/** Broadcast a post through the sovereign-first social port (direct X/LinkedIn). */
+export function broadcastSocial(text: string): Promise<RouteOutcome<DirectPostResult[]>> {
+  ensureWired();
+  return route<[string], DirectPostResult[]>("social", text);
+}
+
+export type { CrawlResult, BacklinkItem, ProviderResult, EmailMessage, EmailSendResult, DirectPostResult };

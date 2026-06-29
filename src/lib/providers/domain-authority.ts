@@ -14,14 +14,17 @@
  */
 import { getDomainAuthority } from "@/lib/providers/tranco";
 import { getRankToRank, rankToPopularityScore } from "@/lib/providers/rankto";
+import { isOmniDataActive, getOmniDataAuthority } from "@/lib/providers/dataforseo";
 
 export interface ResolvedAuthority {
   domain: string;
   /** 0-100 authority score. */
   score: number;
-  source: "tranco" | "rank.to" | "unlisted";
+  source: "commoncrawl" | "tranco" | "rank.to" | "unlisted";
   trancoRank?: number;
   globalRank?: number;
+  /** Real distinct referring-domain count (only when source="commoncrawl"). */
+  referringDomains?: number;
 }
 
 function clean(domain: string): string {
@@ -39,6 +42,20 @@ export async function resolveDomainAuthority(
 ): Promise<ResolvedAuthority> {
   const d = clean(domain);
   if (!d) return { domain: d, score: 0, source: "unlisted" };
+
+  // 1) Common Crawl harmonic centrality (real link-graph authority) when the
+  // OmniData webgraph is ingested — our truest DR replacement, $0 per lookup.
+  if (isOmniDataActive()) {
+    const cc = await getOmniDataAuthority(d).catch(() => null);
+    if (cc && cc.source === "commoncrawl_webgraph" && typeof cc.authority === "number" && cc.authority > 0) {
+      return {
+        domain: d,
+        score: cc.authority,
+        source: "commoncrawl",
+        referringDomains: cc.referringDomains ?? undefined,
+      };
+    }
+  }
 
   const tranco = await getDomainAuthority(d).catch(() => null);
   if (tranco?.success && tranco.data && tranco.data.source === "tranco" && tranco.data.authorityScore > 0) {

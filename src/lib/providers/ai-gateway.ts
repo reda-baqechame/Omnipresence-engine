@@ -143,18 +143,53 @@ export async function generateWithAI(
   }
 }
 
+function hasKey(name: string): boolean {
+  const v = process.env[name];
+  return Boolean(v && v.length > 0 && !v.startsWith("your-"));
+}
+
+/**
+ * Structured (schema-constrained) generation. Provider-agnostic: uses whichever
+ * frontier key is configured (OpenAI -> Anthropic -> Google) so it works with
+ * any paid LLM the operator provides, not OpenAI alone. Budget-guarded.
+ */
 export async function generateStructured<T>(
   systemPrompt: string,
   userPrompt: string,
   schema: import("zod").ZodType<T>
 ): Promise<ProviderResult<T>> {
+  const provider: GuardProvider | null = hasKey("OPENAI_API_KEY")
+    ? "openai"
+    : hasKey("ANTHROPIC_API_KEY")
+      ? "anthropic"
+      : hasKey("GOOGLE_GENERATIVE_AI_API_KEY")
+        ? "gemini"
+        : null;
+  if (!provider) {
+    return { success: false, error: "Structured generation needs a paid LLM key (OpenAI/Anthropic/Google)" };
+  }
   try {
-    await assertWithinBudget("openai");
+    await assertWithinBudget(provider);
     const { generateObject } = await import("ai");
-    const { openai } = await import("@ai-sdk/openai");
+
+    let modelId: string;
+    let model;
+    if (provider === "openai") {
+      const { openai } = await import("@ai-sdk/openai");
+      modelId = "gpt-4o-mini";
+      model = openai(modelId);
+    } else if (provider === "anthropic") {
+      const { anthropic } = await import("@ai-sdk/anthropic");
+      modelId = "claude-3-5-haiku-latest";
+      model = anthropic(modelId);
+    } else {
+      const { google } = await import("@ai-sdk/google");
+      modelId = "gemini-2.0-flash";
+      model = google(modelId);
+    }
 
     const result = await generateObject({
-      model: openai("gpt-4o-mini"),
+      model,
       system: systemPrompt,
       prompt: userPrompt,
       schema,
@@ -162,7 +197,7 @@ export async function generateStructured<T>(
       abortSignal: AbortSignal.timeout(60000),
     });
 
-    await recordSpend("openai", "gpt-4o-mini", result.usage, {
+    await recordSpend(provider, modelId, result.usage, {
       fallbackOutputTokens: maxOutputTokens("content"),
     });
     return { success: true, data: result.object, creditsUsed: 2 };

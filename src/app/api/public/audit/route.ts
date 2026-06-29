@@ -172,8 +172,17 @@ export async function POST(request: NextRequest) {
     coverageGaps: intelligence.coverageGaps,
     coverageItems: intelligence.coverageItems,
     competitorGaps: intelligence.coverageItems.filter((c) => !c.is_present && c.competitor_present).length,
-    backlinkCount: intelligence.backlinksAvailable ? intelligence.backlinkCount : null,
-    backlinksAvailable: intelligence.backlinksAvailable,
+    // Report the REAL distinct referring-domain total from the Common Crawl
+    // webgraph/authority index when available (e.g. 12,453) — not the capped
+    // sample we fetched for display (which would understate it as ~15).
+    backlinkCount:
+      authority && authority.components.referringDomains > 0
+        ? authority.components.referringDomains
+        : intelligence.backlinksAvailable
+          ? intelligence.backlinkCount
+          : null,
+    backlinksAvailable:
+      intelligence.backlinksAvailable || Boolean(authority && authority.components.referringDomains > 0),
     serpPresence: intelligence.serpPresence,
     authority: authority
       ? {

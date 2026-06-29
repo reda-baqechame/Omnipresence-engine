@@ -19,10 +19,10 @@ export interface AuthorityRating {
   /** 0-100 blended authority (DR-like). */
   rating: number;
   components: {
-    /** Base authority score (Tranco when listed, else rank.to-derived). */
+    /** Base authority score (Common Crawl centrality, Tranco, or rank.to-derived). */
     tranco: number;
     /** Where the base authority came from. */
-    authoritySource: "tranco" | "rank.to" | "unlisted";
+    authoritySource: "commoncrawl" | "tranco" | "rank.to" | "unlisted";
     referringDomains: number;
     openPageRank?: number;
     ageYears: number;
@@ -57,18 +57,30 @@ export async function getAuthorityRating(domain: string): Promise<AuthorityRatin
 
   const tranco = authority.score;
   const authoritySource = authority.source;
-  const referringDomains = backlinks?.success && backlinks.data
-    ? new Set(backlinks.data.map((b) => b.domain)).size
-    : 0;
+  // Prefer the real distinct referring-domain count from the Common Crawl
+  // webgraph (carried on the resolved authority) over counting the fetched page.
+  const referringDomains = typeof authority.referringDomains === "number" && authority.referringDomains > 0
+    ? authority.referringDomains
+    : backlinks?.success && backlinks.data
+      ? new Set(backlinks.data.map((b) => b.domain)).size
+      : 0;
   const ageYears = age.ageYears ?? 0;
 
   const sources: string[] = [];
   const parts: Array<{ value: number; weight: number }> = [];
 
   if (tranco > 0) {
-    // rank.to-derived base is a slightly weaker authority proxy than Tranco.
-    parts.push({ value: tranco, weight: authoritySource === "tranco" ? 0.4 : 0.32 });
-    sources.push(authoritySource === "tranco" ? "tranco" : "rank.to");
+    // Common Crawl harmonic centrality is a true link-graph authority (strongest);
+    // Tranco is a strong popularity proxy; rank.to-derived is slightly weaker.
+    const baseWeight = authoritySource === "commoncrawl" ? 0.45 : authoritySource === "tranco" ? 0.4 : 0.32;
+    parts.push({ value: tranco, weight: baseWeight });
+    sources.push(
+      authoritySource === "commoncrawl"
+        ? "common_crawl_centrality"
+        : authoritySource === "tranco"
+          ? "tranco"
+          : "rank.to"
+    );
   }
   if (referringDomains > 0) {
     parts.push({ value: logScore(referringDomains, 33), weight: 0.3 });

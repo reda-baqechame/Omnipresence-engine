@@ -143,10 +143,13 @@ const serpAdapters: Adapter<[string, string, string, string[]], SERPResult>[] = 
 ];
 
 // Capability catalog. Run-functions are attached by the dedicated modules:
-//   crawl/backlinks -> capability-runners.ts, generate -> generate-router.ts,
-//   email -> email/transport, social -> social/direct, enrich -> visitor-identity.
-// Every ENABLED adapter has an executable runner (route() skips any without one),
-// so the ranking + Zero-Paid-Keys audit is honest across every capability.
+//   crawl/backlinks/enrich/email/social -> capability-runners.ts,
+//   generate -> generate-router.ts, serp -> serpAdapters (above).
+// Every adapter listed here has an executable runner attached at wiring time;
+// route() still defensively skips any without one. Catalog entries that had no
+// real implementation (Buffer/Ayrshare social, standalone Clearbit enrich) were
+// removed so adapterStatuses()/compareCapabilities() never advertise a dead path.
+// Clearbit is still used as a paid upgrade INSIDE the ip-asn-enrich runner.
 const catalogAdapters: Adapter[] = [
   { id: "playwright-crawl", capability: "crawl", paid: false, selfHosted: true, confidence: 0.85, freshness: "live", costPerCall: 0, enabled: () => true },
   { id: "firecrawl-crawl", capability: "crawl", paid: true, selfHosted: false, confidence: 0.8, freshness: "live", costPerCall: 0.002, enabled: () => hasFirecrawlCapability() },
@@ -161,12 +164,9 @@ const catalogAdapters: Adapter[] = [
   { id: "smtp-email", capability: "email", paid: false, selfHosted: true, confidence: 0.8, freshness: "live", costPerCall: 0, enabled: () => hasEnv("SMTP_HOST") },
   { id: "resend-email", capability: "email", paid: true, selfHosted: false, confidence: 0.9, freshness: "live", costPerCall: 0.0004, enabled: () => hasEnv("RESEND_API_KEY") },
 
-  { id: "direct-social", capability: "social", paid: false, selfHosted: true, confidence: 0.75, freshness: "live", costPerCall: 0, enabled: () => hasEnv("X_ACCESS_TOKEN") || hasEnv("LINKEDIN_ACCESS_TOKEN") },
-  { id: "buffer-social", capability: "social", paid: true, selfHosted: false, confidence: 0.85, freshness: "live", costPerCall: 0, enabled: () => hasEnv("BUFFER_ACCESS_TOKEN") },
-  { id: "ayrshare-social", capability: "social", paid: true, selfHosted: false, confidence: 0.85, freshness: "live", costPerCall: 0, enabled: () => hasEnv("AYRSHARE_API_KEY") },
+  { id: "direct-social", capability: "social", paid: false, selfHosted: true, confidence: 0.75, freshness: "live", costPerCall: 0, enabled: () => hasEnv("X_ACCESS_TOKEN") || (hasEnv("LINKEDIN_ACCESS_TOKEN") && hasEnv("LINKEDIN_AUTHOR_URN")) },
 
   { id: "ip-asn-enrich", capability: "enrich", paid: false, selfHosted: true, confidence: 0.5, freshness: "recent", costPerCall: 0, enabled: () => true },
-  { id: "clearbit-enrich", capability: "enrich", paid: true, selfHosted: false, confidence: 0.9, freshness: "recent", costPerCall: 0.01, enabled: () => hasEnv("CLEARBIT_REVEAL_KEY") },
 ];
 
 const registry: Record<Capability, Adapter[]> = {

@@ -38,6 +38,7 @@
   "exclude": [
     "node_modules",
     "services/omnidata",
-    "services/ai-ui-capture"
+    "services/ai-ui-capture",
+    "**/*.test.ts"
   ]
 }

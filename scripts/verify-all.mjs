@@ -19,6 +19,15 @@ const steps = [
   { name: "column-coverage", ok: () => run("node", ["scripts/verify-column-coverage.mjs"]) },
   { name: "route-auth", ok: () => run("node", ["scripts/verify-route-auth.mjs"]) },
   { name: "claims-benchmark", ok: () => run("node", ["scripts/benchmark.mjs"]) },
+  {
+    name: "quality-gate-test",
+    ok: () =>
+      run("node", [
+        "--disable-warning=MODULE_TYPELESS_PACKAGE_JSON",
+        "--test",
+        "src/lib/engines/__tests__/content-defects.test.ts",
+      ]),
+  },
   { name: "typecheck", ok: () => run("npm", ["run", "typecheck"]) },
   { name: "lint", ok: () => run("npm", ["run", "lint"]) },
   { name: "build", ok: () => run("npm", ["run", "build"]) },

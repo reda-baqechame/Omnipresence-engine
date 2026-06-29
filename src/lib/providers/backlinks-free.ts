@@ -8,9 +8,9 @@ export interface BacklinkItem {
   rank: number;
   /** True when the row came from an approximate source rather than a real index. */
   estimated?: boolean;
-  /** Real 0-100 authority (Tranco/rank.to) — free DR that paid indexes bill for. */
+  /** Real 0-100 authority (Common Crawl/Tranco/rank.to) — free DR that paid indexes bill for. */
   authority?: number;
-  authoritySource?: "tranco" | "rank.to" | "unlisted";
+  authoritySource?: "commoncrawl" | "tranco" | "rank.to" | "unlisted";
 }
 
 /**

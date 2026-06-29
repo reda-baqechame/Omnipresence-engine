@@ -15,6 +15,7 @@ import { generateWithOllama } from "./ollama";
 import { assertWithinBudget, recordSpend, maxOutputTokens } from "./cost-guard";
 import { computeReadability } from "@/lib/engines/editorial-qa";
 import { findForbiddenClaims } from "@/lib/config/claims";
+import { detectContentDefects } from "@/lib/engines/content-defects";
 
 // ---------------------------------------------------------------------------
 // Quality gates
@@ -59,6 +60,8 @@ export interface QualityResult {
   reasons: string[];
   /** True when the text contains an outcome promise we refuse to make. */
   forbidden: boolean;
+  /** True when the text contains unprofessional LLM artifacts (placeholders, AI self-refs). */
+  unprofessional: boolean;
 }
 
 export function evaluateQuality(text: string, opts: QualityGateOptions = {}): QualityResult {
@@ -88,9 +91,17 @@ export function evaluateQuality(text: string, opts: QualityGateOptions = {}): Qu
     reasons.push(`forbidden outcome promise: ${forbidden.join(", ")}`);
   }
 
+  // Hard professionalism gate: never ship LLM artifacts (AI self-references,
+  // refusals, unfilled placeholders, template tokens) to a client.
+  const defects = detectContentDefects(trimmed);
+  if (defects.length > 0) {
+    reasons.push(`unprofessional output: ${defects.join(", ")}`);
+  }
+
   return {
     passed: reasons.length === 0,
     forbidden: forbidden.length > 0,
+    unprofessional: defects.length > 0,
     words,
     readingEase: readability.fleschReadingEase,
     structureScore: structure.score,
@@ -184,7 +195,16 @@ export async function generateContent(
   opts: QualityGateOptions = {}
 ): Promise<GenerateOutcome> {
   ensureWired();
-  const adapters = rankedAdapters("generate").filter((a) => RUNNERS[a.id]);
+  const ranked = rankedAdapters("generate").filter((a) => RUNNERS[a.id]);
+  // Quality-first by default: when paid frontier LLM keys are present, try them
+  // BEFORE the sovereign open model so customer-facing copy gets the best model.
+  // ZERO_PAID_KEYS forces sovereign-only; GENERATION_SOVEREIGN_FIRST=true is the
+  // opt-in cost-saver that prefers free Ollama and upgrades only on gate failure.
+  const sovereignFirst =
+    process.env.ZERO_PAID_KEYS === "true" || process.env.GENERATION_SOVEREIGN_FIRST === "true";
+  const adapters = sovereignFirst
+    ? ranked
+    : [...ranked].sort((a, b) => (a.paid === b.paid ? 0 : a.paid ? -1 : 1));
   const trail: Array<{ id: string; ok: boolean; reason?: string }> = [];
 
   let best: GenerateOutcome | null = null;
@@ -203,9 +223,10 @@ export async function generateContent(
       return { success: true, data: result.data, provider: adapter.id, quality, trail, creditsUsed: result.creditsUsed };
     }
     trail.push({ id: adapter.id, ok: false, reason: quality.reasons.join("; ") });
-    // A forbidden outcome promise is a hard fail: never keep it, even as a
-    // degraded fallback — we would rather return nothing than ship the claim.
-    if (quality.forbidden) {
+    // Hard fails: a forbidden outcome promise OR unprofessional LLM artifacts are
+    // never kept, even as a degraded fallback — we would rather return nothing and
+    // let the caller surface "unavailable" than ship a claim or amateur output.
+    if (quality.forbidden || quality.unprofessional) {
       lastError = `output rejected: ${quality.reasons.join("; ")}`;
       continue;
     }

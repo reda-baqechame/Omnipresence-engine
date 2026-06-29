@@ -125,6 +125,35 @@ rankings.
 - Both the runtime registry (`claims.ts`) and the offline harness
   (`benchmark.mjs`) share the same capability keys, kept in sync.
 
+### Phase 24.3 — Common Crawl moat, quality-first generation, native social
+
+- **Real backlink/authority moat (Common Crawl webgraph).** OmniData now exposes
+  `POST /v3/domain/authority/live` returning harmonic-centrality authority (0-100)
+  + the true distinct referring-domain count straight from the ingested webgraph.
+  Backlink rows score DR from Common Crawl first (`getDomainAuthorityBatch`, one
+  SQL pass), falling back to OpenPageRank only for uncovered hosts, and surface a
+  `dr_source` (`commoncrawl`/`openpagerank`/`none`). The main app prefers this CC
+  authority ahead of Tranco/rank.to in `resolveDomainAuthority` and threads the
+  real referring-domain count + provenance through `authority-rating.ts`. This is
+  the genuine referring-domains *list* dependency from 24.1, now closed: after a
+  one-time `npm run webgraph:ingest`, backlinks deliver real referring domains at
+  $0, re-ingested monthly by the `monthly-webgraph-reingest` cron
+  (`COMMONCRAWL_WEBGRAPH_RELEASE`). DuckDB load is sanity-checked at image build.
+- **Quality-first generation.** When paid frontier-LLM keys are present, the
+  generate router tries them BEFORE the open model so customer-facing copy uses
+  the best model (`GENERATION_SOVEREIGN_FIRST=true` flips back to free-Ollama-first
+  as a cost lever; `ZERO_PAID_KEYS` forces sovereign-only). `generateStructured`
+  is now provider-agnostic (OpenAI → Anthropic → Google) instead of OpenAI-only.
+- **Native social auto-posting.** Approved + scheduled `linkedin_post`/`x_thread`
+  assets post directly via the platform APIs in `processScheduledContent` — the
+  `status="approved"` filter is the human gate, unconfigured platforms queue for
+  manual posting, and nothing is faked. `LINKEDIN_AUTHOR_URN` is now required
+  alongside the LinkedIn token (router + capability checks).
+- **Router truth-up.** Dead catalog entries with no runner (Buffer/Ayrshare
+  social, standalone Clearbit enrich) were removed; `resend-email` gained a real
+  runner so email routes on Resend-only deploys; `hasSerpCapability()` now counts
+  SearXNG/OmniData so health/setup stop under-reporting keyless SERP.
+
 ## Verification & ship gates
 
 - Every iteration: `npm run verify:all` (now includes `claims-benchmark`) and
@@ -136,7 +165,8 @@ rankings.
 
 ## New environment variables
 
-See `.env.example`. Highlights: `ZERO_PAID_KEYS`, `AI_UI_CAPTURE_URL` /
-`ENABLE_AI_UI_CAPTURE`, `SMTP_HOST`/`SMTP_PORT`/`SMTP_USER`/`SMTP_PASS` +
-`SMTP_DKIM_*`, `OMNIDATA_PROXIES`, `SEARXNG_URLS`, `OLLAMA_BASE_URL`,
-`X_ACCESS_TOKEN`, `LINKEDIN_ACCESS_TOKEN`/`LINKEDIN_AUTHOR_URN`.
+See `.env.example`. Highlights: `ZERO_PAID_KEYS`, `GENERATION_SOVEREIGN_FIRST`,
+`COMMONCRAWL_WEBGRAPH_RELEASE`, `AI_UI_CAPTURE_URL` / `ENABLE_AI_UI_CAPTURE`,
+`SMTP_HOST`/`SMTP_PORT`/`SMTP_USER`/`SMTP_PASS` + `SMTP_DKIM_*`,
+`OMNIDATA_PROXIES`, `SEARXNG_URLS`, `OLLAMA_BASE_URL`, `X_ACCESS_TOKEN`,
+`LINKEDIN_ACCESS_TOKEN`/`LINKEDIN_AUTHOR_URN`.

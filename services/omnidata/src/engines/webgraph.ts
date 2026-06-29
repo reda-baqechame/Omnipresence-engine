@@ -49,7 +49,9 @@ async function loadDuckDB(): Promise<DuckDBModule | null> {
   }
 }
 
-async function getConnection(): Promise<DuckDBConnection | null> {
+// Exported so the integration test can seed a synthetic graph through the very
+// same connection the query helpers use (proving the real query SQL, not a mock).
+export async function getConnection(): Promise<DuckDBConnection | null> {
   if (cachedConn) return cachedConn;
   const mod = await loadDuckDB();
   if (!mod) return null;
@@ -122,32 +124,44 @@ export async function ingestWebgraph(release: string): Promise<{ ok: boolean; me
 
   try {
     await conn.run("INSTALL httpfs; LOAD httpfs;");
+    // Domain vertices are TAB-separated ⟨id, rev_domain, num_hosts⟩ (3 cols on
+    // recent releases, 2 on older ones — null_padding handles both). Headerless.
     await conn.run(
       `CREATE OR REPLACE TABLE vertices AS
-         SELECT CAST(column0 AS BIGINT) AS id, column1 AS rev_host
+         SELECT TRY_CAST(column0 AS BIGINT) AS id, column1 AS rev_host
          FROM read_csv('${base}-vertices.txt.gz', delim='\t', header=false,
-                       columns={'column0':'VARCHAR','column1':'VARCHAR'});`
+                       ignore_errors=true, null_padding=true,
+                       columns={'column0':'VARCHAR','column1':'VARCHAR','column2':'VARCHAR'})
+        WHERE column0 IS NOT NULL AND column1 IS NOT NULL;`
     );
+    // Edges are TAB-separated ⟨from_id, to_id⟩, headerless.
     await conn.run(
       `CREATE OR REPLACE TABLE edges AS
-         SELECT CAST(column0 AS BIGINT) AS from_id, CAST(column1 AS BIGINT) AS to_id
+         SELECT TRY_CAST(column0 AS BIGINT) AS from_id, TRY_CAST(column1 AS BIGINT) AS to_id
          FROM read_csv('${base}-edges.txt.gz', delim='\t', header=false,
-                       columns={'column0':'VARCHAR','column1':'VARCHAR'});`
+                       ignore_errors=true, null_padding=true,
+                       columns={'column0':'VARCHAR','column1':'VARCHAR'})
+        WHERE column0 IS NOT NULL AND column1 IS NOT NULL;`
     );
     await conn.run("CREATE INDEX IF NOT EXISTS idx_edges_to ON edges(to_id);");
     // Authority ranks (harmonic centrality + pagerank) — the part that lets us
-    // attach a real, free authority score to every referring domain. Best-effort:
-    // a missing/changed ranks file must not fail the core vertices/edges ingest.
+    // attach a real, free authority score to every referring domain. The real
+    // Common Crawl file is TAB-separated with a '#'-prefixed header row and SIX
+    // columns: harmonicc_pos, harmonicc_val, pr_pos, pr_val, host_rev, n_hosts.
+    // comment='#' drops the header; TRY_CAST tolerates the long-tail rows.
+    // Best-effort: a missing/changed ranks file must not fail the core ingest.
     try {
       await conn.run(
         `CREATE OR REPLACE TABLE ranks AS
-           SELECT CAST(column0 AS BIGINT) AS harmonic_pos,
-                  CAST(column1 AS DOUBLE) AS harmonic_val,
-                  CAST(column2 AS BIGINT) AS pr_pos,
-                  CAST(column3 AS DOUBLE) AS pr_val,
+           SELECT TRY_CAST(column0 AS BIGINT) AS harmonic_pos,
+                  TRY_CAST(column1 AS DOUBLE) AS harmonic_val,
+                  TRY_CAST(column2 AS BIGINT) AS pr_pos,
+                  TRY_CAST(column3 AS DOUBLE) AS pr_val,
                   column4 AS rev_host
-           FROM read_csv('${base}-ranks.txt.gz', delim=' ', header=false,
-                         columns={'column0':'VARCHAR','column1':'VARCHAR','column2':'VARCHAR','column3':'VARCHAR','column4':'VARCHAR'});`
+           FROM read_csv('${base}-ranks.txt.gz', delim='\t', header=false, comment='#',
+                         ignore_errors=true, null_padding=true,
+                         columns={'column0':'VARCHAR','column1':'VARCHAR','column2':'VARCHAR','column3':'VARCHAR','column4':'VARCHAR','column5':'VARCHAR'})
+          WHERE column4 IS NOT NULL AND TRY_CAST(column0 AS BIGINT) IS NOT NULL;`
       );
       await conn.run("CREATE INDEX IF NOT EXISTS idx_ranks_host ON ranks(rev_host);");
     } catch (e) {
@@ -158,7 +172,28 @@ export async function ingestWebgraph(release: string): Promise<{ ok: boolean; me
          (SELECT COUNT(*) FROM vertices) AS vertex_count,
          (SELECT COUNT(*) FROM edges) AS edge_count;`
     );
-    return { ok: true, message: `Ingested ${rel}` };
+    // Validate the ingest actually loaded data so a wrong release id / changed
+    // file layout fails loudly instead of leaving an empty "ready" index.
+    const meta = await getWebgraphMeta();
+    const vtx = meta?.vertex_count ?? 0;
+    const edg = meta?.edge_count ?? 0;
+    let rankCount = 0;
+    try {
+      const r = await conn.runAndReadAll("SELECT COUNT(*) AS c FROM ranks");
+      rankCount = Number(r.getRowObjects()[0]?.c ?? 0);
+    } catch {
+      /* ranks optional */
+    }
+    if (vtx === 0 || edg === 0) {
+      return {
+        ok: false,
+        message: `Ingest produced an empty index (vertices=${vtx}, edges=${edg}). Check the release id "${rel}" exists at ${CC_BASE}/${rel}/domain/.`,
+      };
+    }
+    return {
+      ok: true,
+      message: `Ingested ${rel}: ${vtx.toLocaleString()} domains, ${edg.toLocaleString()} edges, ${rankCount.toLocaleString()} ranks${rankCount === 0 ? " (authority unavailable — ranks file missing/changed)" : ""}`,
+    };
   } catch (e) {
     return { ok: false, message: e instanceof Error ? e.message : "ingest failed" };
   }
@@ -304,6 +339,40 @@ export async function getDomainAuthority(host: string): Promise<DomainAuthority 
   }
 }
 
+/**
+ * Batch Common Crawl authority (0-100 by harmonic-centrality rank) for many hosts
+ * in a single query — the free DR replacement used to score every referring
+ * domain at once. Hosts missing from the rank index are simply absent from the map.
+ */
+export async function getDomainAuthorityBatch(hosts: string[]): Promise<Map<string, number>> {
+  const out = new Map<string, number>();
+  const conn = await getConnection();
+  if (!conn || hosts.length === 0) return out;
+  try {
+    const revs = Array.from(new Set(hosts))
+      .map((h) => {
+        try {
+          return sanitizeRevHost(reverseHost(h.replace(/^www\./, "")));
+        } catch {
+          return null;
+        }
+      })
+      .filter((r): r is string => Boolean(r));
+    if (revs.length === 0) return out;
+    const inList = revs.map((r) => `'${r}'`).join(",");
+    const reader = await conn.runAndReadAll(
+      `SELECT rev_host, harmonic_pos FROM ranks WHERE rev_host IN (${inList});`
+    );
+    for (const row of reader.getRowObjects()) {
+      const pos = row.harmonic_pos != null ? Number(row.harmonic_pos) : null;
+      if (pos != null) out.set(unreverseHost(String(row.rev_host)), normalizeAuthority(pos));
+    }
+  } catch {
+    /* ranks table not ingested or query failed — caller falls back to OPR */
+  }
+  return out;
+}
+
 /** Total referring-domain count for a host (cheaper than fetching the list). */
 export async function getReferringDomainCount(host: string): Promise<number | null> {
   const conn = await getConnection();
@@ -311,10 +380,14 @@ export async function getReferringDomainCount(host: string): Promise<number | nu
   if (!(await isWebgraphReady())) return null;
   try {
     const rev = sanitizeRevHost(reverseHost(host));
+    // Exclude self-links so the count matches the referring-domain LIST
+    // (getInboundLinks also excludes v2.rev_host = target).
     const reader = await conn.runAndReadAll(
       `SELECT COUNT(DISTINCT e.from_id) AS c
-         FROM edges e JOIN vertices v1 ON v1.id = e.to_id
-        WHERE v1.rev_host = '${rev}';`
+         FROM edges e
+         JOIN vertices v1 ON v1.id = e.to_id
+         JOIN vertices v2 ON v2.id = e.from_id
+        WHERE v1.rev_host = '${rev}' AND v2.rev_host <> '${rev}';`
     );
     return Number(reader.getRowObjects()[0]?.c ?? 0);
   } catch {

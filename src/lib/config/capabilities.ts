@@ -134,9 +134,11 @@ export function hasAnyLiveDataProvider(): boolean {
 
 export function hasSerpCapability(): boolean {
   return (
+    // Keyless/self-hosted SERP backends count too — SearXNG and OmniData are
+    // real, working SERP sources, not just paid vendors.
+    hasKeylessSerpCapability() ||
     hasEnv("SERPER_API_KEY") ||
     hasEnv("BRAVE_SEARCH_API_KEY") ||
-    (hasEnv("OMNIDATA_BASE_URL") && hasEnv("OMNIDATA_API_KEY")) ||
     (hasEnv("DATAFORSEO_LOGIN") && hasEnv("DATAFORSEO_PASSWORD")) ||
     // Firecrawl /v1/search returns live Google organic results — a real,
     // working SERP backend whenever a Firecrawl key is configured.
@@ -209,6 +211,7 @@ export function getCapabilitiesSummary() {
   const configured = providers.filter((p) => p.configured).length;
   const activeSerp =
     hasEnv("OMNIDATA_BASE_URL") && hasEnv("OMNIDATA_API_KEY") ? "omnidata" :
+    hasEnv("SEARXNG_URL") || hasEnv("SEARXNG_URLS") ? "searxng" :
     hasEnv("SERPER_API_KEY") ? "serper" :
     hasEnv("BRAVE_SEARCH_API_KEY") ? "brave" :
     hasLLMMentionsCapability() ? "dataforseo" :

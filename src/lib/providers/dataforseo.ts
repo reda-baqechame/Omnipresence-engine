@@ -343,6 +343,40 @@ export async function getBacklinks(
 }
 
 /**
+ * Real Common Crawl domain authority (0-100 harmonic centrality) + the true
+ * distinct referring-domain count, via OmniData's /domain/authority/live. This
+ * is the free DR replacement; returns null when OmniData isn't configured or the
+ * webgraph isn't ingested yet (caller falls back to Tranco/rank.to).
+ */
+export async function getOmniDataAuthority(domain: string): Promise<{
+  authority: number | null;
+  referringDomains: number | null;
+  source: "commoncrawl_webgraph" | "unavailable";
+} | null> {
+  if (!USE_OMNIDATA) return null;
+  try {
+    const data = await dataForSEORequest<{
+      tasks: Array<{
+        result: Array<{
+          authority?: number | null;
+          referring_domains?: number | null;
+          data_source?: string;
+        }>;
+      }>;
+    }>("/domain/authority/live", [{ target: domain }]);
+    const r = data.tasks?.[0]?.result?.[0];
+    if (!r) return null;
+    return {
+      authority: typeof r.authority === "number" ? r.authority : null,
+      referringDomains: typeof r.referring_domains === "number" ? r.referring_domains : null,
+      source: r.data_source === "commoncrawl_webgraph" ? "commoncrawl_webgraph" : "unavailable",
+    };
+  } catch {
+    return null;
+  }
+}
+
+/**
  * Real average CPC (USD) for keywords from the Google Ads Keyword Planner via
  * OmniData. Returns null when the planner is not configured so callers can fall
  * back to industry defaults honestly.

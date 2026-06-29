@@ -1,6 +1,6 @@
 import type { BacklinkRow } from "../types.js";
 import { runSerpLive } from "./serp.js";
-import { getInboundLinks } from "./webgraph.js";
+import { getInboundLinks, getDomainAuthorityBatch } from "./webgraph.js";
 
 const OPR_KEY = process.env.OPENPAGERANK_API_KEY;
 
@@ -84,6 +84,8 @@ export async function runBacklinks(target: string): Promise<{
   domain_rank?: number;
   /** "webgraph" = real Common Crawl edges; "estimated" = link: operator fallback. */
   data_source: "webgraph" | "estimated";
+  /** Where the 0-100 domain ratings came from (CC harmonic centrality vs OPR). */
+  dr_source: "commoncrawl" | "openpagerank" | "none";
   items: BacklinkRow[];
 }> {
   const domain = target.replace(/^https?:\/\//, "").replace(/^www\./, "").split("/")[0];
@@ -106,21 +108,30 @@ export async function runBacklinks(target: string): Promise<{
     merged.push(row);
   }
 
-  // Real DR for the target + each referring domain (one batched OpenPageRank call).
-  const drMap = await fetchOpenPageRankBatch([domain, ...merged.map((r) => r.source_domain)]);
+  // DR for the target + each referring domain. Prefer real Common Crawl harmonic
+  // centrality (free, no key); only fall back to OpenPageRank for the hosts the
+  // rank index doesn't cover. This makes DR work at $0 once the webgraph is ingested.
+  const allHosts = [domain, ...merged.map((r) => r.source_domain)];
+  const ccAuthority = await getDomainAuthorityBatch(allHosts);
+  const uncovered = allHosts.filter((h) => !ccAuthority.has(h));
+  const drMap = await fetchOpenPageRankBatch(uncovered);
+  const drFor = (host: string): number | undefined => ccAuthority.get(host) ?? drMap.get(host);
   for (const row of merged) {
-    const rdr = drMap.get(row.source_domain);
+    const rdr = drFor(row.source_domain);
     if (rdr !== undefined) row.domain_rank = rdr;
   }
 
   const referringDomains = new Set(merged.map((r) => r.source_domain).filter(Boolean));
+  const drSource: "commoncrawl" | "openpagerank" | "none" =
+    ccAuthority.size > 0 ? "commoncrawl" : drMap.size > 0 ? "openpagerank" : "none";
 
   return {
     target: domain,
     total_count: merged.reduce((sum, r) => sum + (r.link_count ?? 1), 0),
     referring_domains: referringDomains.size,
-    domain_rank: drMap.get(domain),
+    domain_rank: drFor(domain),
     data_source: dataSource,
+    dr_source: drSource,
     items: merged.slice(0, 100),
   };
 }

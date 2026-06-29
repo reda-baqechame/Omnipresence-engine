@@ -99,6 +99,39 @@ docker compose up -d                  # app + OmniData + worker + Redis
 docker compose --profile keyless up   # also start SearXNG + Ollama
 ```
 
+### Seed the Common Crawl backlink/authority moat (one-time)
+
+After the `/data` volume is attached to **omnidata-api**, seed the host-graph once.
+Pick the latest release id from [commoncrawl.org/web-graphs](https://commoncrawl.org/web-graphs):
+
+```bash
+# Runs inside the omnidata service (streams multi-GB files into DuckDB at /data)
+railway run --service omnidata-api npm run webgraph:ingest -- <release-id>
+```
+
+Then set `COMMONCRAWL_WEBGRAPH_RELEASE=<release-id>` on the **app** so the monthly
+cron (`monthly-webgraph-reingest`, 1st @ 04:00 UTC) keeps it fresh. Verify:
+`GET {omnidata}/v3/backlinks/webgraph/status` should report `webgraph_ready: true`
+with non-zero `vertex_count`/`edge_count`. Once ingested, `POST /v3/domain/authority/live`
+returns real harmonic-centrality authority + referring-domain counts at $0/lookup.
+
+### Direct social auto-posting (no Buffer/Ayrshare fees)
+
+Posts publish natively via the platform APIs only for assets a human moved to
+`approved` with a `scheduled_at` (the approval gate). Set on **app**:
+
+- X: `X_ACCESS_TOKEN` (OAuth2 user token, `tweet.write` scope).
+- LinkedIn: `LINKEDIN_ACCESS_TOKEN` **and** `LINKEDIN_AUTHOR_URN` (both required).
+
+When a platform isn't configured, the asset is queued to the ops queue for manual
+posting instead of being faked.
+
+### Email (sovereign-first)
+
+Set a self-hosted SMTP relay (`SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASS`,
+`SMTP_FROM`) for $0 transactional email, or `RESEND_API_KEY` as the managed
+fallback. The email port tries SMTP first, then Resend.
+
 ### Required environment variables
 
 Copy from `.env.example`. Minimum for a working deploy:

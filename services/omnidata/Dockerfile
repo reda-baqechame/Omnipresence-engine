@@ -19,6 +19,11 @@ COPY tsconfig.json ./
 COPY src ./src
 RUN npm install typescript tsx && npm run build && npm prune --omit=dev
 
+# Non-fatal sanity log: confirms the native DuckDB binding loaded in the image so
+# the Common Crawl webgraph moat works. If it's ever unavailable, the build still
+# succeeds (engines fall back) but the log makes the regression obvious.
+RUN node -e "import('@duckdb/node-api').then(()=>console.log('[omnidata] DuckDB binding OK')).catch(e=>console.warn('[omnidata] DuckDB binding UNAVAILABLE:', e.message))"
+
 RUN if [ "$INSTALL_CHROMIUM" = "true" ]; then \
       npx playwright install --with-deps chromium; \
     fi

@@ -13,7 +13,7 @@ import { findContentGaps } from "../engines/content-gaps.js";
 import { findBacklinkGaps } from "../engines/backlink-gaps.js";
 import { runMapsLive } from "../engines/maps-serp.js";
 import { getRankHistoryHydrated } from "../store.js";
-import { isWebgraphReady, getWebgraphMeta, triggerIngestAsync, isIngestInFlight } from "../engines/webgraph.js";
+import { isWebgraphReady, getWebgraphMeta, triggerIngestAsync, isIngestInFlight, getDomainAuthority, getReferringDomainCount } from "../engines/webgraph.js";
 import { getKeywordMetrics, hasKeywordPlanner } from "../engines/keyword-planner.js";
 import { getTrends } from "../engines/trends.js";
 import { detectTechStack } from "../engines/techstack.js";
@@ -100,6 +100,40 @@ router.post("/v3/backlinks/summary/live", async (req, res) => {
   }
   const result = await runBacklinks(domain);
   res.json(dfsResponse([{ result: [result] }]));
+});
+
+// Live Common Crawl domain authority + referring-domain count. The free DR
+// replacement for DataForSEO/Ahrefs: harmonic-centrality authority (0-100) plus
+// the real distinct referring-domain total, straight from the ingested webgraph.
+router.post("/v3/domain/authority/live", async (req, res) => {
+  const item = (req.body as Array<{ target?: string; domain?: string }>)?.[0];
+  const raw = item?.target || item?.domain;
+  if (!raw) {
+    res.status(400).json(dfsResponse([], 40000));
+    return;
+  }
+  const clean = raw.replace(/^https?:\/\//, "").replace(/^www\./, "").split("/")[0].toLowerCase();
+  const [authority, referringDomains, ready] = await Promise.all([
+    getDomainAuthority(clean),
+    getReferringDomainCount(clean),
+    isWebgraphReady(),
+  ]);
+  res.json(
+    dfsResponse([
+      {
+        result: [
+          {
+            target: clean,
+            authority: authority?.authority ?? null,
+            harmonic_pos: authority?.harmonic_pos ?? null,
+            pr_pos: authority?.pr_pos ?? null,
+            referring_domains: referringDomains ?? null,
+            data_source: ready && authority ? "commoncrawl_webgraph" : "unavailable",
+          },
+        ],
+      },
+    ])
+  );
 });
 
 router.post("/v3/keywords/suggestions/live", async (req, res) => {
