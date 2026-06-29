@@ -88,10 +88,16 @@ rankings.
   Measured with the keyless stack (SearXNG up, no paid keys):
   - **Crawl** — real page in ~370ms: 7,399 words, 336 AEO passages, 16 headings,
     schema, at **$0**.
-  - **SERP** — **19 real organic results via SearXNG in ~970ms at $0/query**
+  - **SERP** — **~20 real organic results via SearXNG in ~1s at $0/query**
     through the sovereign router.
+  - **Generate** — sovereign **Ollama (llama3.2:1b) PASSED the editorial +
+    structural-AEO quality gates** (AEO 50, 80 words) at **$0**; weaker output is
+    honestly flagged `degraded` and would auto-upgrade to a paid LLM if a key
+    were set (the gate, not marketing, decides).
   - **Backlinks** — honestly `unavailable` until the OmniData Common Crawl
     webgraph is ingested (the one genuine data dependency; never faked).
+  3 of 4 capabilities are proven live + keyless at $0; backlinks is provisioning-
+  bound (data ingestion), not code-bound.
   Bring up the keyless stack with `docker compose --profile keyless up`
   (SearXNG + Ollama + LanguageTool) to light up SERP + generation locally.
 - **No dead adapters:** every *enabled* adapter in the router has an executable

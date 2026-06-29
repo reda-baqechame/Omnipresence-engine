@@ -1,14 +1,14 @@
 {
-  "startedAt": "2026-06-29T04:15:41.530Z",
-  "finishedAt": "2026-06-29T04:16:31.467Z",
-  "durationMs": 49936,
+  "startedAt": "2026-06-29T04:13:55.732Z",
+  "finishedAt": "2026-06-29T04:14:57.093Z",
+  "durationMs": 61360,
   "crawl": [
     {
       "input": "https://en.wikipedia.org/wiki/Search_engine_optimization",
       "sovereign": {
         "ran": true,
         "success": true,
-        "ms": 297,
+        "ms": 295,
         "provider": "playwright-crawl",
         "costPerCallUsd": 0,
         "count": 336,
@@ -44,13 +44,13 @@
       "sovereign": {
         "ran": true,
         "success": true,
-        "ms": 971,
+        "ms": 1039,
         "provider": "searxng",
         "costPerCallUsd": 0,
-        "count": 16
+        "count": 20
       },
       "paid": null,
-      "verdict": "16 organic results via searxng ($0/query)"
+      "verdict": "20 organic results via searxng ($0/query)"
     }
   ],
   "generate": [
@@ -58,27 +58,21 @@
       "input": "what is SEO (structured)",
       "sovereign": {
         "ran": true,
-        "success": true,
-        "ms": 48667,
-        "provider": "ollama-generate",
+        "success": false,
+        "ms": 60025,
+        "provider": "ollama",
         "costPerCallUsd": 0,
-        "count": 80,
-        "signal": {
-          "words": 80,
-          "structureAeo": 50,
-          "passed": 1,
-          "degraded": 0
-        }
+        "error": "The operation was aborted due to timeout"
       },
       "paid": null,
-      "verdict": "sovereign Ollama PASSED quality gates (AEO 50, 80 words) at $0"
+      "verdict": "generation unavailable (configure Ollama or a paid LLM key)"
     }
   ],
   "summary": {
     "sovereignCostUsd": 0,
     "paidCostUsd": 0,
     "costSavedUsd": 0,
-    "sovereignWins": 3,
+    "sovereignWins": 2,
     "total": 4,
     "notes": [
       "No Firecrawl key — crawl ran sovereign-only.",

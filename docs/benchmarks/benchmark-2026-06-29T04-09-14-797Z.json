@@ -1,14 +1,14 @@
 {
-  "startedAt": "2026-06-29T04:15:41.530Z",
-  "finishedAt": "2026-06-29T04:16:31.467Z",
-  "durationMs": 49936,
+  "startedAt": "2026-06-29T04:08:20.289Z",
+  "finishedAt": "2026-06-29T04:09:14.781Z",
+  "durationMs": 54490,
   "crawl": [
     {
       "input": "https://en.wikipedia.org/wiki/Search_engine_optimization",
       "sovereign": {
         "ran": true,
         "success": true,
-        "ms": 297,
+        "ms": 295,
         "provider": "playwright-crawl",
         "costPerCallUsd": 0,
         "count": 336,
@@ -44,13 +44,13 @@
       "sovereign": {
         "ran": true,
         "success": true,
-        "ms": 971,
+        "ms": 2482,
         "provider": "searxng",
         "costPerCallUsd": 0,
-        "count": 16
+        "count": 19
       },
       "paid": null,
-      "verdict": "16 organic results via searxng ($0/query)"
+      "verdict": "19 organic results via searxng ($0/query)"
     }
   ],
   "generate": [
@@ -59,19 +59,19 @@
       "sovereign": {
         "ran": true,
         "success": true,
-        "ms": 48667,
+        "ms": 51710,
         "provider": "ollama-generate",
         "costPerCallUsd": 0,
-        "count": 80,
+        "count": 121,
         "signal": {
-          "words": 80,
-          "structureAeo": 50,
-          "passed": 1,
-          "degraded": 0
+          "words": 121,
+          "structureAeo": 25,
+          "passed": 0,
+          "degraded": 1
         }
       },
       "paid": null,
-      "verdict": "sovereign Ollama PASSED quality gates (AEO 50, 80 words) at $0"
+      "verdict": "sovereign Ollama passed quality gates (AEO 25, 121 words) at $0"
     }
   ],
   "summary": {

@@ -15,6 +15,8 @@ import { crawlContent, fetchBacklinks } from "@/lib/providers/capability-runners
 import { scrapePageFirecrawl, hasFirecrawlCapability } from "@/lib/providers/firecrawl";
 import { searchGoogleOrganicRouter } from "@/lib/providers/serp-router";
 import { getBacklinks, hasLabsApi } from "@/lib/providers/dataforseo";
+import { generateContent } from "@/lib/providers/generate-router";
+import { hasOllamaCapability } from "@/lib/providers/ollama";
 
 export interface BenchmarkInputs {
   urls?: string[];
@@ -49,6 +51,7 @@ export interface BenchmarkReport {
   crawl: CapabilityResult[];
   backlinks: CapabilityResult[];
   serp: CapabilityResult[];
+  generate: CapabilityResult[];
   summary: {
     sovereignCostUsd: number;
     paidCostUsd: number;
@@ -211,13 +214,81 @@ export async function runProviderBenchmark(inputs?: BenchmarkInputs): Promise<Be
     serp.push({ input: q, sovereign: sovMetric, paid: null, verdict });
   }
 
-  const all = [...crawl, ...backlinks, ...serp];
+  // ---- Generate: Ollama (sovereign, gated) vs paid LLM upgrade ----
+  const generate: CapabilityResult[] = [];
+  {
+    const system =
+      "You are an expert SEO content writer. Always format answers in Markdown: begin with ONE short summary sentence (max 25 words), then a line starting with '## ', then a bulleted list where each item starts with '- '.";
+    const user =
+      "Write a short answer to: What is search engine optimization? Add a '## Key ranking factors' heading followed by exactly 3 '- ' bullet points.";
+    const g = await timed(() =>
+      generateContent(system, user, { minWords: 60, requireStructure: true, minStructureScore: 50, minReadingEase: 20 })
+    );
+    const out = g.value;
+    const provider = out?.provider;
+    const quality = out?.quality;
+    const passed = Boolean(quality?.passed);
+    const degraded = Boolean(out?.degraded);
+    const servedBySovereign = Boolean(provider && provider.startsWith("ollama"));
+    const baseSignal = quality
+      ? { words: quality.words, structureAeo: quality.structureScore, passed: passed ? 1 : 0, degraded: degraded ? 1 : 0 }
+      : undefined;
+    const ollamaUp = hasOllamaCapability();
+
+    let sovereign: SideMetric;
+    let paid: SideMetric | null = null;
+    let verdict: string;
+
+    if (servedBySovereign) {
+      // Honest: a real "win" requires PASSING the gates. Degraded output is not a win.
+      sovereign = {
+        ran: true,
+        success: Boolean(out?.success) && passed,
+        ms: g.ms,
+        provider,
+        costPerCallUsd: 0,
+        count: quality?.words,
+        signal: baseSignal,
+        error: passed ? undefined : `failed quality gates: ${quality?.reasons?.join("; ") || "low quality"}`,
+      };
+      verdict = passed
+        ? `sovereign Ollama PASSED quality gates (AEO ${quality?.structureScore}, ${quality?.words} words) at $0`
+        : `sovereign Ollama produced ${quality?.words}w but FAILED gates (AEO ${quality?.structureScore} < 50) — flagged degraded; a paid LLM key would auto-upgrade`;
+    } else if (out?.success) {
+      // A paid LLM served the request (sovereign failed gates and was upgraded).
+      sovereign = {
+        ran: ollamaUp,
+        success: false,
+        ms: g.ms,
+        provider: ollamaUp ? "ollama" : undefined,
+        costPerCallUsd: 0,
+        error: ollamaUp ? "sovereign output failed gates; transparently upgraded" : "Ollama not configured",
+      };
+      paid = { ran: true, success: true, ms: g.ms, provider, costPerCallUsd: 0.01, count: quality?.words, signal: baseSignal };
+      verdict = `sovereign failed gates; transparently upgraded to ${provider}`;
+    } else {
+      sovereign = {
+        ran: ollamaUp,
+        success: false,
+        ms: g.ms,
+        provider: ollamaUp ? "ollama" : undefined,
+        costPerCallUsd: 0,
+        error: out?.error || g.error || "generation unavailable",
+      };
+      verdict = "generation unavailable (configure Ollama or a paid LLM key)";
+    }
+
+    generate.push({ input: "what is SEO (structured)", sovereign, paid, verdict });
+  }
+
+  const all = [...crawl, ...backlinks, ...serp, ...generate];
   const sovereignCostUsd = all.reduce((s, r) => s + (r.sovereign.success ? r.sovereign.costPerCallUsd : 0), 0);
   const paidCostUsd = all.reduce((s, r) => s + (r.paid?.success ? r.paid.costPerCallUsd : 0), 0);
   const sovereignWins = all.filter((r) => r.sovereign.success && (!r.paid || r.sovereign.costPerCallUsd <= r.paid.costPerCallUsd)).length;
 
   if (!hasFirecrawlCapability()) notes.push("No Firecrawl key — crawl ran sovereign-only.");
   if (!hasLabsApi()) notes.push("No DataForSEO/Labs key — backlinks ran sovereign-only.");
+  if (!hasOllamaCapability()) notes.push("No Ollama — generation needs OLLAMA_BASE_URL or a paid LLM key.");
   notes.push("Honest scope: cost/freshness/integration win is measured; raw paid-index breadth is not claimed.");
 
   return {
@@ -227,6 +298,7 @@ export async function runProviderBenchmark(inputs?: BenchmarkInputs): Promise<Be
     crawl,
     backlinks,
     serp,
+    generate,
     summary: { sovereignCostUsd, paidCostUsd, costSavedUsd: Math.max(0, paidCostUsd - sovereignCostUsd), sovereignWins, total: all.length, notes },
   };
 }

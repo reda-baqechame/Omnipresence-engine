@@ -75,6 +75,7 @@ async function main() {
   section("CRAWL (sovereign keyless vs Firecrawl)", report.crawl);
   section("BACKLINKS (Common Crawl webgraph vs DataForSEO)", report.backlinks);
   section("SERP (router, sovereign-first)", report.serp);
+  section("GENERATE (Ollama gated vs paid LLM)", report.generate || []);
 
   const s = report.summary;
   console.log("\n=== Summary ===");
