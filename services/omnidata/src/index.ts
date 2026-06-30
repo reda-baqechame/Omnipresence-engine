@@ -1,5 +1,6 @@
 import express from "express";
 import routes from "./api/routes.js";
+import presence from "./api/presence.js";
 import { verifySignedRequest, assertProductionAuth } from "./middleware/auth.js";
 import { startWorker } from "./queue.js";
 
@@ -18,6 +19,8 @@ app.get("/health", (_req, res) => {
 });
 
 app.use(verifySignedRequest);
+// Proprietary PresenceOS namespace + DataForSEO-compatible /v3 routes.
+app.use(presence);
 app.use(routes);
 
 if (process.env.OMNIDATA_ENABLE_WORKER !== "false") {

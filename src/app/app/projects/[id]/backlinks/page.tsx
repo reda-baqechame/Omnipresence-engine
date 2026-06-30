@@ -1,5 +1,6 @@
 import { notFound } from "next/navigation";
 import { BacklinksPanel } from "@/components/backlinks-panel";
+import { BacklinkGraphPanel } from "@/components/backlink-graph-panel";
 import { LinkBuildingPanel } from "@/components/link-building-panel";
 import { ExportButtons } from "@/components/export-buttons";
 import { getProject } from "@/lib/projects";
@@ -24,6 +25,7 @@ export default async function BacklinksPage({
         </div>
         <ExportButtons projectId={id} types={["backlinks"]} />
       </div>
+      <BacklinkGraphPanel projectId={id} />
       <BacklinksPanel projectId={id} />
       <LinkBuildingPanel projectId={id} />
     </div>

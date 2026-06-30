@@ -221,6 +221,137 @@ export async function searchGoogleOrganic(
   }
 }
 
+export interface SerpIntelligenceResult {
+  keyword: string;
+  location: string;
+  device: "desktop" | "mobile";
+  organic: Array<{ position: number; title: string; url: string; domain: string; description?: string }>;
+  ads: Array<{ position: number; title: string; url: string; domain: string }>;
+  peopleAlsoAsk: string[];
+  localPack: Array<{ title: string; url?: string }>;
+  featuredSnippet?: { title?: string; url?: string; description?: string };
+  aiOverview?: { present: boolean; text?: string; citedUrls: string[]; citedDomains: string[] };
+  featureTypes: string[];
+  provider: "omnidata" | "dataforseo";
+}
+
+function domainOf(url?: string): string {
+  try {
+    return new URL(url || "").hostname.replace(/^www\./, "").toLowerCase();
+  } catch {
+    return "";
+  }
+}
+
+/**
+ * Full SERP-feature decomposition for the SERP Intelligence explorer: organic,
+ * paid/ads, People-Also-Ask, local pack, featured snippet, AI Overview, and the
+ * distinct feature types present. Uses the same DataForSEO-compatible endpoint
+ * (served sovereign by OmniData when active). Returns null when unavailable so
+ * the caller labels the surface honestly instead of fabricating a SERP.
+ */
+export async function getSerpIntelligence(
+  keyword: string,
+  location = "United States",
+  device: "desktop" | "mobile" = "desktop"
+): Promise<SerpIntelligenceResult | null> {
+  try {
+    const data = await dataForSEORequest<{
+      tasks: Array<{
+        result: Array<{
+          items: Array<{
+            type: string;
+            rank_absolute?: number;
+            title?: string;
+            url?: string;
+            description?: string;
+            domain?: string;
+            items?: Array<{ title?: string; url?: string; question?: string }>;
+          }>;
+        }>;
+      }>;
+    }>("/serp/google/organic/live/advanced", [
+      {
+        keyword,
+        location_name: location,
+        language_code: "en",
+        device,
+        os: device === "mobile" ? "android" : "windows",
+        depth: 30,
+        load_async_ai_overview: true,
+      },
+    ]);
+
+    const items = data.tasks?.[0]?.result?.[0]?.items;
+    if (!items || items.length === 0) return null;
+
+    const organic = items
+      .filter((i) => i.type === "organic")
+      .map((i) => ({
+        position: i.rank_absolute || 0,
+        title: i.title || "",
+        url: i.url || "",
+        domain: i.domain || domainOf(i.url),
+        description: i.description,
+      }));
+
+    const ads = items
+      .filter((i) => i.type === "paid")
+      .map((i) => ({
+        position: i.rank_absolute || 0,
+        title: i.title || "",
+        url: i.url || "",
+        domain: i.domain || domainOf(i.url),
+      }));
+
+    const paaItem = items.find((i) => i.type === "people_also_ask");
+    const peopleAlsoAsk = (paaItem?.items || [])
+      .map((q) => q.question || q.title || "")
+      .filter(Boolean);
+
+    const localPackItem = items.find((i) => i.type === "local_pack");
+    const localPack = localPackItem
+      ? (localPackItem.items && localPackItem.items.length
+          ? localPackItem.items.map((p) => ({ title: p.title || "", url: p.url }))
+          : [{ title: localPackItem.title || "", url: localPackItem.url }]
+        ).filter((p) => p.title)
+      : [];
+
+    const fsItem = items.find((i) => i.type === "featured_snippet");
+    const featuredSnippet = fsItem
+      ? { title: fsItem.title, url: fsItem.url, description: fsItem.description }
+      : undefined;
+
+    const aiItem = items.find((i) => i.type === "ai_overview");
+    const aiOverview = aiItem
+      ? {
+          present: true,
+          text: aiItem.description,
+          citedUrls: (aiItem.items || []).map((s) => s.url || "").filter(Boolean),
+          citedDomains: [...new Set((aiItem.items || []).map((s) => domainOf(s.url)).filter(Boolean))],
+        }
+      : undefined;
+
+    const featureTypes = Array.from(new Set(items.map((i) => i.type).filter((t) => t && t !== "organic")));
+
+    return {
+      keyword,
+      location,
+      device,
+      organic,
+      ads,
+      peopleAlsoAsk,
+      localPack,
+      featuredSnippet,
+      aiOverview,
+      featureTypes,
+      provider: USE_OMNIDATA ? "omnidata" : "dataforseo",
+    };
+  } catch {
+    return null;
+  }
+}
+
 export async function searchGoogleAIMode(
   keyword: string,
   location = "United States"

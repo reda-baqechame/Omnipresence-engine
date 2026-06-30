@@ -85,7 +85,18 @@ export function calculateOmniPresenceScore(inputs: ScoreInputs): Omit<OmniPresen
     authority_mentions: { value: calculateAuthorityMentions(inputs.authorityOpportunities, pool, inputs.domainAuthority), available: hasAuthoritySignal },
     // The technical audit always runs for real (keyless), so it's always measured.
     technical_readiness: { value: calculateTechnicalReadiness(inputs.technicalFindings, inputs.pageSpeedScore), available: true },
-    conversion_readiness: { value: calculateConversionReadiness(inputs.hasConversionTracking, inputs.monthlyTraffic, inputs.behaviorSignal), available: true },
+    // Conversion readiness is only a MEASURED dimension when we actually have a
+    // conversion/traffic/behavior signal. With zero signal the function returns a
+    // flat "have-a-website" baseline that must NOT be counted toward (and dilute)
+    // the headline score as if it were measured.
+    conversion_readiness: {
+      value: calculateConversionReadiness(inputs.hasConversionTracking, inputs.monthlyTraffic, inputs.behaviorSignal),
+      available: Boolean(
+        inputs.hasConversionTracking ||
+          (typeof inputs.monthlyTraffic === "number" && inputs.monthlyTraffic > 0) ||
+          typeof inputs.behaviorSignal === "number"
+      ),
+    },
   } as const;
 
   // Weighted average over ONLY the available dimensions (re-normalized).

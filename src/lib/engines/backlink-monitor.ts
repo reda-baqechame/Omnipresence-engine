@@ -2,6 +2,9 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import { getBacklinks, getBacklinkGraph, getLinkIntersection } from "@/lib/providers/dataforseo";
 import { getBacklinksFree } from "@/lib/providers/backlinks-free";
 import { hasSerpCapability } from "@/lib/config/capabilities";
+import { recordMeasurementEvidence } from "@/lib/engines/evidence";
+
+const BACKLINK_GRAPH_PARSER_VERSION = "backlink-graph@1";
 
 export interface BacklinkRow {
   url: string;
@@ -150,6 +153,25 @@ export async function snapshotProjectBacklinkGraph(
     top_links: topLinks,
     intersection: intersectionRows,
   });
+
+  // First-class evidence for the backlink graph measurement (best-effort).
+  await recordMeasurementEvidence(supabase, {
+    projectId,
+    capability: "backlink_graph",
+    target: domain,
+    provider: "omnidata",
+    sourceUrl: `https://${domain}`,
+    parserVersion: BACKLINK_GRAPH_PARSER_VERSION,
+    dataSource: graph.dataSource,
+    rawPayload: { totalLinks: graph.totalLinks, links: graph.links?.slice(0, 500), intersection: intersectionRows },
+    excerpt: {
+      total_links: graph.totalLinks,
+      referring_domains: graph.referringDomains,
+      new_count: graph.newCount,
+      lost_count: graph.lostCount,
+      toxic_count: graph.toxicCount,
+    },
+  }).catch(() => {});
 
   return {
     available: true,

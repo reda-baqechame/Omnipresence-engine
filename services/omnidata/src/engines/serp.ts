@@ -13,7 +13,13 @@ function domainFromUrl(url: string): string {
   }
 }
 
-function toDataForSeoItems(result: SerpResult): SerpItem[] {
+/**
+ * Pure SERP decomposition: a provider-agnostic SerpResult → DataForSEO-shaped
+ * item list (featured snippet, AI Overview + sources, ranked organic, PAA, local
+ * pack). Exported so the parser contract can be audited offline against a known
+ * fixture, independent of which live SERP backend produced the SerpResult.
+ */
+export function toDataForSeoItems(result: SerpResult): SerpItem[] {
   const items: SerpItem[] = [];
   let rank = 1;
 

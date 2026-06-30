@@ -436,6 +436,20 @@ export function buildDeterministicGuarantee(
   };
 }
 
+/**
+ * Build the guarantee report from the results ledger.
+ *
+ * REFUND-SAFE BY CONSTRUCTION: reimbursement is owed only when a deterministic
+ * deliverable WE CONTROLLED failed (a ledger entry with status "failed") — never
+ * merely because uncontrollable outcome KPIs (rankings, traffic, citations) did
+ * not move within the measurement window. SEO/AEO lift is not instantaneous and
+ * is influenced by factors outside our control, so tying refunds to KPI movement
+ * would create unbounded refund exposure for work we actually delivered. The KPI
+ * deltas are still reported for full transparency, they just do not drive refunds.
+ *
+ * Outcome-based guarantees (if ever offered) are gated separately on healthy
+ * first-party data via evaluateMarketingGate / connector-health.
+ */
 export function buildGuaranteeReportFromLedger(
   entries: ResultsLedgerEntry[],
   scoreDelta: { before: number; after: number },
@@ -444,30 +458,37 @@ export function buildGuaranteeReportFromLedger(
 ): {
   summary: string;
   actionsCompleted: number;
+  failedDeliverables: number;
   scoreChange: number;
   trafficChange: number;
   citationChange: number;
+  /** The deterministic guarantee is satisfied: we delivered controllable work and nothing failed. */
   guaranteeEligible: boolean;
+  /** A refund is owed: a deliverable we controlled failed (NOT because KPIs lagged). */
   reimbursementEligible: boolean;
   evidence: ResultsLedgerEntry[];
 } {
   const completed = entries.filter((e) => e.status === "completed" || e.status === "verified");
+  const failed = entries.filter((e) => e.status === "failed");
   const scoreChange = scoreDelta.after - scoreDelta.before;
   const trafficChange = trafficDelta.after - trafficDelta.before;
   const citationChange = citationDelta.after - citationDelta.before;
 
-  const actionsMet = completed.length >= 5;
-  const kpiMet = scoreChange >= 15 || citationChange >= 0.05 || trafficChange >= 50;
-  const guaranteeEligible = actionsMet && !kpiMet;
+  // Refund is driven purely by failed controllable deliverables.
+  const reimbursementEligible = failed.length > 0;
+  // Guarantee is in good standing when we delivered work and nothing we promised failed.
+  const guaranteeEligible = !reimbursementEligible && completed.length > 0;
 
+  const failureNote = failed.length ? `, ${failed.length} failed` : "";
   return {
-    summary: `${completed.length} actions executed. Score ${scoreChange >= 0 ? "+" : ""}${scoreChange.toFixed(1)}, traffic ${trafficChange >= 0 ? "+" : ""}${trafficChange}, citations ${citationChange >= 0 ? "+" : ""}${citationChange.toFixed(2)}.`,
+    summary: `${completed.length} actions executed${failureNote}. Score ${scoreChange >= 0 ? "+" : ""}${scoreChange.toFixed(1)}, traffic ${trafficChange >= 0 ? "+" : ""}${trafficChange}, citations ${citationChange >= 0 ? "+" : ""}${citationChange.toFixed(2)}.`,
     actionsCompleted: completed.length,
+    failedDeliverables: failed.length,
     scoreChange,
     trafficChange,
     citationChange,
     guaranteeEligible,
-    reimbursementEligible: guaranteeEligible,
+    reimbursementEligible,
     evidence: completed,
   };
 }

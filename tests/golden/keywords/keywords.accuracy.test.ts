@@ -30,6 +30,7 @@ const golden = JSON.parse(readFileSync(join(here, "keywords.golden.json"), "utf8
     anchorScore: number;
     cases: Array<{ keyword: string; score: number; expectedVolume: number; expectedBucket: string }>;
   };
+  knownVolumeBands: Array<{ keyword: string; volume: number; expectedBucket: string }>;
 };
 
 test("volume buckets land on the correct Google log band at every boundary", () => {
@@ -99,4 +100,24 @@ test("fromKnownVolume tags keyword_planner as high confidence with tight band", 
   assert.equal(v.range_bucket, "10K–100K");
   assert.equal(v.volume_low, 32000);
   assert.equal(v.volume_high, 48000);
+});
+
+test("known real-world volumes land in the correct Google log band", () => {
+  for (const c of golden.knownVolumeBands) {
+    const v = fromKnownVolume(c.keyword, c.volume);
+    assert.equal(v.range_bucket, c.expectedBucket, `"${c.keyword}" (${c.volume}/mo) → ${c.expectedBucket}`);
+  }
+});
+
+test("a non-Keyword-Planner volume is honestly LOW confidence with a wider band", () => {
+  // The autocomplete/Trends heuristic path must never masquerade as exact: it is
+  // low confidence and carries a deliberately wider ±band than Keyword Planner.
+  const heuristic = fromKnownVolume("emerging niche term", 5000, "trends_extrapolated");
+  assert.equal(heuristic.confidence, "low");
+  assert.equal(heuristic.volume_low, 3000); // 0.6x — wider than KP's 0.8x
+  assert.equal(heuristic.volume_high, 8000); // 1.6x — wider than KP's 1.2x
+  const planner = fromKnownVolume("emerging niche term", 5000, "keyword_planner");
+  // KP band is strictly tighter than the heuristic band (more trustworthy).
+  assert.ok((planner.volume_low ?? 0) > (heuristic.volume_low ?? 0));
+  assert.ok((planner.volume_high ?? 0) < (heuristic.volume_high ?? 0));
 });

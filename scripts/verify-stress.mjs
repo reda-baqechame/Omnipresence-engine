@@ -29,8 +29,23 @@ function walk(dir, acc = []) {
 // Repo-relative POSIX paths: the absolute repo path contains a space.
 const files = walk(stressDir).map((f) => relative(root, f).split("\\").join("/"));
 
+// Production/CI mode: an empty stress suite is a HARD FAILURE — we never ship
+// hot-path protections without load proof. Locally we keep skip-with-warning.
+const REQUIRE_FILES =
+  process.env.CI === "true" ||
+  process.env.NODE_ENV === "production" ||
+  process.env.VERIFY_REQUIRE_FILES === "1" ||
+  process.argv.includes("--required");
+
 if (files.length === 0) {
-  console.log("verify:stress — no stress test files found (tests/stress). Nothing to run.");
+  if (REQUIRE_FILES) {
+    console.error(
+      "verify:stress — FAIL: zero stress files found (tests/stress/**/*.stress.test.ts) " +
+        "in CI/production mode. Load proof is mandatory before shipping."
+    );
+    process.exit(1);
+  }
+  console.log("verify:stress — no stress test files found (tests/stress). Nothing to run (local skip).");
   process.exit(0);
 }
 

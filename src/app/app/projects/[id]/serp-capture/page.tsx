@@ -1,6 +1,7 @@
 import { notFound } from "next/navigation";
 import { getProject } from "@/lib/projects";
 import { SerpCapturePanel } from "@/components/serp-capture-panel";
+import { SerpIntelligenceExplorer } from "@/components/serp-intelligence-explorer";
 import { ExportButtons } from "@/components/export-buttons";
 
 export default async function SerpCapturePage({ params }: { params: Promise<{ id: string }> }) {
@@ -19,6 +20,17 @@ export default async function SerpCapturePage({ params }: { params: Promise<{ id
         </div>
         <ExportButtons projectId={id} types={["snippets"]} />
       </div>
+
+      <div className="rounded-xl border border-border p-4">
+        <h3 className="font-semibold">SERP Intelligence explorer</h3>
+        <p className="text-sm text-muted-foreground mt-1 mb-3">
+          Capture the live SERP for any query and deconstruct every feature — organic, ads, People-Also-Ask, local
+          pack, featured snippet, and AI Overview (with its cited domains). Every capture is stored as tamper-evident
+          measurement evidence.
+        </p>
+        <SerpIntelligenceExplorer projectId={id} />
+      </div>
+
       <SerpCapturePanel projectId={id} />
     </div>
   );

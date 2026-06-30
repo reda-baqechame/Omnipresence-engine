@@ -1,4 +1,5 @@
 import { runSerpLive, findDomainPosition } from "./serp.js";
+import { getDomainAuthorityBatch } from "./webgraph.js";
 
 const OPR_KEY = process.env.OPENPAGERANK_API_KEY;
 
@@ -19,6 +20,26 @@ function classifyIntent(keyword: string): "informational" | "commercial" | "tran
   if (/\b(buy|price|cost|quote|hire|book|order)\b/.test(k)) return "transactional";
   if (/\b(best|top|vs|compare|review|alternative)\b/.test(k)) return "commercial";
   return "informational";
+}
+
+/**
+ * Real 0-100 domain authority for the ranking domains, preferring the SOVEREIGN
+ * Common Crawl webgraph (keyless, harmonic-centrality based) and filling any gaps
+ * with OpenPageRank when configured. This makes KD authority-driven without any
+ * paid dependency whenever the webgraph index is ingested.
+ */
+async function resolveAuthorityMap(domains: string[]): Promise<Map<string, number>> {
+  if (domains.length === 0) return new Map();
+  // 1) Sovereign Common Crawl authority first.
+  const cc = await getDomainAuthorityBatch(domains).catch(() => new Map<string, number>());
+  const authorityMap = new Map<string, number>(cc);
+  // 2) Fill domains the webgraph didn't have with OpenPageRank (if configured).
+  const missing = domains.filter((d) => !authorityMap.has(d));
+  if (missing.length > 0) {
+    const opr = await fetchAuthorityBatch(missing);
+    for (const [d, v] of opr) authorityMap.set(d, v);
+  }
+  return authorityMap;
 }
 
 /** Batch real domain ratings (0-100) from OpenPageRank (<=100 domains/call). */
@@ -106,7 +127,7 @@ export async function estimateKeywordDifficulty(keyword: string): Promise<{
     .map((i) => i.type)
     .filter((v, idx, arr) => arr.indexOf(v) === idx);
 
-  const authorityMap = await fetchAuthorityBatch(uniqueDomains);
+  const authorityMap = await resolveAuthorityMap(uniqueDomains);
   const { difficulty, method } = computeDifficulty({
     domains: uniqueDomains,
     serpFeatureTypes: features,

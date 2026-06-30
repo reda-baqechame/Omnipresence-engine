@@ -317,9 +317,8 @@ router.get("/v3/rank_tracker/history/:key", async (req, res) => {
   res.json(dfsResponse([{ result: [{ history }] }]));
 });
 
-router.get("/health", (_req, res) => {
-  res.json({ ok: true, service: "omnidata", version: "0.5.0" });
-});
+// NOTE: /health is registered once, publicly (no-auth), in index.ts so
+// orchestrator probes succeed. It is intentionally NOT duplicated here.
 
 // Local semantic embeddings (keyless transformers.js).
 router.post("/v3/embeddings/batch", async (req, res) => {

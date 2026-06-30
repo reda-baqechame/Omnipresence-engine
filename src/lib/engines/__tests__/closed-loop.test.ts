@@ -106,10 +106,12 @@ test("closed loop produces a real artifact at every hop and an honest guarantee"
   assert.ok(report.actionsCompleted >= 5, "report counts real completed actions");
   assert.equal(report.evidence.length, report.actionsCompleted, "evidence = the actual completed entries");
 
-  // ── Hop 4: GUARANTEE — work delivered (>=5 actions) but KPI not yet met ⇒
-  // guarantee/reimbursement eligible (the honest, defensible contract).
-  assert.equal(report.guaranteeEligible, true);
-  assert.equal(report.reimbursementEligible, true);
+  // ── Hop 4: GUARANTEE — refund-safe model. We delivered every controllable
+  // deliverable and nothing failed, so the guarantee is SATISFIED and NO refund
+  // is owed — even though the uncontrollable outcome KPIs have not moved yet.
+  assert.equal(report.failedDeliverables, 0, "no controllable deliverable failed");
+  assert.equal(report.guaranteeEligible, true, "delivered work, nothing failed → guarantee satisfied");
+  assert.equal(report.reimbursementEligible, false, "KPIs lagging is NOT a refund trigger");
 });
 
 test("when measured KPI lift IS achieved, the guarantee is satisfied (not refund-eligible)", async () => {
@@ -124,12 +126,42 @@ test("when measured KPI lift IS achieved, the guarantee is satisfied (not refund
   const ledger = await getLedgerForProject(sb, projectId);
   const report = buildGuaranteeReport(
     ledger,
-    { before: 40, after: 60 },   // +20 score (>= +15) → KPI met
+    { before: 40, after: 60 },   // +20 score (>= +15) → strong KPI lift
     { before: 100, after: 100 },
     { before: 0.1, after: 0.1 }
   );
-  assert.equal(report.guaranteeEligible, false, "KPI met → no refund owed");
+  // Strong measured lift AND all deliverables met → guarantee satisfied, no refund.
+  assert.equal(report.guaranteeEligible, true, "delivered work, nothing failed → guarantee satisfied");
+  assert.equal(report.reimbursementEligible, false, "lift achieved and nothing failed → no refund");
   assert.ok(report.scoreChange >= 15);
+});
+
+test("a failed controllable deliverable is the ONLY refund trigger (refund-safe)", async () => {
+  const sb = memSupabase() as never;
+  const projectId = "proj-3";
+  // Four delivered, one we promised but could not deliver/verify (status failed).
+  for (let i = 0; i < 4; i++) {
+    await recordLedgerAction(sb, {
+      project_id: projectId, action_type: "schema_deploy", action_surface: "site",
+      description: `deployed ${i}`, baseline_snapshot: {}, outcome_snapshot: {}, status: "completed",
+    });
+  }
+  await recordLedgerAction(sb, {
+    project_id: projectId, action_type: "schema_deploy", action_surface: "site",
+    description: "deploy that failed", baseline_snapshot: {}, outcome_snapshot: {}, status: "failed",
+  });
+  const ledger = await getLedgerForProject(sb, projectId);
+  const report = buildGuaranteeReport(
+    ledger,
+    { before: 40, after: 80 },   // even with HUGE KPI lift...
+    { before: 100, after: 500 },
+    { before: 0.1, after: 0.9 }
+  );
+  // ...a failed controllable deliverable still triggers the refund. KPI lift
+  // never masks a deliverable we failed to deliver.
+  assert.equal(report.failedDeliverables, 1);
+  assert.equal(report.reimbursementEligible, true, "failed deliverable → refund owed");
+  assert.equal(report.guaranteeEligible, false, "a failed deliverable means the guarantee is not met");
 });
 
 test("per-project isolation: one project's ledger never leaks into another's proof", async () => {

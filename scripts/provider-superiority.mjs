@@ -27,6 +27,36 @@ const strict = process.argv.includes("--strict");
 const root = process.cwd();
 const exists = (rel) => fs.existsSync(path.join(root, rel));
 
+// Count the committed ground-truth entries in a golden dataset so the scorecard
+// proves the accuracy floor is measured against REAL data (not an empty stub).
+function countGoldenEntries(rel) {
+  try {
+    const raw = JSON.parse(fs.readFileSync(path.join(root, rel), "utf8"));
+    if (Array.isArray(raw)) return raw.length;
+    if (raw && typeof raw === "object") {
+      // Sum the lengths of every top-level array (datasets are keyed by sub-case).
+      let n = 0;
+      for (const v of Object.values(raw)) if (Array.isArray(v)) n += v.length;
+      return n;
+    }
+    return 0;
+  } catch {
+    return 0;
+  }
+}
+
+// Phase-2 OFFLINE accuracy suites that run with zero network in CI (fixture- or
+// golden-driven), per capability — the reproducible accuracy proof.
+const OFFLINE_ACCURACY_SUITES = {
+  serp: ["tests/golden/serp/serp.accuracy.test.ts", "services/omnidata/src/__tests__/serp-parser.test.ts"],
+  backlinks: ["tests/golden/backlinks/backlinks.accuracy.test.ts"],
+  keywords: ["tests/golden/keywords/keywords.accuracy.test.ts", "services/omnidata/src/__tests__/keyword-difficulty.test.ts"],
+  performance: ["tests/golden/performance/perf-local-tech.accuracy.test.ts", "services/omnidata/src/__tests__/pagespeed-parser.test.ts"],
+  local: ["tests/golden/performance/perf-local-tech.accuracy.test.ts", "services/omnidata/src/__tests__/geo.test.ts"],
+  tech: ["tests/golden/performance/perf-local-tech.accuracy.test.ts"],
+  citations: ["tests/golden/citations/citations.accuracy.test.ts"],
+};
+
 // Each capability: the paid vendor it replaces, the sovereign implementation +
 // the module that must exist, cost economics, freshness, the coverage win, and
 // the golden accuracy floor + dataset that measures it (null when the capability
@@ -169,10 +199,17 @@ for (const [capability, m] of Object.entries(CAPABILITIES)) {
 
   const missingModules = m.modules.filter((mod) => !exists(mod));
   const datasetMissing = m.accuracy ? !exists(m.accuracy.dataset) : false;
+  const datasetEntries = m.accuracy && !datasetMissing ? countGoldenEntries(m.accuracy.dataset) : 0;
+  const offlineSuites = (OFFLINE_ACCURACY_SUITES[capability] || []).filter(exists);
 
   if (!costWins) failures.push(`${capability}: sovereign cost ${m.sovereignCost} > paid ${m.paidCost}`);
   if (missingModules.length) failures.push(`${capability}: sovereign path missing module(s): ${missingModules.join(", ")}`);
   if (datasetMissing) failures.push(`${capability}: golden accuracy dataset missing: ${m.accuracy.dataset}`);
+  // An accuracy-backed capability must have a NON-EMPTY golden dataset, otherwise
+  // the "floor" is unmeasurable and we'd be claiming proof we don't have.
+  if (m.accuracy && !datasetMissing && datasetEntries === 0) {
+    failures.push(`${capability}: golden dataset has zero ground-truth entries: ${m.accuracy.dataset}`);
+  }
 
   const row = {
     capability,
@@ -182,7 +219,9 @@ for (const [capability, m] of Object.entries(CAPABILITIES)) {
     freshness: m.freshness,
     latencyMsP50: latency[capability] ?? null,
     coverage: m.coverage,
-    accuracy: m.accuracy ? { floor: m.accuracy.floor, dataset: m.accuracy.dataset, datasetPresent: !datasetMissing } : null,
+    accuracy: m.accuracy
+      ? { floor: m.accuracy.floor, dataset: m.accuracy.dataset, datasetPresent: !datasetMissing, datasetEntries, offlineSuites }
+      : null,
     sovereignPathPresent: missingModules.length === 0,
   };
   scorecard.push(row);
@@ -192,7 +231,7 @@ for (const [capability, m] of Object.entries(CAPABILITIES)) {
   console.log(`    sovereign: ${m.sovereign} ($${m.sovereignCost}/call)  [path ${missingModules.length === 0 ? "ok" : "MISSING"}]`);
   console.log(`    freshness: ${m.freshness}${latency[capability] != null ? `  | live p50 ${latency[capability]}ms` : ""}`);
   console.log(`    coverage:  ${m.coverage}`);
-  if (m.accuracy) console.log(`    accuracy:  floor[${m.accuracy.floor}] dataset[${m.accuracy.dataset}${datasetMissing ? " — MISSING" : ""}]`);
+  if (m.accuracy) console.log(`    accuracy:  floor[${m.accuracy.floor}] dataset[${m.accuracy.dataset}${datasetMissing ? " — MISSING" : ` · ${datasetEntries} entries`}] suites[${offlineSuites.length}]`);
   console.log("");
 }
 
@@ -201,6 +240,7 @@ const report = {
   totalPerCallSavingUsd: Number(totalSaving.toFixed(4)),
   capabilityCount: scorecard.length,
   accuracyBackedCount: scorecard.filter((r) => r.accuracy).length,
+  goldenEntryTotal: scorecard.reduce((s, r) => s + (r.accuracy?.datasetEntries || 0), 0),
   honestyNote:
     "Wins claimed on cost, freshness, latency, coverage and accuracy-vs-golden — NOT raw paid-index breadth.",
   capabilities: scorecard,
@@ -210,9 +250,45 @@ const dir = path.join(root, "docs", "benchmarks");
 fs.mkdirSync(dir, { recursive: true });
 fs.writeFileSync(path.join(dir, "scorecard.json"), JSON.stringify(report, null, 2));
 
+// Reproducible, human-readable evidence (committed to docs/benchmarks/README.md).
+const totalGoldenEntries = scorecard.reduce((s, r) => s + (r.accuracy?.datasetEntries || 0), 0);
+const md = [
+  "# Sovereign Superiority Scorecard",
+  "",
+  "> Auto-generated by `scripts/provider-superiority.mjs`. Do not edit by hand — run `npm run audit:superiority` to regenerate.",
+  "",
+  `Generated: ${report.generatedAt}`,
+  "",
+  report.honestyNote,
+  "",
+  `- Capabilities: **${report.capabilityCount}**`,
+  `- Accuracy-backed (golden dataset): **${report.accuracyBackedCount}/${report.capabilityCount}**`,
+  `- Committed golden ground-truth entries: **${totalGoldenEntries}**`,
+  `- Aggregate per-call cost advantage: **$${totalSaving.toFixed(4)}**`,
+  "",
+  "| Capability | Replaces | Sovereign | Cost (sov/paid) | Freshness | Accuracy floor | Golden entries | Offline suites |",
+  "| --- | --- | --- | --- | --- | --- | --- | --- |",
+  ...scorecard.map((r) => {
+    const acc = r.accuracy ? r.accuracy.floor : "—";
+    const entries = r.accuracy ? r.accuracy.datasetEntries : "—";
+    const suites = r.accuracy ? r.accuracy.offlineSuites.length : 0;
+    return `| ${r.capability} | ${r.paidVendor} | ${r.sovereign} | $${r.cost.sovereign}/$${r.cost.paid} | ${r.freshness} | ${acc} | ${entries} | ${suites} |`;
+  }),
+  "",
+  "## Reproduce",
+  "",
+  "```bash",
+  "npm run audit:superiority        # regenerate this scorecard (strict in CI)",
+  "npm run verify:accuracy          # run golden-dataset accuracy audits",
+  "npm --prefix services/omnidata test   # offline parser/accuracy suites",
+  "```",
+  "",
+].join("\n");
+fs.writeFileSync(path.join(dir, "README.md"), md);
+
 console.log(`Aggregate per-call cost advantage: $${totalSaving.toFixed(4)} across ${scorecard.length} capabilities`);
-console.log(`Accuracy-backed capabilities: ${report.accuracyBackedCount}/${scorecard.length}`);
-console.log(`Scorecard written: docs/benchmarks/scorecard.json`);
+console.log(`Accuracy-backed capabilities: ${report.accuracyBackedCount}/${scorecard.length} · ${totalGoldenEntries} golden entries`);
+console.log(`Scorecard written: docs/benchmarks/scorecard.json + docs/benchmarks/README.md`);
 
 if (failures.length) {
   console.error("\nSuperiority regressions:");

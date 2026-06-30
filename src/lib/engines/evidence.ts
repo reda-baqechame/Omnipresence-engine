@@ -162,6 +162,90 @@ export async function enforceEvidenceRetention(
   }
 }
 
+/**
+ * General-purpose measurement evidence (Phase 1, presence-os-110).
+ *
+ * The AI-capture spine above proves AI-answer probes. This proves EVERY other
+ * measured capability (SERP, rank, backlink graph, pagespeed, tech, ...): the
+ * source URL, the producing provider, the parser version, a sha256 of the raw
+ * payload, the provenance/confidence, and (best-effort) the full raw payload in
+ * private storage. Returns null only on a hard DB failure; never throws so a
+ * storage/DB hiccup can never fail a real measurement.
+ */
+export interface MeasurementEvidenceInput {
+  projectId: string;
+  /** serp | rank | backlink_graph | pagespeed | tech | keyword | local | ... */
+  capability: string;
+  /** what was measured: a keyword, URL, or domain */
+  target: string;
+  provider?: string | null;
+  /** canonical source location for reproducibility */
+  sourceUrl?: string | null;
+  /** engine/parser version so a re-run is comparable */
+  parserVersion?: string | null;
+  /** measured | estimated | model_knowledge | simulated | unavailable */
+  dataSource?: string;
+  /** 0..1 confidence */
+  confidence?: number | null;
+  /** the full raw payload (hashed; persisted to storage best-effort) */
+  rawPayload: unknown;
+  /** a small bounded structured excerpt to keep in the DB row */
+  excerpt?: Record<string, unknown>;
+}
+
+export async function recordMeasurementEvidence(
+  supabase: SupabaseClient,
+  input: MeasurementEvidenceInput
+): Promise<EvidenceRecord | null> {
+  // Honesty guard: only real measured/estimated data earns an evidence row.
+  const provenance = input.dataSource || "measured";
+  if (provenance === "unavailable" || provenance === "simulated") return null;
+
+  const id = randomUUID();
+  let rawString = "";
+  try {
+    rawString = typeof input.rawPayload === "string" ? input.rawPayload : JSON.stringify(input.rawPayload);
+  } catch {
+    rawString = String(input.rawPayload ?? "");
+  }
+  const hash = responseHash(rawString);
+
+  const base = `measurement/${input.projectId}/${safePathSegment(input.capability)}/${safePathSegment(input.target)}-${hash.slice(0, 16)}`;
+  let evidenceUrl: string | null = null;
+
+  // Best-effort full-payload artifact; the DB row (hash + excerpt) is the durable proof.
+  try {
+    const jsonPath = `${base}.json`;
+    const up = await supabase.storage
+      .from(BUCKET)
+      .upload(jsonPath, rawString.slice(0, 2_000_000), {
+        contentType: "application/json",
+        upsert: true,
+      });
+    if (!up.error) evidenceUrl = jsonPath;
+  } catch {
+    // storage unavailable — DB-only evidence
+  }
+
+  const { error } = await supabase.from("measurement_evidence").insert({
+    id,
+    project_id: input.projectId,
+    capability: input.capability,
+    target: (input.target || "").slice(0, 1000),
+    provider: input.provider || null,
+    source_url: input.sourceUrl || null,
+    parser_version: input.parserVersion || null,
+    data_source: provenance,
+    confidence: typeof input.confidence === "number" && Number.isFinite(input.confidence) ? input.confidence : null,
+    response_hash: hash,
+    payload_excerpt: input.excerpt || {},
+    evidence_url: evidenceUrl,
+  });
+  if (error) return null;
+
+  return { id, responseHash: hash, evidenceUrl };
+}
+
 interface ScanResultLike {
   prompt_id?: string;
   engine: string;

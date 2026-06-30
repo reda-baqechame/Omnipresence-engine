@@ -31,6 +31,12 @@ export interface CommandCenterSummary {
   isEstimated?: boolean;
   /** Revenue is only real when GA4 (the revenue source) actually returned data. */
   revenueAvailable?: boolean;
+  /**
+   * Per-channel availability for THIS period, derived from the connector
+   * `source_availability` map. A `false`/missing entry means that channel's
+   * source wasn't healthy — the UI should render "—", never a confident 0.
+   */
+  channelAvailability?: Record<string, boolean>;
   /** Paid-ad equivalent is always a modeled CPC estimate, never measured spend. */
   paidAdsEquivalentEstimated?: boolean;
   confidence?: number;
@@ -90,6 +96,20 @@ export async function buildCommandCenter(
     ? sourceAvailability.revenue === true
     : (current.data_source as string) === "measured" && (current.revenue || 0) > 0;
 
+  // Per-channel availability so the UI can show "—" for a channel whose source
+  // wasn't healthy this period, instead of a confident 0. When no availability
+  // map exists, a channel counts as available only if it carried a real value.
+  const channelKeys = [
+    "organicTraffic", "aiReferralTraffic", "socialClicks", "directoryReferrals",
+    "searchClicks", "leads", "revenue", "paidAdsEquivalent",
+  ] as const;
+  const channelAvailability: Record<string, boolean> = {};
+  for (const key of channelKeys) {
+    channelAvailability[key] = sourceAvailability
+      ? sourceAvailability[key] === true
+      : (totals[key] || 0) > 0;
+  }
+
   return {
     available: true,
     period: { start: current.period_start, end: current.period_end },
@@ -99,6 +119,7 @@ export async function buildCommandCenter(
     dataSource: (current.data_source as string) || "mixed",
     isEstimated: Boolean(current.is_estimated),
     revenueAvailable,
+    channelAvailability,
     paidAdsEquivalentEstimated: true,
     confidence: typeof current.confidence === "number" ? current.confidence : undefined,
   };

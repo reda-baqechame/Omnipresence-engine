@@ -29,5 +29,12 @@
       { "keyword": "task management software", "score": 50, "expectedVolume": 30000, "expectedBucket": "10K–100K" },
       { "keyword": "kanban board app", "score": 10, "expectedVolume": 6000, "expectedBucket": "1K–10K" }
     ]
-  }
+  },
+  "knownVolumeBands": [
+    { "keyword": "crm software", "volume": 40000, "expectedBucket": "10K–100K" },
+    { "keyword": "best running shoes", "volume": 90500, "expectedBucket": "10K–100K" },
+    { "keyword": "what is seo", "volume": 8100, "expectedBucket": "1K–10K" },
+    { "keyword": "iphone", "volume": 5000000, "expectedBucket": "1M+" },
+    { "keyword": "obscure niche tool xyz", "volume": 70, "expectedBucket": "10–100" }
+  ]
 }

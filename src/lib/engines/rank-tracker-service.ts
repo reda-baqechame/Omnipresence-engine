@@ -4,12 +4,16 @@ import { searchGoogleOrganicRouter } from "@/lib/providers/serp-router";
 import { getValidOAuthToken } from "@/lib/oauth/tokens";
 import { buildGscPositionMap, type GscPositionEntry } from "@/lib/engines/gsc-queries";
 import { logProviderError } from "@/lib/observability/log";
+import { recordMeasurementEvidence } from "@/lib/engines/evidence";
 import {
   ctrByPosition,
   shareOfVoiceFromPositions,
   isStrikingDistance,
   classifyRankChange,
 } from "@/lib/engines/rank-math";
+
+/** Bumped when the rank parser/measurement contract changes (evidence reproducibility). */
+const RANK_PARSER_VERSION = "rank-tracker@1";
 
 export type RankDevice = "desktop" | "mobile";
 
@@ -188,6 +192,28 @@ export async function runRankCheckForProject(
     provider,
     is_estimated: false,
   });
+
+  // First-class evidence: prove this exact ranking measurement (tamper-evident
+  // hash + source URL + provider + parser version). Best-effort, never throws.
+  await recordMeasurementEvidence(supabase, {
+    projectId,
+    capability: "rank",
+    target: keyword,
+    provider,
+    sourceUrl: rankingUrl || null,
+    parserVersion: RANK_PARSER_VERSION,
+    dataSource: "measured",
+    confidence,
+    rawPayload: serp.success && serp.data ? serp.data : { position, source, publicPosition },
+    excerpt: {
+      position,
+      public_position: publicPosition,
+      source,
+      share_of_voice: shareOfVoice,
+      striking_distance: strikingDistance,
+      checked_at: checkedAt,
+    },
+  }).catch((e) => logProviderError("rankTracker.recordEvidence", e, { projectId, keyword }));
 
   await supabase
     .from("rank_keywords")

@@ -57,6 +57,8 @@ const steps = [
         "src/lib/providers/__tests__/failure-injection.test.ts",
         "src/lib/inngest/__tests__/functions-reliability.test.ts",
         "src/lib/engines/__tests__/closed-loop.test.ts",
+        "src/lib/engines/__tests__/measurement-evidence.test.ts",
+        "src/lib/engines/__tests__/roi-provenance.test.ts",
         "src/lib/config/__tests__/claims-reality.test.ts",
       ]),
   },
@@ -80,6 +82,18 @@ if (existsSync(omnidataPkg)) {
   steps.push({
     name: "omnidata-tests",
     ok: () => run("npm", ["run", "test"], join(root, "services", "omnidata")),
+  });
+}
+
+const aiCapturePkg = join(root, "services", "ai-ui-capture", "package.json");
+if (existsSync(aiCapturePkg)) {
+  steps.push({
+    name: "ai-ui-capture-typecheck",
+    ok: () => run("npm", ["run", "typecheck"], join(root, "services", "ai-ui-capture")),
+  });
+  steps.push({
+    name: "ai-ui-capture-tests",
+    ok: () => run("npm", ["run", "test"], join(root, "services", "ai-ui-capture")),
   });
 }
 

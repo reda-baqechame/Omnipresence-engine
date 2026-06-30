@@ -33,8 +33,24 @@ function walk(dir, acc = []) {
 // split by node --test. The relative portion has no spaces.
 const files = walk(goldenDir).map((f) => relative(root, f).split("\\").join("/"));
 
+// Production/CI mode: an empty golden suite is a HARD FAILURE — shipping with no
+// accuracy proof is exactly the gap this gate exists to catch. Locally we keep
+// the skip-with-warning so an offline dev run stays green.
+const REQUIRE_FILES =
+  process.env.CI === "true" ||
+  process.env.NODE_ENV === "production" ||
+  process.env.VERIFY_REQUIRE_FILES === "1" ||
+  process.argv.includes("--required");
+
 if (files.length === 0) {
-  console.log("verify:accuracy — no golden test files found yet (tests/golden). Nothing to run.");
+  if (REQUIRE_FILES) {
+    console.error(
+      "verify:accuracy — FAIL: zero golden audit files found (tests/golden/**/*.accuracy.test.ts) " +
+        "in CI/production mode. Accuracy proof is mandatory before shipping."
+    );
+    process.exit(1);
+  }
+  console.log("verify:accuracy — no golden test files found yet (tests/golden). Nothing to run (local skip).");
   process.exit(0);
 }
 

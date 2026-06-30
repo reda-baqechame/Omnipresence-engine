@@ -31,6 +31,22 @@ export interface AiUiCaptureResult {
   sourceDomains: string[];
   citedUrls: string[];
   answer: string;
+  /** First-class evidence from the capture service (for ai_capture_evidence). */
+  responseHash?: string;
+  screenshotBase64?: string | null;
+  domHtml?: string | null;
+  /** Effective geo/locale/persona the capture ran under (provenance). */
+  captureContext?: { geo?: string; locale?: string; timezone?: string; persona?: string };
+}
+
+/** Geo/persona/locale controls for a capture (all optional). */
+export interface AiUiCaptureOptions {
+  geo?: string;
+  locale?: string;
+  timezone?: string;
+  persona?: "desktop" | "mobile";
+  /** Request heavy evidence artifacts (screenshot + DOM). Default true. */
+  withEvidence?: boolean;
 }
 
 /**
@@ -50,7 +66,8 @@ export async function captureAiUiSurface(
   prompt: string,
   brandName: string,
   brandDomain: string,
-  competitors: string[]
+  competitors: string[],
+  options: AiUiCaptureOptions = {}
 ): Promise<AiUiCaptureResult | null> {
   if (!hasAiUiCapture()) return null;
   const url = process.env.AI_UI_CAPTURE_URL as string;
@@ -61,9 +78,22 @@ export async function captureAiUiSurface(
         "Content-Type": "application/json",
         ...(process.env.AI_UI_CAPTURE_KEY ? { Authorization: `Bearer ${process.env.AI_UI_CAPTURE_KEY}` } : {}),
       },
-      body: JSON.stringify({ surface, prompt, brandName, brandDomain, competitors }),
-      signal: AbortSignal.timeout(30000),
+      body: JSON.stringify({
+        surface,
+        prompt,
+        brandName,
+        brandDomain,
+        competitors,
+        geo: options.geo,
+        locale: options.locale,
+        timezone: options.timezone,
+        persona: options.persona,
+        withEvidence: options.withEvidence,
+      }),
+      signal: AbortSignal.timeout(45000),
     });
+    // 204 = not grounded; 409 = blocked (rate-limited/captcha). Both → honest null
+    // so the caller falls back to the API path and labels the surface accordingly.
     if (!res.ok) return null;
     const data = (await res.json()) as Partial<AiUiCaptureResult> & { answer?: string };
     if (!data || typeof data.answer !== "string") return null;
@@ -74,6 +104,10 @@ export async function captureAiUiSurface(
       sourceDomains: data.sourceDomains || [],
       citedUrls: data.citedUrls || [],
       answer: data.answer,
+      responseHash: data.responseHash,
+      screenshotBase64: data.screenshotBase64 ?? null,
+      domHtml: data.domHtml ?? null,
+      captureContext: data.captureContext,
     };
   } catch {
     return null;

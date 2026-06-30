@@ -133,14 +133,22 @@ export async function runKeywordResearch(
     [...research.suggestions, ...research.related].map((k) => [k.keyword, k.trend_index])
   );
 
-  const opportunities: KeywordOpportunityRow[] = (scored.length ? scored : allKeywords.map((k) => ({
-    keyword: k,
-    difficulty: 50,
-    difficulty_method: "heuristic" as const,
-    intent: "informational",
-    our_position: null,
-    opportunity_score: 40,
-  }))).map((row) => ({
+  // When no SERP-based difficulty resolved, we fall back to a flat heuristic. Those
+  // rows must NOT be stamped with a measured-sounding source ("omnidata_serp") —
+  // they are heuristics and are labeled as such so the UI never shows a fabricated
+  // KD/opportunity as if it were SERP-derived.
+  const usingHeuristicFallback = scored.length === 0;
+  const baseRows = usingHeuristicFallback
+    ? allKeywords.map((k) => ({
+        keyword: k,
+        difficulty: 50,
+        difficulty_method: "heuristic" as const,
+        intent: "informational",
+        our_position: null,
+        opportunity_score: 40,
+      }))
+    : scored;
+  const opportunities: KeywordOpportunityRow[] = baseRows.map((row) => ({
     keyword: row.keyword,
     volume_estimate: volumeMap.get(row.keyword),
     trend_index: trendMap.get(row.keyword),
@@ -149,7 +157,11 @@ export async function runKeywordResearch(
     intent: row.intent,
     our_position: row.our_position,
     opportunity_score: row.opportunity_score,
-    source: research.data_source === "keyword_planner" ? "keyword_planner" : "omnidata_serp",
+    source: usingHeuristicFallback
+      ? "heuristic"
+      : research.data_source === "keyword_planner"
+        ? "keyword_planner"
+        : "omnidata_serp",
   }));
 
   await applyVolumeCalibration(opportunities, research.data_source, anchor);

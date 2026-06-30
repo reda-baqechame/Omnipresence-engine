@@ -45,7 +45,7 @@ interface PSIResponse {
   originLoadingExperience?: PSILoadingExperience;
 }
 
-function parseCruxField(le?: PSILoadingExperience): CruxFieldData | undefined {
+export function parseCruxField(le?: PSILoadingExperience): CruxFieldData | undefined {
   const metrics = le?.metrics;
   if (!metrics || Object.keys(metrics).length === 0) return undefined;
   const lcp = metrics["LARGEST_CONTENTFUL_PAINT_MS"]?.percentile;
@@ -62,12 +62,12 @@ function parseCruxField(le?: PSILoadingExperience): CruxFieldData | undefined {
   };
 }
 
-export async function getPageSpeed(
-  url: string,
-  strategy: "mobile" | "desktop" = "mobile"
-): Promise<PageSpeedResult> {
-  const fullUrl = url.startsWith("http") ? url : `https://${url}`;
-  const unavailable = (reason: string): PageSpeedResult => ({
+function unavailableResult(
+  fullUrl: string,
+  strategy: "mobile" | "desktop",
+  reason: string
+): PageSpeedResult {
+  return {
     available: false,
     reason,
     url: fullUrl,
@@ -78,8 +78,53 @@ export async function getPageSpeed(
     tbt_ms: 0,
     has_field_data: false,
     data_source: "unavailable",
-  });
+  };
+}
 
+/**
+ * Pure PSI-response → PageSpeedResult parser (no IO). Extracted so the parser
+ * contract (score scaling, CWV extraction, CrUX field detection, lab_only vs
+ * pagespeed_with_crux) can be audited offline against known fixtures. A response
+ * with no numeric performance score is honestly reported as unavailable rather
+ * than a confident zero.
+ */
+export function parsePageSpeedResponse(
+  data: PSIResponse,
+  fullUrl: string,
+  strategy: "mobile" | "desktop"
+): PageSpeedResult {
+  const lh = data.lighthouseResult;
+  const audits = lh?.audits || {};
+  const score = lh?.categories?.performance?.score;
+  if (typeof score !== "number") {
+    return unavailableResult(fullUrl, strategy, "PageSpeed returned no performance score");
+  }
+
+  const field = data.loadingExperience?.metrics || {};
+  const inpField = field["INTERACTION_TO_NEXT_PAINT"]?.percentile;
+  const cruxField = parseCruxField(data.originLoadingExperience) || parseCruxField(data.loadingExperience);
+  const hasField = Object.keys(field).length > 0;
+
+  return {
+    available: true,
+    url: fullUrl,
+    strategy,
+    performance_score: Math.round(score * 100),
+    lcp_ms: Math.round(audits["largest-contentful-paint"]?.numericValue ?? 0),
+    cls: Number((audits["cumulative-layout-shift"]?.numericValue ?? 0).toFixed(3)),
+    tbt_ms: Math.round(audits["total-blocking-time"]?.numericValue ?? 0),
+    inp_ms: typeof inpField === "number" ? inpField : undefined,
+    has_field_data: hasField,
+    field: cruxField,
+    data_source: cruxField ? "pagespeed_with_crux" : "lab_only",
+  };
+}
+
+export async function getPageSpeed(
+  url: string,
+  strategy: "mobile" | "desktop" = "mobile"
+): Promise<PageSpeedResult> {
+  const fullUrl = url.startsWith("http") ? url : `https://${url}`;
   const key = process.env.PAGESPEED_API_KEY;
   const params = new URLSearchParams({ url: fullUrl, category: "performance", strategy });
   if (key && !key.startsWith("your-")) params.set("key", key);
@@ -89,32 +134,10 @@ export async function getPageSpeed(
       `https://www.googleapis.com/pagespeedonline/v5/runPagespeed?${params}`,
       { signal: AbortSignal.timeout(30_000) }
     );
-    if (!res.ok) return unavailable(`PageSpeed API ${res.status}`);
+    if (!res.ok) return unavailableResult(fullUrl, strategy, `PageSpeed API ${res.status}`);
     const data = (await res.json()) as PSIResponse;
-    const lh = data.lighthouseResult;
-    const audits = lh?.audits || {};
-    const score = lh?.categories?.performance?.score;
-    if (typeof score !== "number") return unavailable("PageSpeed returned no performance score");
-
-    const field = data.loadingExperience?.metrics || {};
-    const inpField = field["INTERACTION_TO_NEXT_PAINT"]?.percentile;
-    const cruxField = parseCruxField(data.originLoadingExperience) || parseCruxField(data.loadingExperience);
-    const hasField = Object.keys(field).length > 0;
-
-    return {
-      available: true,
-      url: fullUrl,
-      strategy,
-      performance_score: Math.round(score * 100),
-      lcp_ms: Math.round(audits["largest-contentful-paint"]?.numericValue ?? 0),
-      cls: Number((audits["cumulative-layout-shift"]?.numericValue ?? 0).toFixed(3)),
-      tbt_ms: Math.round(audits["total-blocking-time"]?.numericValue ?? 0),
-      inp_ms: typeof inpField === "number" ? inpField : undefined,
-      has_field_data: hasField,
-      field: cruxField,
-      data_source: cruxField ? "pagespeed_with_crux" : "lab_only",
-    };
+    return parsePageSpeedResponse(data, fullUrl, strategy);
   } catch (error) {
-    return unavailable(error instanceof Error ? error.message : "PageSpeed request failed");
+    return unavailableResult(fullUrl, strategy, error instanceof Error ? error.message : "PageSpeed request failed");
   }
 }

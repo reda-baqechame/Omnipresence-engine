@@ -164,6 +164,11 @@ async function scanSinglePrompt(
           data_source_detail: "ai_ui_capture",
           measurement_mode: "grounded",
           entity_prominence: computeEntityProminence(captured.answer, [config.brandName, ...config.competitors]),
+          // First-class evidence passthrough → persisted by attachEvidenceToResults.
+          response_hash: captured.responseHash,
+          screenshot_base64: captured.screenshotBase64 ?? undefined,
+          dom_html: captured.domHtml ?? undefined,
+          capture_context: captured.captureContext,
         },
         data_source: "measured",
       };

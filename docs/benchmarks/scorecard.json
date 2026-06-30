@@ -1,8 +1,9 @@
 {
-  "generatedAt": "2026-06-30T04:03:24.983Z",
+  "generatedAt": "2026-06-30T14:58:21.451Z",
   "totalPerCallSavingUsd": 0.0634,
   "capabilityCount": 10,
   "accuracyBackedCount": 7,
+  "goldenEntryTotal": 88,
   "honestyNote": "Wins claimed on cost, freshness, latency, coverage and accuracy-vs-golden — NOT raw paid-index breadth.",
   "capabilities": [
     {
@@ -20,7 +21,12 @@
       "accuracy": {
         "floor": "known navigational #1 in top-3 (100%), exact #1 ≥70%",
         "dataset": "tests/golden/serp/serp.golden.json",
-        "datasetPresent": true
+        "datasetPresent": true,
+        "datasetEntries": 8,
+        "offlineSuites": [
+          "tests/golden/serp/serp.accuracy.test.ts",
+          "services/omnidata/src/__tests__/serp-parser.test.ts"
+        ]
       },
       "sovereignPathPresent": true
     },
@@ -54,7 +60,11 @@
       "accuracy": {
         "floor": "authority ordering ρ≥0.6 vs known DR tiers; referring-domain recall ≥ floor",
         "dataset": "tests/golden/backlinks/backlinks.golden.json",
-        "datasetPresent": true
+        "datasetPresent": true,
+        "datasetEntries": 23,
+        "offlineSuites": [
+          "tests/golden/backlinks/backlinks.accuracy.test.ts"
+        ]
       },
       "sovereignPathPresent": true
     },
@@ -73,7 +83,12 @@
       "accuracy": {
         "floor": "100% volume-bucket correctness; KD monotonic in authority",
         "dataset": "tests/golden/keywords/keywords.golden.json",
-        "datasetPresent": true
+        "datasetPresent": true,
+        "datasetEntries": 21,
+        "offlineSuites": [
+          "tests/golden/keywords/keywords.accuracy.test.ts",
+          "services/omnidata/src/__tests__/keyword-difficulty.test.ts"
+        ]
       },
       "sovereignPathPresent": true
     },
@@ -92,7 +107,12 @@
       "accuracy": {
         "floor": "CWV within published range for reference sites",
         "dataset": "tests/golden/performance/perf-local-tech.golden.json",
-        "datasetPresent": true
+        "datasetPresent": true,
+        "datasetEntries": 10,
+        "offlineSuites": [
+          "tests/golden/performance/perf-local-tech.accuracy.test.ts",
+          "services/omnidata/src/__tests__/pagespeed-parser.test.ts"
+        ]
       },
       "sovereignPathPresent": true
     },
@@ -111,7 +131,12 @@
       "accuracy": {
         "floor": "geocode within 2km of known landmarks; correct proximity ranking",
         "dataset": "tests/golden/performance/perf-local-tech.golden.json",
-        "datasetPresent": true
+        "datasetPresent": true,
+        "datasetEntries": 10,
+        "offlineSuites": [
+          "tests/golden/performance/perf-local-tech.accuracy.test.ts",
+          "services/omnidata/src/__tests__/geo.test.ts"
+        ]
       },
       "sovereignPathPresent": true
     },
@@ -130,7 +155,11 @@
       "accuracy": {
         "floor": "known stacks detected, zero false positives on plain pages",
         "dataset": "tests/golden/performance/perf-local-tech.golden.json",
-        "datasetPresent": true
+        "datasetPresent": true,
+        "datasetEntries": 10,
+        "offlineSuites": [
+          "tests/golden/performance/perf-local-tech.accuracy.test.ts"
+        ]
       },
       "sovereignPathPresent": true
     },
@@ -149,7 +178,11 @@
       "accuracy": {
         "floor": "zero false-positive mentions/citations on labeled transcripts",
         "dataset": "tests/golden/citations/citations.golden.json",
-        "datasetPresent": true
+        "datasetPresent": true,
+        "datasetEntries": 6,
+        "offlineSuites": [
+          "tests/golden/citations/citations.accuracy.test.ts"
+        ]
       },
       "sovereignPathPresent": true
     },

@@ -44,15 +44,35 @@ test("unmeasured dimensions are excluded — no false Invisible zero for a stron
     hasGbp: false,
   });
   // AI visibility is perfect (100). With re-normalization over only the measured
-  // dimensions (ai + always-on technical/conversion) the score is high (~67.5),
-  // NOT dragged toward "Weak" (~27) as it would be if unmeasured search/local/
-  // social/directory/authority were scored as 0.
+  // dimensions (ai + always-on technical) the score is high, NOT dragged toward
+  // "Weak" as it would be if unmeasured search/local/social/directory/authority
+  // were scored as 0.
   assert.ok(score.omnipresence_score >= 60, `expected strong score, got ${score.omnipresence_score}`);
   assert.equal(score.breakdown.dimension_availability.search_visibility, false);
   assert.equal(score.breakdown.dimension_availability.ai_visibility, true);
   assert.equal(score.breakdown.dimension_availability.authority_mentions, false);
-  // Only ai(0.20) + technical(0.10) + conversion(0.10) measured → coverage 0.40.
-  assert.equal(score.breakdown.dimension_coverage, 0.4);
+  // With NO conversion/traffic/behavior signal, conversion_readiness is NOT a
+  // measured dimension — its flat "have-a-website" baseline must not dilute the
+  // headline score as if measured.
+  assert.equal(score.breakdown.dimension_availability.conversion_readiness, false);
+  // Only ai(0.20) + technical(0.10) measured → coverage 0.30.
+  assert.equal(score.breakdown.dimension_coverage, 0.3);
+});
+
+test("conversion_readiness becomes a measured dimension once a real signal exists", () => {
+  const base = {
+    visibilityResults: [vis({ engine: "chatgpt", brand_mentioned: true, brand_cited: true })],
+    technicalFindings: [],
+    coverageItems: [],
+    authorityOpportunities: [],
+    hasGbp: false,
+  } as const;
+  const without = calculateOmniPresenceScore({ ...base, hasConversionTracking: false });
+  assert.equal(without.breakdown.dimension_availability.conversion_readiness, false);
+  const withTracking = calculateOmniPresenceScore({ ...base, hasConversionTracking: true });
+  assert.equal(withTracking.breakdown.dimension_availability.conversion_readiness, true);
+  const withTraffic = calculateOmniPresenceScore({ ...base, hasConversionTracking: false, monthlyTraffic: 5000 });
+  assert.equal(withTraffic.breakdown.dimension_availability.conversion_readiness, true);
 });
 
 test("simulated-only data never reports as measured and is flagged demo", () => {
