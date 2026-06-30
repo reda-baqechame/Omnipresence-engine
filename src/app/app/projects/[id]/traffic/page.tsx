@@ -98,7 +98,7 @@ export default async function TrafficPage({ params }: { params: Promise<{ id: st
               <div className="flex-1 h-2 rounded bg-muted overflow-hidden">
                 <div
                   className={i === 0 ? "h-2 bg-primary" : "h-2 bg-muted-foreground/40"}
-                  style={{ width: `${Math.round((c.trafficIndex / maxIndex) * 100)}%` }}
+                  style={{ width: c.available ? `${Math.round((c.trafficIndex / maxIndex) * 100)}%` : "0%" }}
                 />
               </div>
               <span className="w-12 text-right tabular-nums">{c.available ? c.trafficIndex : "—"}</span>
