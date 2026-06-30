@@ -38,6 +38,8 @@ const steps = [
         "src/lib/scoring/__tests__/omnipresence.test.ts",
         "src/lib/engines/__tests__/provenance.test.ts",
         "src/lib/engines/__tests__/share-of-voice.test.ts",
+        "src/lib/engines/__tests__/aeo-metrics.test.ts",
+        "src/lib/engines/__tests__/proof-report.test.ts",
         "src/lib/engines/__tests__/attribution.test.ts",
         "src/lib/engines/__tests__/impact-estimate.test.ts",
         "src/lib/engines/__tests__/guarantee.test.ts",
