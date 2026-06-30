@@ -2,7 +2,11 @@ import { NextRequest, NextResponse } from "next/server";
 import { createClient, createServiceClient } from "@/lib/supabase/server";
 import { runProjectScan, getOwnerEmail } from "@/lib/engines/scan-runner";
 import { verifyProjectAccess } from "@/lib/security/project-access";
-import { ApiCreditExceededError } from "@/lib/metering/api-usage";
+import {
+  ApiCreditExceededError,
+  TenantBudgetExceededError,
+  assertTenantSurfaceBudget,
+} from "@/lib/metering/api-usage";
 import { apiError, apiForbidden, apiNotFound, apiServerError, apiUnauthorized } from "@/lib/security/api-response";
 
 export async function POST(
@@ -18,6 +22,18 @@ export async function POST(
   if (!access) return apiForbidden();
 
   const serviceClient = await createServiceClient();
+
+  // Per-tenant surface-measurement spend firewall: one noisy tenant must not be
+  // able to burn the platform's shared paid-API budget for everyone. Disabled by
+  // default (TENANT_DAILY_CREDIT_CAP=0); when on, return 429 cleanly.
+  try {
+    await assertTenantSurfaceBudget(serviceClient, access.organizationId, 10);
+  } catch (error) {
+    if (error instanceof TenantBudgetExceededError) {
+      return apiError("Daily measurement budget reached for your account. Resets at 00:00 UTC.", 429);
+    }
+  }
+
   const email = await getOwnerEmail(serviceClient, access.organizationId);
 
   try {

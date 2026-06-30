@@ -4,7 +4,7 @@ import { guardPublicEndpoint } from "@/lib/security/public-guard";
 import { apiError, readJsonBody } from "@/lib/security/api-response";
 
 export async function POST(request: NextRequest) {
-  const limited = guardPublicEndpoint(request, "tools-roi", 20, 60 * 60 * 1000);
+  const limited = await guardPublicEndpoint(request, "tools-roi", 20, 60 * 60 * 1000);
   if (limited) return limited;
 
   let organicSessions: unknown, aiReferralSessions: unknown, monthlyAdSpend: unknown, industry: unknown;

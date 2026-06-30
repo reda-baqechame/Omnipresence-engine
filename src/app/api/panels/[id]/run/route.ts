@@ -4,6 +4,7 @@ import { verifyProjectAccess } from "@/lib/security/project-access";
 import { apiError, apiForbidden, apiNotFound, apiUnauthorized } from "@/lib/security/api-response";
 import { inngest } from "@/lib/inngest/client";
 import { estimatePanelCalls } from "@/lib/engines/prompt-panels";
+import { TenantBudgetExceededError, assertTenantSurfaceBudget } from "@/lib/metering/api-usage";
 
 /** POST /api/panels/[id]/run — queue a panel run (executed off-request by Inngest). */
 export async function POST(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
@@ -29,6 +30,16 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
   if (!count) return apiError("Panel has no prompts to run", 400);
 
   const cells = estimatePanelCalls(panel, count);
+
+  // Per-tenant surface-measurement firewall (cost cap). Charge the estimated
+  // cell count so a large panel can't bypass the cap. Disabled by default.
+  try {
+    await assertTenantSurfaceBudget(supabase, access.organizationId, cells);
+  } catch (error) {
+    if (error instanceof TenantBudgetExceededError) {
+      return apiError("Daily measurement budget reached for your account. Resets at 00:00 UTC.", 429);
+    }
+  }
 
   try {
     await inngest.send({

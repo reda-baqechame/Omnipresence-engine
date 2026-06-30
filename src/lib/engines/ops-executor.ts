@@ -17,7 +17,7 @@ import { scheduleViaAyrshare } from "@/lib/providers/social/ayrshare";
 import { scheduleViaBuffer } from "@/lib/providers/social/buffer";
 import { getValidOAuthToken } from "@/lib/oauth/tokens";
 import { recordLedgerAction } from "@/lib/engines/results-ledger";
-import { logProviderError } from "@/lib/observability/log";
+import { captureException } from "@/lib/observability/log";
 import { inngest } from "@/lib/inngest/client";
 import { estimateActionImpact } from "@/lib/engines/impact-estimate";
 import { sendEmail } from "@/lib/email/transport";
@@ -239,7 +239,10 @@ export async function executeOpsItem(supabase: SupabaseClient, item: OpsItem): P
         return { ok: false, error: `No runner for action_type "${type}"` };
     }
   } catch (error) {
-    logProviderError("ops.execute", error, { opsId: item.id, action_type: type });
+    // A thrown error here is unexpected (not a clean "not configured" path) —
+    // capture it to APM so an operator can react, while still degrading the
+    // action to a clean failure result (never a crash or a false success).
+    captureException("ops.execute", error, { opsId: item.id, action_type: type });
     return { ok: false, error: error instanceof Error ? error.message : "execution error" };
   }
 }

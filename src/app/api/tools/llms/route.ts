@@ -31,7 +31,7 @@ async function fetchSitemapUrls(baseUrl: string, maxUrls = 50): Promise<string[]
 }
 
 export async function POST(request: NextRequest) {
-  const limited = guardPublicEndpoint(request, "tools-llms", 10, 60 * 60 * 1000);
+  const limited = await guardPublicEndpoint(request, "tools-llms", 10, 60 * 60 * 1000);
   if (limited) return limited;
 
   let domain: string | undefined;

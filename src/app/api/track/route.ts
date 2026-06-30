@@ -17,7 +17,7 @@ function clientIp(request: NextRequest): string {
 
 export async function POST(request: NextRequest) {
   // Public beacon: rate-limit per IP to prevent anonymous row-flooding.
-  const limited = guardPublicEndpoint(request, "track", 120, 60_000);
+  const limited = await guardPublicEndpoint(request, "track", 120, 60_000);
   if (limited) return limited;
 
   let payload: {

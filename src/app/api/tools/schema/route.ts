@@ -7,7 +7,7 @@ import { apiError, readJsonBody } from "@/lib/security/api-response";
 const RECOMMENDED = ["Organization", "LocalBusiness", "WebSite", "FAQPage", "Product", "Service"];
 
 export async function POST(request: NextRequest) {
-  const limited = guardPublicEndpoint(request, "tools-schema", 10, 60 * 60 * 1000);
+  const limited = await guardPublicEndpoint(request, "tools-schema", 10, 60 * 60 * 1000);
   if (limited) return limited;
 
   let domain: string | undefined;

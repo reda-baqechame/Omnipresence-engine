@@ -56,7 +56,7 @@ import {
 } from "@/lib/engines/geo-rewrite-loop";
 import { fetchFirehoseMentions } from "@/lib/engines/community-mentions";
 import { runProjectSnapshots } from "@/lib/engines/snapshots";
-import { logProviderError } from "@/lib/observability/log";
+import { logProviderError, captureException } from "@/lib/observability/log";
 import type { Project } from "@/types/database";
 
 export const runFullScan = inngest.createFunction(
@@ -67,10 +67,13 @@ export const runFullScan = inngest.createFunction(
     // If the pipeline exhausts its retries, never leave the project stuck
     // displaying "scanning" forever. Un-stick it back to "active" (so the user
     // can retry) and mark any open run row as failed (the honest signal).
-    onFailure: async ({ event }) => {
+    onFailure: async ({ event, error }) => {
       const original = (event.data as { event?: { data?: { projectId?: string } } }).event;
       const projectId = original?.data?.projectId;
       if (!projectId) return;
+      // A scan that exhausted retries is a user-facing incident (they paid for
+      // results) — capture it to APM so we can react, not just silently reset.
+      captureException("scan.failed", error ?? new Error("scan failed after retries"), { projectId });
       try {
         const supabase = await createServiceClient();
         await supabase.from("projects").update({ status: "active" }).eq("id", projectId);
@@ -80,7 +83,7 @@ export const runFullScan = inngest.createFunction(
           .eq("project_id", projectId)
           .in("status", ["running", "pending"]);
       } catch (err) {
-        logProviderError("scan.onFailure", err, { projectId });
+        captureException("scan.onFailure", err, { projectId });
       }
     },
   },

@@ -12,7 +12,7 @@ import { runPublicAuditIntelligence } from "@/lib/engines/public-audit-scan";
 import { preferLiveData } from "@/lib/config/capabilities";
 
 export async function POST(request: NextRequest) {
-  const limited = guardPublicEndpoint(request, "public-audit", 5, 60 * 60 * 1000);
+  const limited = await guardPublicEndpoint(request, "public-audit", 5, 60 * 60 * 1000);
   if (limited) return limited;
 
   let body: { domain?: string; brandName?: string; industry?: string; email?: string; location?: string; competitors?: string[] };

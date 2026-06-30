@@ -11,7 +11,7 @@ import {
 import { getLedgerForProject } from "@/lib/engines/results-ledger";
 
 export async function GET(request: NextRequest) {
-  const blocked = guardPublicEndpoint(request, "guarantee", 60, 60_000);
+  const blocked = await guardPublicEndpoint(request, "guarantee", 60, 60_000);
   if (blocked) return blocked;
 
   const supabase = await createClient();

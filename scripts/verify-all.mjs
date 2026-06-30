@@ -32,6 +32,8 @@ const steps = [
         "src/lib/scoring/__tests__/presence-gate.test.ts",
         "src/lib/engines/__tests__/fastest-path.test.ts",
         "src/lib/notifications/__tests__/webhooks.test.ts",
+        "src/lib/security/__tests__/rate-limit.test.ts",
+        "src/lib/observability/__tests__/log.test.ts",
       ]),
   },
   { name: "typecheck", ok: () => run("npm", ["run", "typecheck"]) },

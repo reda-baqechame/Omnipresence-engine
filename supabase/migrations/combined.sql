@@ -1,5 +1,5 @@
--- PresenceOS combined migration (47 files)
--- Generated 2026-06-28T22:22:50.451Z
+-- PresenceOS combined migration (58 files)
+-- Generated 2026-06-30T02:11:39.322Z
 
 -- ========== 0001_init.sql ==========
 
@@ -32,7 +32,7 @@ CREATE TYPE content_asset_type AS ENUM (
   'service_page', 'location_page', 'comparison_page', 'best_of_page', 'faq_page',
   'blog_brief', 'blog_post', 'case_study', 'youtube_script', 'shorts_script',
   'linkedin_post', 'x_thread', 'reddit_draft', 'quora_draft', 'newsletter',
-  'podcast_script', 'gbp_post', 'directory_description', 'alternative_page', 'llms_txt'
+  'podcast_script', 'gbp_post', 'directory_description'
 );
 CREATE TYPE content_status AS ENUM (
   'drafted', 'approved', 'published', 'indexed', 'getting_traffic', 'needs_refresh'
@@ -717,21 +717,6 @@ CREATE TABLE IF NOT EXISTS ops_queue (
 
 CREATE INDEX IF NOT EXISTS idx_ops_queue_status ON ops_queue(status);
 CREATE INDEX IF NOT EXISTS idx_ops_queue_org ON ops_queue(organization_id);
-
--- Wave Q1/Q4 — real ops execution result + proof-chain task_id.
-ALTER TABLE ops_queue ADD COLUMN IF NOT EXISTS result JSONB;
-ALTER TABLE ops_queue ADD COLUMN IF NOT EXISTS error TEXT;
-ALTER TABLE ops_queue ADD COLUMN IF NOT EXISTS published_url TEXT;
-ALTER TABLE ops_queue ADD COLUMN IF NOT EXISTS attempts INT NOT NULL DEFAULT 0;
-ALTER TABLE ops_queue ADD COLUMN IF NOT EXISTS task_id UUID;
-CREATE INDEX IF NOT EXISTS idx_ops_queue_task ON ops_queue(task_id);
-
--- Wave Q4 — proof chain task_id + impact estimate.
-ALTER TABLE results_ledger ADD COLUMN IF NOT EXISTS task_id UUID;
-ALTER TABLE content_assets ADD COLUMN IF NOT EXISTS task_id UUID;
-ALTER TABLE execution_tasks ADD COLUMN IF NOT EXISTS impact_estimate JSONB;
-CREATE INDEX IF NOT EXISTS idx_results_ledger_task ON results_ledger(task_id);
-CREATE INDEX IF NOT EXISTS idx_content_assets_task ON content_assets(task_id);
 
 -- Extend existing tables
 ALTER TABLE authority_opportunities
@@ -2105,10 +2090,20 @@ CREATE POLICY ai_crawler_hits_all ON ai_crawler_hits FOR ALL
 
 -- ========== 0048_source_graph.sql ==========
 
--- Source/Citation Graph (Phase 23 / manifest v24, Wave A). Market-specific graph
--- of how AI answers form: prompt_cluster -> prompt -> engine -> cited domain ->
--- competitor / page. Built from measured citation data; every row has provenance.
+-- Source/Citation Graph (Phase 23 / manifest v24, Wave A).
+--
+-- The Ahrefs + Profound killer: a traversable graph of how AI answers are formed
+-- in a customer's specific market. Built from the already-MEASURED citation data
+-- (citation_sources, ai_probe_traces, visibility_results) into normalized
+-- dimensions + typed edges:
+--
+--   prompt_cluster -> prompt -> engine -> cited source domain -> competitor / page
+--
+-- Unlike a generic backlink index, this is market-specific and answers: "who does
+-- AI learn from in THIS niche, who is cited, where is the brand absent, and which
+-- source, if influenced, would change the answer?" Every row carries provenance.
 
+-- Intent-grouped clusters of tracked prompts (so SoV/demand roll up by theme).
 CREATE TABLE IF NOT EXISTS prompt_clusters (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   project_id UUID NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
@@ -2125,6 +2120,7 @@ CREATE TABLE IF NOT EXISTS prompt_clusters (
   UNIQUE (project_id, label)
 );
 
+-- Normalized source-domain dimension with influence scoring.
 CREATE TABLE IF NOT EXISTS source_domains (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   project_id UUID NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
@@ -2148,6 +2144,7 @@ CREATE TABLE IF NOT EXISTS source_domains (
   UNIQUE (project_id, domain)
 );
 
+-- Per-mention facts: a source cited (or ranked) for a prompt on an engine.
 CREATE TABLE IF NOT EXISTS source_mentions (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   project_id UUID NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
@@ -2166,6 +2163,7 @@ CREATE TABLE IF NOT EXISTS source_mentions (
   created_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
+-- Derived, ranked fix list: influence-weighted citation/source opportunities.
 CREATE TABLE IF NOT EXISTS source_opportunities (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   project_id UUID NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
@@ -2186,6 +2184,7 @@ CREATE TABLE IF NOT EXISTS source_opportunities (
   UNIQUE (project_id, source_domain, opportunity_type)
 );
 
+-- Typed graph edges (prompt/cluster/engine/domain/competitor/page nodes).
 CREATE TABLE IF NOT EXISTS source_edges (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   project_id UUID NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
@@ -2238,9 +2237,13 @@ CREATE POLICY source_edges_all ON source_edges FOR ALL
 
 -- ========== 0049_product_visibility.sql ==========
 
--- Merchant / Product AI visibility (Phase 23 / manifest v24, Wave B). Tracks
--- product presence in Shopping/organic SERP (measured) and AI product
--- recommendations (model_knowledge), complementing merchant_products feed QA.
+-- Merchant / Product AI visibility (Phase 23 / manifest v24, Wave B).
+--
+-- Tracks whether the brand's products surface in (a) Google Shopping/organic SERP
+-- and (b) AI product recommendations ("best <category>", "what should I buy…").
+-- Complements merchant_products (feed QA) with actual measured product visibility
+-- over time. SERP presence is `measured`; parametric AI recommendations are
+-- labeled `model_knowledge` (honest — not a grounded UI capture).
 
 CREATE TABLE IF NOT EXISTS product_visibility_snapshots (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -2271,8 +2274,11 @@ CREATE POLICY product_visibility_snapshots_all ON product_visibility_snapshots F
 -- ========== 0050_snapshots.sql ==========
 
 -- Snapshots + data-quality normalization (Phase 23 / manifest v24, Wave E).
--- Daily point-in-time history for GSC, GBP and AI visibility, plus a per-project
--- data-quality score quantifying measured vs unavailable signal coverage.
+--
+-- Point-in-time daily snapshots so trends (GSC, GBP, AI visibility) are real
+-- measured history instead of recomputed-on-the-fly guesses, plus a per-project
+-- data-quality score that quantifies how much of the platform is running on
+-- measured (vs unavailable/estimated) signals. Every row carries provenance.
 
 CREATE TABLE IF NOT EXISTS gsc_snapshots (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -2352,9 +2358,15 @@ DROP POLICY IF EXISTS data_quality_scores_all ON data_quality_scores;
 CREATE POLICY data_quality_scores_all ON data_quality_scores FOR ALL
   USING (project_id IN (SELECT id FROM projects WHERE organization_id IN (SELECT get_user_org_ids())));
 
--- ============================================================================
--- Wave N4 — Evidence artifact spine (ai_capture_evidence + ai-evidence bucket)
--- ============================================================================
+
+-- ========== 0051_ai_capture_evidence.sql ==========
+
+-- Wave N4 — Evidence artifact spine.
+-- One auditable evidence record per measured AI/search probe: the raw answer, a
+-- sha256 response_hash (tamper-evident), the REAL cited URLs/source domains, and
+-- pointers to heavy artifacts (screenshot/DOM) stored in the private `ai-evidence`
+-- bucket. This is what turns "trust me" into proof. visibility_results.evidence_url
+-- points back here. Retention is capped per project by the app (cost control).
 
 CREATE TABLE IF NOT EXISTS ai_capture_evidence (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -2362,6 +2374,7 @@ CREATE TABLE IF NOT EXISTS ai_capture_evidence (
   run_id UUID,
   prompt_id UUID,
   engine TEXT NOT NULL,
+  -- api | ui | search_result | model_knowledge
   surface_type TEXT NOT NULL DEFAULT 'api',
   prompt TEXT NOT NULL,
   measurement_mode TEXT,
@@ -2385,6 +2398,9 @@ DROP POLICY IF EXISTS ai_capture_evidence_all ON ai_capture_evidence;
 CREATE POLICY ai_capture_evidence_all ON ai_capture_evidence FOR ALL
   USING (project_id IN (SELECT id FROM projects WHERE organization_id IN (SELECT get_user_org_ids())));
 
+-- Private evidence bucket. Heavy artifacts (full answer JSON, screenshot PNG,
+-- DOM HTML) are written by the service role and served via signed URLs — NOT
+-- public, since they hold tenant measurement data.
 INSERT INTO storage.buckets (id, name, public, file_size_limit, allowed_mime_types)
 VALUES (
   'ai-evidence',
@@ -2395,15 +2411,20 @@ VALUES (
 )
 ON CONFLICT (id) DO NOTHING;
 
--- ============================================================================
--- Wave O1 — Prompt panels (engines × geos × personas × runs matrix)
--- ============================================================================
+
+-- ========== 0052_ai_prompt_panels.sql ==========
+
+-- Wave O1 — Prompt panels (statistical-rigor measurement units).
+-- A panel is a curated cluster of prompts measured as a matrix:
+-- engines × geos × personas × runs_per_prompt. Replaces one-off prompt reads
+-- with repeatable, sample-size-gated measurement (the moat is the history).
 
 CREATE TABLE IF NOT EXISTS ai_prompt_panels (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   project_id UUID NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
   name TEXT NOT NULL,
   description TEXT,
+  -- Measurement matrix. Empty geos/personas => single default cell.
   geos TEXT[] NOT NULL DEFAULT '{}',
   personas TEXT[] NOT NULL DEFAULT '{}',
   engines TEXT[] NOT NULL DEFAULT '{}',
@@ -2439,10 +2460,12 @@ DROP POLICY IF EXISTS ai_prompt_panel_members_all ON ai_prompt_panel_members;
 CREATE POLICY ai_prompt_panel_members_all ON ai_prompt_panel_members FOR ALL
   USING (project_id IN (SELECT id FROM projects WHERE organization_id IN (SELECT get_user_org_ids())));
 
--- ============================================================================
--- Wave O2/O3 — Panel run summaries + geo conditioning on probe traces
--- ============================================================================
 
+-- ========== 0053_panel_runs.sql ==========
+
+-- Wave O2/O3 — Panel run summaries + geo conditioning on probe traces.
+
+-- Aggregated statistical summary of one panel run (Wilson CIs, SoV, volatility).
 CREATE TABLE IF NOT EXISTS ai_panel_runs (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   panel_id UUID NOT NULL REFERENCES ai_prompt_panels(id) ON DELETE CASCADE,
@@ -2470,11 +2493,53 @@ DROP POLICY IF EXISTS ai_panel_runs_all ON ai_panel_runs;
 CREATE POLICY ai_panel_runs_all ON ai_panel_runs FOR ALL
   USING (project_id IN (SELECT id FROM projects WHERE organization_id IN (SELECT get_user_org_ids())));
 
+-- Geo conditioning recorded on each probe (persona already exists).
 ALTER TABLE ai_probe_traces ADD COLUMN IF NOT EXISTS geo TEXT;
 
--- ============================================================================
--- Wave R2 — URL-level Presence Backlink Graph rollup snapshots
--- ============================================================================
+
+-- ========== 0054_ops_execution.sql ==========
+
+-- Wave Q1/Q4 — real ops execution: capture the runner result, errors, the
+-- published URL, attempt count, and a shared task_id for the proof chain.
+
+ALTER TABLE ops_queue ADD COLUMN IF NOT EXISTS result JSONB;
+ALTER TABLE ops_queue ADD COLUMN IF NOT EXISTS error TEXT;
+ALTER TABLE ops_queue ADD COLUMN IF NOT EXISTS published_url TEXT;
+ALTER TABLE ops_queue ADD COLUMN IF NOT EXISTS attempts INT NOT NULL DEFAULT 0;
+ALTER TABLE ops_queue ADD COLUMN IF NOT EXISTS task_id UUID;
+
+CREATE INDEX IF NOT EXISTS idx_ops_queue_task ON ops_queue(task_id);
+
+
+-- ========== 0055_proof_chain.sql ==========
+
+-- Wave Q4 — per-asset proof chain: a shared task_id threads
+-- execution_tasks → ops_queue → content_assets → results_ledger, and every
+-- action carries a projected business impact.
+
+ALTER TABLE results_ledger ADD COLUMN IF NOT EXISTS task_id UUID;
+ALTER TABLE content_assets ADD COLUMN IF NOT EXISTS task_id UUID;
+ALTER TABLE execution_tasks ADD COLUMN IF NOT EXISTS impact_estimate JSONB;
+
+CREATE INDEX IF NOT EXISTS idx_results_ledger_task ON results_ledger(task_id);
+CREATE INDEX IF NOT EXISTS idx_content_assets_task ON content_assets(task_id);
+
+
+-- ========== 0056_generators.sql ==========
+
+-- Wave Q5 — new content asset types for the alternative-page generator and the
+-- server-side llms.txt pipeline.
+
+ALTER TYPE content_asset_type ADD VALUE IF NOT EXISTS 'alternative_page';
+ALTER TYPE content_asset_type ADD VALUE IF NOT EXISTS 'llms_txt';
+
+
+-- ========== 0057_backlink_graph.sql ==========
+
+-- Wave R2 — URL-level Presence Backlink Graph rollup snapshots.
+-- The authoritative URL-level edges (with first/last seen) live in the OmniData
+-- DuckDB store; this is the per-project temporal rollup for UI/history: total /
+-- new / lost / toxic counts plus the top scored links and competitor intersection.
 
 CREATE TABLE IF NOT EXISTS backlink_graph_snapshots (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -2495,9 +2560,30 @@ CREATE INDEX IF NOT EXISTS idx_backlink_graph_snapshots_project
   ON backlink_graph_snapshots(project_id, created_at DESC);
 
 ALTER TABLE backlink_graph_snapshots ENABLE ROW LEVEL SECURITY;
+
 DROP POLICY IF EXISTS backlink_graph_snapshots_org ON backlink_graph_snapshots;
 CREATE POLICY backlink_graph_snapshots_org ON backlink_graph_snapshots FOR ALL USING (
   project_id IN (SELECT p.id FROM projects p JOIN memberships m ON m.organization_id = p.organization_id WHERE m.user_id = auth.uid())
 );
+
+
+-- ========== 0058_perf_indexes.sql ==========
+
+-- 0058_perf_indexes.sql
+-- Production hardening: indexes for hot queries introduced by the per-tenant
+-- surface-measurement budget firewall and proof-chain reads.
+
+-- The daily tenant budget check (assertTenantSurfaceBudget) filters api_usage by
+-- (organization_id, created_at >= day-start) on every paid scan/panel trigger.
+-- The existing single-column idx_api_usage_org can't serve the time range
+-- efficiently; a composite index keeps the firewall cheap under load.
+CREATE INDEX IF NOT EXISTS idx_api_usage_org_created
+  ON api_usage(organization_id, created_at DESC);
+
+-- ops_queue is polled by status for the executor and read by task_id for the
+-- proof chain; a composite (organization_id, status) index speeds the worker's
+-- "next pending item for this org" scan.
+CREATE INDEX IF NOT EXISTS idx_ops_queue_org_status
+  ON ops_queue(organization_id, status);
 
 

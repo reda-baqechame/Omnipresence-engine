@@ -20,28 +20,33 @@ export function logProviderError(scope: string, error: unknown, context?: Record
   console.warn(`[provider-error] ${JSON.stringify(payload)}`);
 }
 
-interface SentryDsn {
+export interface SentryDsn {
   host: string;
   projectId: string;
   publicKey: string;
 }
 
-/** Parse a Sentry DSN (https://PUBLIC_KEY@HOST/PROJECT_ID) once, cached. */
+/**
+ * Pure DSN parser (https://PUBLIC_KEY@HOST/PROJECT_ID). Exported for tests.
+ * Returns null for empty/malformed DSNs or ones missing a public key/project id.
+ */
+export function parseDsn(dsn: string | undefined | null): SentryDsn | null {
+  if (!dsn) return null;
+  try {
+    const u = new URL(dsn);
+    const projectId = u.pathname.replace(/^\//, "");
+    if (!u.username || !projectId) return null;
+    return { host: u.host, projectId, publicKey: u.username };
+  } catch {
+    return null;
+  }
+}
+
+/** Parse the env-configured Sentry DSN once, cached. */
 let cachedDsn: SentryDsn | null | undefined;
 function parseSentryDsn(): SentryDsn | null {
   if (cachedDsn !== undefined) return cachedDsn;
-  const dsn = process.env.SENTRY_DSN || process.env.NEXT_PUBLIC_SENTRY_DSN;
-  if (!dsn) return (cachedDsn = null);
-  try {
-    const u = new URL(dsn);
-    cachedDsn = {
-      host: u.host,
-      projectId: u.pathname.replace(/^\//, ""),
-      publicKey: u.username,
-    };
-  } catch {
-    cachedDsn = null;
-  }
+  cachedDsn = parseDsn(process.env.SENTRY_DSN || process.env.NEXT_PUBLIC_SENTRY_DSN);
   return cachedDsn;
 }
 
