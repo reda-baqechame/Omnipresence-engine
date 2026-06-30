@@ -25,6 +25,8 @@ jobs:
             @next/swc-linux-x64-gnu@16.2.9
       - name: Install OmniData deps (for verify:all parity/tests)
         run: npm install --no-audit --no-fund --prefix services/omnidata
+      - name: Install AI UI Capture deps (for verify:all tests)
+        run: npm install --no-audit --no-fund --prefix services/ai-ui-capture
       # Single source of truth: route-auth, schema/column coverage,
       # claims-benchmark, engine unit tests, typecheck, lint, build, and
       # OmniData typecheck/parity/tests all run here.

@@ -1,6 +1,7 @@
 # dependencies
 /node_modules
 /services/omnidata/node_modules
+/services/ai-ui-capture/node_modules
 
 # debug artifacts
 debug.log
