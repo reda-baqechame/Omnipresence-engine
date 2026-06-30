@@ -19,6 +19,7 @@
     "benchmark:strict": "node scripts/benchmark.mjs --strict",
     "audit:zero-paid-keys": "node scripts/audit-zero-paid-keys.mjs",
     "audit:superiority": "node scripts/provider-superiority.mjs",
+    "audit:superiority:strict": "node scripts/provider-superiority.mjs --strict",
     "benchmark:live": "node scripts/provider-live-benchmark.mjs",
     "verify:accuracy": "node scripts/verify-accuracy.mjs",
     "verify:stress": "node scripts/verify-stress.mjs",

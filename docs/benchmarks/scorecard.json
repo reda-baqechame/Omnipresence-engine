@@ -1,0 +1,187 @@
+{
+  "generatedAt": "2026-06-30T03:21:37.087Z",
+  "totalPerCallSavingUsd": 0.0634,
+  "capabilityCount": 10,
+  "accuracyBackedCount": 7,
+  "honestyNote": "Wins claimed on cost, freshness, latency, coverage and accuracy-vs-golden — NOT raw paid-index breadth.",
+  "capabilities": [
+    {
+      "capability": "serp",
+      "paidVendor": "Serper / DataForSEO / Firecrawl",
+      "sovereign": "SearXNG + OmniData + keyless Playwright scrape (proxy-rotated)",
+      "cost": {
+        "sovereign": 0,
+        "paid": 0.001,
+        "wins": true
+      },
+      "freshness": "real-time (live meta-search per query)",
+      "latencyMsP50": 935,
+      "coverage": "multi-instance failover + proxy rotation, full provenance on every rank.",
+      "accuracy": {
+        "floor": "known navigational #1 in top-3 (100%), exact #1 ≥70%",
+        "dataset": "tests/golden/serp/serp.golden.json",
+        "datasetPresent": true
+      },
+      "sovereignPathPresent": true
+    },
+    {
+      "capability": "crawl",
+      "paidVendor": "Firecrawl",
+      "sovereign": "Keyless self-hosted fetch crawler",
+      "cost": {
+        "sovereign": 0,
+        "paid": 0.002,
+        "wins": true
+      },
+      "freshness": "real-time (fetched on demand)",
+      "latencyMsP50": 225,
+      "coverage": "extracts JSON-LD/schema, headings and liftable AEO passages inline (structured for our loop, not just markdown).",
+      "accuracy": null,
+      "sovereignPathPresent": true
+    },
+    {
+      "capability": "backlinks",
+      "paidVendor": "DataForSEO / Ahrefs",
+      "sovereign": "Common Crawl webgraph + harmonic-centrality authority",
+      "cost": {
+        "sovereign": 0,
+        "paid": 0.02,
+        "wins": true
+      },
+      "freshness": "monthly (Common Crawl) + live authority resolve",
+      "latencyMsP50": 370,
+      "coverage": "free referring domains AND a 0-100 authority score (DR-equivalent) vendors bill separately for.",
+      "accuracy": {
+        "floor": "authority ordering ρ≥0.6 vs known DR tiers; referring-domain recall ≥ floor",
+        "dataset": "tests/golden/backlinks/backlinks.golden.json",
+        "datasetPresent": true
+      },
+      "sovereignPathPresent": true
+    },
+    {
+      "capability": "keywords",
+      "paidVendor": "Semrush / Ahrefs (volume + KD)",
+      "sovereign": "Google Trends extrapolation + ranking-authority KD (keyless)",
+      "cost": {
+        "sovereign": 0,
+        "paid": 0.01,
+        "wins": true
+      },
+      "freshness": "real-time (Trends) / per-SERP (KD)",
+      "latencyMsP50": null,
+      "coverage": "honest log-bucket + confidence label; KD from real ranking-page authority, not a position heuristic.",
+      "accuracy": {
+        "floor": "100% volume-bucket correctness; KD monotonic in authority",
+        "dataset": "tests/golden/keywords/keywords.golden.json",
+        "datasetPresent": true
+      },
+      "sovereignPathPresent": true
+    },
+    {
+      "capability": "performance",
+      "paidVendor": "SpeedCurve / paid CWV monitors",
+      "sovereign": "PageSpeed Insights + CrUX (keyless quota) via OmniData",
+      "cost": {
+        "sovereign": 0,
+        "paid": 0,
+        "wins": true
+      },
+      "freshness": "lab live + CrUX 28-day field",
+      "latencyMsP50": null,
+      "coverage": "lab + real-user field data unified into the OmniData spine for the AEO technical lever.",
+      "accuracy": {
+        "floor": "CWV within published range for reference sites",
+        "dataset": "tests/golden/performance/perf-local-tech.golden.json",
+        "datasetPresent": true
+      },
+      "sovereignPathPresent": true
+    },
+    {
+      "capability": "local",
+      "paidVendor": "BrightLocal / Local Falcon",
+      "sovereign": "OpenStreetMap (Nominatim + Overpass) proximity map-grid",
+      "cost": {
+        "sovereign": 0,
+        "paid": 0.01,
+        "wins": true
+      },
+      "freshness": "continuous (OSM community data)",
+      "latencyMsP50": null,
+      "coverage": "keyless geocode + haversine map-grid ranking; no fabricated local ranks.",
+      "accuracy": {
+        "floor": "geocode within 2km of known landmarks; correct proximity ranking",
+        "dataset": "tests/golden/performance/perf-local-tech.golden.json",
+        "datasetPresent": true
+      },
+      "sovereignPathPresent": true
+    },
+    {
+      "capability": "tech",
+      "paidVendor": "BuiltWith / Wappalyzer (paid tier)",
+      "sovereign": "Open rule-based fingerprint engine",
+      "cost": {
+        "sovereign": 0,
+        "paid": 0.01,
+        "wins": true
+      },
+      "freshness": "real-time (per page response)",
+      "latencyMsP50": null,
+      "coverage": "HTML/header/cookie/meta fingerprints with confidence + evidence; zero-false-positive guarantee.",
+      "accuracy": {
+        "floor": "known stacks detected, zero false positives on plain pages",
+        "dataset": "tests/golden/performance/perf-local-tech.golden.json",
+        "datasetPresent": true
+      },
+      "sovereignPathPresent": true
+    },
+    {
+      "capability": "citations",
+      "paidVendor": "Profound / AI-visibility trackers",
+      "sovereign": "Grounded multi-engine probes + word-boundary brand matcher",
+      "cost": {
+        "sovereign": 0,
+        "paid": 0,
+        "wins": true
+      },
+      "freshness": "real-time (probed per scan)",
+      "latencyMsP50": null,
+      "coverage": "auditable evidence spine; eTLD+1 citation matching; zero-false-positive brand detection.",
+      "accuracy": {
+        "floor": "zero false-positive mentions/citations on labeled transcripts",
+        "dataset": "tests/golden/citations/citations.golden.json",
+        "datasetPresent": true
+      },
+      "sovereignPathPresent": true
+    },
+    {
+      "capability": "generate",
+      "paidVendor": "OpenAI / Anthropic",
+      "sovereign": "Ollama (open models), gated by editorial-QA",
+      "cost": {
+        "sovereign": 0,
+        "paid": 0.01,
+        "wins": true
+      },
+      "freshness": "n/a (generation)",
+      "latencyMsP50": 19134,
+      "coverage": "free generation gated by editorial-QA + structural-AEO; paid LLM is an automatic upgrade only when the draft fails gates.",
+      "accuracy": null,
+      "sovereignPathPresent": true
+    },
+    {
+      "capability": "email",
+      "paidVendor": "Resend",
+      "sovereign": "Self-hosted SMTP (SPF/DKIM/DMARC)",
+      "cost": {
+        "sovereign": 0,
+        "paid": 0.0004,
+        "wins": true
+      },
+      "freshness": "n/a (delivery)",
+      "latencyMsP50": null,
+      "coverage": "no per-email fee; you own deliverability and the sending domain.",
+      "accuracy": null,
+      "sovereignPathPresent": true
+    }
+  ]
+}
