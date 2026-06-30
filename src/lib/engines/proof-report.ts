@@ -184,7 +184,7 @@ export function renderProofHTML(proof: ProofReport, color = "#6366f1"): string {
           <td style="padding:8px 12px">Technical findings resolved</td>
           <td style="padding:8px 12px;text-align:right;color:#666">0 / ${proof.findings.total}</td>
           <td style="padding:8px 12px;text-align:right;font-weight:600">${proof.findings.resolved} / ${proof.findings.total}</td>
-          <td style="padding:8px 12px;text-align:right;color:#16a34a;font-weight:600">+${proof.findings.resolved}</td>
+          <td style="padding:8px 12px;text-align:right;color:${proof.findings.resolved > 0 ? "#16a34a" : "#666"};font-weight:600">${proof.findings.resolved > 0 ? `+${proof.findings.resolved}` : "—"}</td>
         </tr>
       </tbody>
     </table>
