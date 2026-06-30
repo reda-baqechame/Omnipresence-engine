@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { apiError, apiForbidden, apiUnauthorized, readJsonBody } from "@/lib/security/api-response";
 import { verifyProjectAccess } from "@/lib/security/project-access";
-import { recordLedgerAction } from "@/lib/engines/results-ledger";
+import { inngest } from "@/lib/inngest/client";
 
 export async function GET() {
   const supabase = await createClient();
@@ -33,13 +33,13 @@ export async function POST(request: NextRequest) {
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) return apiUnauthorized();
 
-  let body: { projectId?: string; organizationId?: string; actionType?: string; title?: string; payload?: Record<string, unknown>; riskLevel?: string };
+  let body: { projectId?: string; organizationId?: string; actionType?: string; title?: string; payload?: Record<string, unknown>; riskLevel?: string; taskId?: string };
   try {
     body = await readJsonBody(request);
   } catch {
     return apiError("Invalid JSON body");
   }
-  const { projectId, organizationId, actionType, title, payload, riskLevel } = body;
+  const { projectId, organizationId, actionType, title, payload, riskLevel, taskId } = body;
   if (!projectId || !organizationId) return apiError("projectId and organizationId required");
 
   // Verify the caller can act on this project AND that the project actually
@@ -57,6 +57,7 @@ export async function POST(request: NextRequest) {
       action_type: actionType,
       title,
       payload: payload || {},
+      task_id: taskId || null,
       risk_level: riskLevel || "low",
       status: riskLevel === "high" ? "pending" : "approved",
       sla_due_at: slaDue,
@@ -96,7 +97,10 @@ export async function PATCH(request: NextRequest) {
   if (status) updates.status = status;
   if (assignedTo) updates.assigned_to = assignedTo;
 
-  if (execute && status === "approved") {
+  // Execute = hand the item to the Inngest worker, which runs the REAL action
+  // (CMS/schema/IndexNow/GBP/social) off the request path and writes back the
+  // result + ledger entry. No more fake "completed" without doing the work.
+  if (execute) {
     updates.status = "executing";
   }
 
@@ -108,20 +112,16 @@ export async function PATCH(request: NextRequest) {
     .single();
 
   if (execute && item) {
-    await recordLedgerAction(supabase, {
-      project_id: item.project_id,
-      action_type: item.action_type,
-      description: `Ops executed: ${item.title}`,
-      status: "completed",
-      executed_by: user.id,
-      outcome_snapshot: item.payload as Record<string, unknown>,
-    });
-
-    await supabase
-      .from("ops_queue")
-      .update({ status: "completed", executed_at: new Date().toISOString() })
-      .eq("id", id);
+    try {
+      await inngest.send({
+        name: "ops/execute.requested",
+        data: { opsId: id, projectId: item.project_id },
+      });
+    } catch {
+      await supabase.from("ops_queue").update({ status: "approved" }).eq("id", id);
+      return apiError("Failed to queue execution", 502);
+    }
   }
 
-  return NextResponse.json({ item });
+  return NextResponse.json({ item, queued: Boolean(execute) });
 }

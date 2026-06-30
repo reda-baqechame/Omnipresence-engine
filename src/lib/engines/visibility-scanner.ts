@@ -25,6 +25,12 @@ export interface VisibilityScanConfig {
   prompts: Array<{ id?: string; text: string; priority?: number }>;
   engines?: VisibilityEngine[];
   maxPrompts?: number;
+  /**
+   * Optional persona conditioning (Wave O3). When set, AI probes answer from
+   * this persona's perspective and the persona+geo are recorded on the probe
+   * trace. The stored prompt_text stays the original (clean) prompt.
+   */
+  persona?: string;
 }
 
 export interface VisibilityScanResult extends Omit<VisibilityResult, "id" | "created_at"> {
@@ -36,6 +42,11 @@ const DEFAULT_ENGINES: VisibilityEngine[] = SCAN_ENGINES;
 // Clamped to 1-10 and NaN-safe so a bad env value can never silently disable
 // LLM visibility (0 runs) or blow the budget with a runaway value.
 const AI_SAMPLE_RUNS = Math.min(10, Math.max(1, Math.floor(Number(process.env.VISIBILITY_SAMPLE_RUNS) || 3)));
+
+// Ground the first LLM sample with a live web-search tool (real cited URLs)
+// unless explicitly disabled. The cost firewall: only ONE grounded call per
+// prompt/engine; the rest sample parametrically for mention-rate stability.
+const AI_GROUNDED_SEARCH_ON = process.env.AI_GROUNDED_SEARCH !== "false";
 
 const LLM_ENGINES = new Set<VisibilityEngine>(["chatgpt", "claude", "gemini"]);
 
@@ -78,7 +89,18 @@ export async function runVisibilityScan(
         break;
       }
       const result = await scanSinglePrompt(config, prompt, engine);
-      if (result) results.push(result);
+      if (result) {
+        // Stamp persona/geo so the probe trace records the measurement cell
+        // (Wave O3). Stored prompt_text stays the clean original prompt.
+        if (config.persona || config.location) {
+          result.raw_response = {
+            ...(result.raw_response || {}),
+            ...(config.persona ? { persona: config.persona } : {}),
+            geo: config.location,
+          };
+        }
+        results.push(result);
+      }
     }
   }
 
@@ -114,8 +136,8 @@ async function scanSinglePrompt(
 
   // Preferred (when enabled): grounded UI-surface capture for AI engines —
   // the real surface a user sees, not just the model's parametric knowledge.
-  if (hasAiUiCapture() && (LLM_ENGINES.has(engine) || engine === "perplexity" || engine === "google_ai_overview")) {
-    const surface = engine === "claude" ? "chatgpt" : (engine as "chatgpt" | "gemini" | "perplexity" | "google_ai_overview");
+  if (hasAiUiCapture() && (LLM_ENGINES.has(engine) || engine === "perplexity" || engine === "google_ai_overview" || engine === "bing_copilot")) {
+    const surface = engine === "claude" ? "chatgpt" : (engine as "chatgpt" | "gemini" | "perplexity" | "google_ai_overview" | "bing_copilot");
     const captured = await captureAiUiSurface(surface, prompt.text, config.brandName, config.brandDomain, config.competitors).catch(() => null);
     if (captured) {
       const sourceDomains = captured.sourceDomains.length
@@ -269,6 +291,12 @@ async function scanSinglePrompt(
           data_source: "measured",
         };
       }
+    } else if (engine === "bing_copilot") {
+      // Microsoft Copilot has no public answer API and the Bing Web Search API
+      // has been retired, so the ONLY compliant measurement is the UI-capture
+      // backend handled above. If that produced nothing, we honestly label this
+      // engine unavailable rather than proxy it with another model's answer.
+      return unavailableRow(base, "copilot_requires_ui_capture_backend");
     }
   } catch (error) {
     // Grounded provider failed — log it (never silently render as "not mentioned"),
@@ -323,13 +351,19 @@ async function sampleLLMVisibility(
   const provider: "openai" | "gemini" | "claude" = engine === "chatgpt" ? "openai" : engine === "gemini" ? "gemini" : "claude";
   const runs: Array<ReturnType<typeof mapAIResult> & { text: string }> = [];
 
+  // Cost-bounded grounding: the FIRST sample uses a live web-search tool (real
+  // cited URLs → grounded measurement); the remaining samples are cheap
+  // parametric reads that only stabilise the mention rate. So we pay for one
+  // grounded call per prompt/engine, not N. Grounding is on unless disabled.
+  const groundingOn = AI_GROUNDED_SEARCH_ON;
   for (let i = 0; i < AI_SAMPLE_RUNS; i++) {
     const res = await queryLLMForVisibility(
       provider,
       prompt.text,
       config.brandName,
       config.brandDomain,
-      config.competitors
+      config.competitors,
+      { grounded: groundingOn && i === 0, persona: config.persona }
     );
     if (res.success && res.data) {
       runs.push({ ...mapAIResult(res.data), text: res.data.rawResponse || "" });
@@ -346,7 +380,8 @@ async function sampleLLMVisibility(
         prompt.text,
         config.brandName,
         config.brandDomain,
-        config.competitors
+        config.competitors,
+        { persona: config.persona }
       );
       if (res.success && res.data) {
         runs.push({ ...mapAIResult(res.data), text: res.data.rawResponse || "" });
@@ -357,8 +392,16 @@ async function sampleLLMVisibility(
 
   if (runs.length === 0) return null;
 
+  // Did any sample actually run grounded (real citations)? That decides whether
+  // this probe is honestly "grounded/measured" vs "model_knowledge".
+  const groundedRuns = runs.filter((r) => r.grounded);
+  const isGrounded = groundedRuns.length > 0;
+
   const mentionRate = runs.filter((r) => r.brand_mentioned).length / runs.length;
-  const citationRate = runs.filter((r) => r.brand_cited).length / runs.length;
+  // Citation rate is meaningful ONLY from grounded runs (parametric runs never
+  // cite). Computing it over all runs would dilute a real citation to 1/N.
+  const citationBase = isGrounded ? groundedRuns : runs;
+  const citationRate = citationBase.filter((r) => r.brand_cited).length / citationBase.length;
   const aggregated = runs[runs.length - 1];
   const combinedText = runs.map((r) => r.text).join("\n\n");
 
@@ -367,7 +410,8 @@ async function sampleLLMVisibility(
     competitorMentions[comp] = runs.some((r) => r.competitor_mentions[comp]);
   }
 
-  const sourceDomains = [...new Set(runs.flatMap((r) => r.source_domains))];
+  // Source domains/citations come only from grounded runs (real URLs).
+  const sourceDomains = [...new Set(groundedRuns.flatMap((r) => r.source_domains))];
   // Average recommendation strength only over runs that actually mentioned the brand.
   const mentionedRuns = runs.filter((r) => r.brand_mentioned);
   const recStrength = mentionedRuns.length
@@ -392,30 +436,38 @@ async function sampleLLMVisibility(
     competitor_mentions: competitorMentions,
     competitor_citations: aggregated.competitor_citations,
     source_domains: sourceDomains,
-    cited_urls: [...new Set(runs.flatMap((r) => r.cited_urls))],
-    // LLM-direct measures the model's PARAMETRIC knowledge, not a live search UI.
-    measurement_mode: "model_knowledge",
+    cited_urls: [...new Set(groundedRuns.flatMap((r) => r.cited_urls))],
+    // Grounded when at least one sample used a live web-search tool (real cited
+    // URLs); otherwise the model's PARAMETRIC knowledge (no browsing).
+    measurement_mode: isGrounded ? "grounded" : "model_knowledge",
     sentiment: mentionRate >= 0.5 ? analyzeSentiment(combinedText, config.brandName) : "unknown",
     recommendation_strength: recStrength,
-    owned_cited: citationRate >= 0.5,
-    third_party_cited: mentionRate >= 0.5 && sourceDomains.some((d) => !d.includes(_brandToken)),
+    owned_cited: isGrounded && citationRate >= 0.5,
+    third_party_cited: isGrounded && sourceDomains.some((d) => !sameRegistrableDomain(d, config.brandDomain)),
     answer_position: answerPosition(combinedText, config.brandName, config.competitors),
     confidence: sampleConfidence,
     sample_count: runs.length,
     variance: Math.round(mentionRate * (1 - mentionRate) * 1000) / 1000,
     raw_response: {
       sample_runs: runs.length,
+      grounded_runs: groundedRuns.length,
       mention_rate: mentionRate,
       citation_rate: citationRate,
-      data_source: "model_knowledge",
-      data_source_detail: usedOllama ? `ollama:${getOllamaModel()}` : "llm_direct",
-      measurement_mode: "model_knowledge",
+      data_source: isGrounded ? "measured" : "model_knowledge",
+      data_source_detail: usedOllama
+        ? `ollama:${getOllamaModel()}`
+        : isGrounded
+          ? "llm_grounded"
+          : "llm_direct",
+      measurement_mode: isGrounded ? "grounded" : "model_knowledge",
       entity_prominence: computeEntityProminence(combinedText, [config.brandName, ...config.competitors]),
       label: usedOllama
         ? `Model-knowledge (open model ${getOllamaModel()}, ${runs.length}-run sample, no browsing)`
-        : `Model-knowledge (${runs.length}-run sample, no browsing)`,
+        : isGrounded
+          ? `Grounded web search (${groundedRuns.length} grounded + ${runs.length - groundedRuns.length} parametric sample${runs.length === 1 ? "" : "s"})`
+          : `Model-knowledge (${runs.length}-run sample, no browsing)`,
     },
-    data_source: "model_knowledge",
+    data_source: isGrounded ? "measured" : "model_knowledge",
   };
 }
 
@@ -580,6 +632,7 @@ function mapAIResult(data: {
   sourceDomains: string[];
   citedUrls: string[];
   rawResponse: string;
+  grounded?: boolean;
 }) {
   return {
     brand_mentioned: data.brandMentioned,
@@ -588,10 +641,11 @@ function mapAIResult(data: {
     competitor_citations: data.competitorCitations,
     source_domains: data.sourceDomains,
     cited_urls: data.citedUrls,
+    grounded: Boolean(data.grounded),
     raw_response: {
       text: data.rawResponse,
-      data_source: "measured",
-      data_source_detail: "llm_direct",
+      data_source: data.grounded ? "measured" : "model_knowledge",
+      data_source_detail: data.grounded ? "llm_grounded" : "llm_direct",
     },
   };
 }
@@ -620,7 +674,7 @@ export function getResultDataSourceLabel(result: Pick<VisibilityResult, "raw_res
  * CI that polling/analytics tools use (never returns <0 or >1, and stays sane at
  * n=1 unlike the naive normal approximation). z=1.96 ≈ 95% confidence.
  */
-function wilsonInterval(successes: number, n: number, z = 1.96): { low: number; high: number } {
+export function wilsonInterval(successes: number, n: number, z = 1.96): { low: number; high: number } {
   if (n <= 0) return { low: 0, high: 0 };
   const phat = successes / n;
   const denom = 1 + (z * z) / n;
@@ -751,6 +805,8 @@ export interface ProbeTraceRow {
   prompt_id?: string;
   engine: string;
   prompt: string;
+  persona: string | null;
+  geo: string | null;
   response_excerpt: string | null;
   brand_mentioned: boolean;
   brand_cited: boolean;
@@ -799,6 +855,8 @@ export function buildProbeTraceRows(results: VisibilityScanResult[]): ProbeTrace
       prompt_id: r.prompt_id,
       engine: r.engine,
       prompt: r.prompt_text,
+      persona: (r.raw_response?.persona as string) ?? null,
+      geo: (r.raw_response?.geo as string) ?? null,
       response_excerpt: probeExcerpt(r.raw_response),
       brand_mentioned: Boolean(r.brand_mentioned),
       brand_cited: Boolean(r.brand_cited),

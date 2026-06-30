@@ -22,8 +22,17 @@ import {
 } from "@/lib/engines/guarantee";
 import { runCadenceReview, gatherOperationalGuarantees } from "@/lib/engines/continuous-loop";
 import { calculateVisibilityMetrics } from "@/lib/engines/visibility-scanner";
+import { runPromptPanel } from "@/lib/engines/prompt-panel-runner";
+import { runQueuedOps } from "@/lib/engines/ops-executor";
+import { verifyPendingDeployments } from "@/lib/engines/deploy-verification";
+import {
+  resolveScopedPrompts,
+  captureDeployBaseline,
+  targetedReprobe,
+  recordDeployDelta,
+} from "@/lib/engines/deploy-rescan";
 import { runAllRankChecks } from "@/lib/engines/rank-tracker-service";
-import { snapshotProjectBacklinks } from "@/lib/engines/backlink-monitor";
+import { snapshotProjectBacklinks, snapshotProjectBacklinkGraph } from "@/lib/engines/backlink-monitor";
 import { processScheduledContent } from "@/lib/engines/content-publish-scheduler";
 import {
   runKeywordResearch,
@@ -669,6 +678,23 @@ export const weeklyBacklinkMonitor = inngest.createFunction(
           logProviderError("cron:backlink-monitor", error, { projectId: project.id });
         }
       });
+      // URL-level graph refresh: crawl-verified new/lost + competitor
+      // intersection + toxicity, persisted as a temporal rollup. Best-effort.
+      await step.run(`backlink-graph-${project.id}`, async () => {
+        try {
+          const { data: comps } = await supabase
+            .from("competitors")
+            .select("domain")
+            .eq("project_id", project.id)
+            .not("domain", "is", null);
+          const competitorDomains = Array.from(
+            new Set((comps || []).map((c) => (c.domain || "").replace(/^www\./, "").toLowerCase()).filter(Boolean))
+          );
+          await snapshotProjectBacklinkGraph(supabase, project.id, project.domain, competitorDomains);
+        } catch (error) {
+          logProviderError("cron:backlink-graph", error, { projectId: project.id });
+        }
+      });
       snapshotted++;
     }
 
@@ -1147,6 +1173,130 @@ export const quarterlyOperatingReview = inngest.createFunction(
   }
 );
 
+// Wave Q1 — execute one approved ops item with its real runner.
+export const runOpsItem = inngest.createFunction(
+  { id: "ops-execute-requested", retries: 2, triggers: [{ event: "ops/execute.requested" }] },
+  async ({ event, step }) => {
+    const { opsId } = event.data as { opsId: string; projectId: string };
+    return step.run("execute-ops", async () => {
+      const supabase = await createServiceClient();
+      return runQueuedOps(supabase, opsId);
+    });
+  }
+);
+
+// Wave Q3 — on publish, re-measure the asset's target prompts and record an
+// asset-scoped before/after delta after a propagation window.
+export const deployRescanLoop = inngest.createFunction(
+  { id: "deploy-rescan-loop", retries: 1, triggers: [{ event: "asset/deployed" }] },
+  async ({ event, step }) => {
+    const { projectId, url, keyword, taskId } = event.data as {
+      projectId: string; organizationId: string; url: string; assetId?: string; keyword?: string; taskId?: string;
+    };
+    const supabase = await createServiceClient();
+
+    const project = await step.run("load-project", async () => {
+      const { data } = await supabase
+        .from("projects")
+        .select("id, name, domain, competitors, location")
+        .eq("id", projectId)
+        .single();
+      return data;
+    });
+    if (!project) return { skipped: "project_not_found" };
+
+    const prompts = await step.run("resolve-scoped-prompts", () =>
+      resolveScopedPrompts(supabase, projectId, keyword)
+    );
+    if (!prompts.length) return { skipped: "no_scoped_prompts", url };
+
+    const before = await step.run("baseline", () => captureDeployBaseline(supabase, projectId, prompts));
+
+    const waitDays = Math.max(1, Number(process.env.DEPLOY_RESCAN_WAIT_DAYS) || 3);
+    await step.sleep("await-propagation", `${waitDays}d`);
+
+    const reprobeStart = await step.run("targeted-reprobe", () => targetedReprobe(supabase, project, prompts));
+    const after = await step.run("after", () =>
+      measureCitationRate(supabase, projectId, { sinceISO: reprobeStart, prompts })
+    );
+    await step.run("record-delta", () => recordDeployDelta(supabase, projectId, url, before, after, taskId));
+
+    return { url, before, after };
+  }
+);
+
+// Wave Q2 — sweep recently-completed deployments and verify they're live
+// (HTTP 200 + expected content/schema), stamping results_ledger.verified_at.
+export const deployVerificationSweep = inngest.createFunction(
+  { id: "deploy-verification-sweep", retries: 1, triggers: [{ cron: "*/30 * * * *" }] },
+  async ({ step }) => {
+    return step.run("verify-pending", async () => {
+      const supabase = await createServiceClient();
+      return verifyPendingDeployments(supabase, { limit: 50 });
+    });
+  }
+);
+
+// Wave Q1 — drain any approved-but-not-executed ops items every 15 minutes so
+// nothing sits stuck if an inline send was missed.
+export const opsQueueDrain = inngest.createFunction(
+  { id: "ops-queue-drain", retries: 1, triggers: [{ cron: "*/15 * * * *" }] },
+  async ({ step }) => {
+    const supabase = await createServiceClient();
+    const items = await step.run("fetch-approved", async () => {
+      const { data } = await supabase
+        .from("ops_queue")
+        .select("id, project_id")
+        .eq("status", "approved")
+        .order("sla_due_at", { ascending: true })
+        .limit(25);
+      return data || [];
+    });
+    for (const it of items) {
+      await step.sendEvent(`ops-exec-${it.id}`, {
+        name: "ops/execute.requested",
+        data: { opsId: it.id, projectId: it.project_id },
+      });
+    }
+    return { drained: items.length };
+  }
+);
+
+// Wave O2 — run a single prompt panel (event-driven, off the request path).
+export const runPanelOnRequest = inngest.createFunction(
+  { id: "panel-run-requested", retries: 1, triggers: [{ event: "panel/run.requested" }] },
+  async ({ event, step }) => {
+    const { panelId } = event.data as { panelId: string; projectId: string };
+    return step.run("run-panel", async () => {
+      const supabase = await createServiceClient();
+      const summary = await runPromptPanel(supabase, panelId);
+      return summary;
+    });
+  }
+);
+
+// Wave O2 — weekly cron: re-run every active panel so trends accrue.
+export const weeklyPanelRun = inngest.createFunction(
+  { id: "weekly-panel-run", retries: 1, triggers: [{ cron: "0 8 * * 1" }] },
+  async ({ step }) => {
+    const supabase = await createServiceClient();
+    const panels = await step.run("fetch-active-panels", async () => {
+      const { data } = await supabase
+        .from("ai_prompt_panels")
+        .select("id, project_id")
+        .eq("is_active", true);
+      return data || [];
+    });
+    for (const panel of panels) {
+      await step.sendEvent(`panel-run-${panel.id}`, {
+        name: "panel/run.requested",
+        data: { panelId: panel.id, projectId: panel.project_id },
+      });
+    }
+    return { queued: panels.length };
+  }
+);
+
 export const functions = [
   runFullScan,
   runFullScanLegacy,
@@ -1177,4 +1327,10 @@ export const functions = [
   weeklyInternalLinkScan,
   monthlyLinkBuilding,
   quarterlyOperatingReview,
+  runPanelOnRequest,
+  weeklyPanelRun,
+  runOpsItem,
+  opsQueueDrain,
+  deployVerificationSweep,
+  deployRescanLoop,
 ];

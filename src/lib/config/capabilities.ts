@@ -40,6 +40,47 @@ export interface ProviderStatus {
   category: "ai" | "data" | "infra" | "social" | "oauth";
 }
 
+/**
+ * Engine-role taxonomy (manifest v25, Wave N1) — the architectural "three LLM
+ * layers" plus the cost firewall. Every provider/adapter plays exactly one role:
+ *  - surface_measurement: measure an external discovery surface we do NOT own
+ *    (Google SERP, the open web, AI answers, open-web backlink datasets).
+ *  - internal_reasoning: our own brain (clustering, scoring, drafting) — runs
+ *    local/open-model FIRST so the platform stays cheap and sovereign.
+ *  - execution: act on the world (publish, email, social, deploy).
+ *  - benchmark_only: a paid vendor used ONLY to validate/compare our numbers,
+ *    NEVER to produce a customer-facing result. The cost firewall.
+ *  - fallback_only: a (usually paid) source used only as a last resort when every
+ *    sovereign adapter for the capability has failed.
+ */
+export type ProviderCategory =
+  | "surface_measurement"
+  | "internal_reasoning"
+  | "execution"
+  | "benchmark_only"
+  | "fallback_only";
+
+/**
+ * Adapter ids the operator has forced to benchmark-only at runtime
+ * (comma-separated `BENCHMARK_ONLY_PROVIDERS`). These are excluded from every
+ * customer-facing route() and may only be called by audit/benchmark scripts.
+ * This is how a paid SEO vendor (DataForSEO/Semrush/Ahrefs) is kept OFF the
+ * customer path while still usable for an honest "we match them" comparison.
+ */
+export function benchmarkOnlyOverrides(): Set<string> {
+  return new Set(
+    (process.env.BENCHMARK_ONLY_PROVIDERS || "")
+      .split(",")
+      .map((s) => s.trim())
+      .filter(Boolean)
+  );
+}
+
+/** Is this adapter id forced to benchmark-only via env? */
+export function isBenchmarkOnlyForced(adapterId: string): boolean {
+  return benchmarkOnlyOverrides().has(adapterId);
+}
+
 export const V2_VERSION = "0.6.0";
 
 /** All execution engines are enabled — paywalls deferred. */

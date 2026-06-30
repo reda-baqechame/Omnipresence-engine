@@ -23,17 +23,19 @@ jobs:
             @tailwindcss/oxide-linux-x64-gnu@4.3.1 \
             lightningcss-linux-x64-gnu@1.32.0 \
             @next/swc-linux-x64-gnu@16.2.9
-      - run: npm run typecheck
-      - run: npm run lint
-      - run: npm run build
+      - name: Install OmniData deps (for verify:all parity/tests)
+        run: npm install --no-audit --no-fund --prefix services/omnidata
+      # Single source of truth: route-auth, schema/column coverage,
+      # claims-benchmark, engine unit tests, typecheck, lint, build, and
+      # OmniData typecheck/parity/tests all run here.
+      - name: verify:all (full gate)
+        run: npm run verify:all
         env:
           NEXT_PUBLIC_SUPABASE_URL: https://placeholder.supabase.co
           NEXT_PUBLIC_SUPABASE_ANON_KEY: placeholder
           SUPABASE_SERVICE_ROLE_KEY: placeholder
-      - name: OmniData tests
-        run: |
-          npm install --no-audit --no-fund --prefix services/omnidata
-          npm test --prefix services/omnidata
+      - name: Zero-paid-keys sovereignty audit
+        run: npm run audit:zero-paid-keys
       - run: npm run start &
       - run: npx wait-on http://localhost:3000 -t 120000
       - run: npm run smoke

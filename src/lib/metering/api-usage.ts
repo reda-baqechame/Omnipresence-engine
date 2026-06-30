@@ -52,12 +52,56 @@ export class ApiCreditExceededError extends Error {
   }
 }
 
+export class TenantBudgetExceededError extends Error {
+  constructor(public reason: string) {
+    super(`tenant-budget: ${reason}`);
+    this.name = "TenantBudgetExceededError";
+  }
+}
+
 export async function assertApiCredits(
   _supabase: SupabaseClient,
   _organizationId: string,
   _credits: number
 ): Promise<void> {
   if (FREE_ACCESS_MODE) return;
+}
+
+/**
+ * Per-tenant daily surface-measurement budget (Wave T3 cost hardening).
+ *
+ * Even with free access, one noisy tenant must not be able to burn the platform
+ * owner's shared paid-API spend (grounded probes, SERP) for everyone. When
+ * TENANT_DAILY_CREDIT_CAP > 0, this caps how many measurement credits a single
+ * organization can consume per UTC day. Fail-open on read errors so a DB blip
+ * never wrongly blocks a paying tenant. Throws TenantBudgetExceededError when
+ * the cap is hit — callers degrade the affected engine to "unavailable".
+ */
+export async function assertTenantSurfaceBudget(
+  supabase: SupabaseClient,
+  organizationId: string,
+  pendingCredits = 1
+): Promise<void> {
+  const cap = Number(process.env.TENANT_DAILY_CREDIT_CAP);
+  if (!Number.isFinite(cap) || cap <= 0) return; // disabled by default
+
+  try {
+    const dayStart = `${new Date().toISOString().slice(0, 10)}T00:00:00Z`;
+    const { data } = await supabase
+      .from("api_usage")
+      .select("credits_used")
+      .eq("organization_id", organizationId)
+      .gte("created_at", dayStart);
+    const usedToday = (data || []).reduce((a, r) => a + (Number(r.credits_used) || 0), 0);
+    if (usedToday + pendingCredits > cap) {
+      throw new TenantBudgetExceededError(
+        `org ${organizationId} hit daily cap ${cap} (used ~${usedToday})`
+      );
+    }
+  } catch (e) {
+    if (e instanceof TenantBudgetExceededError) throw e;
+    // Fail-open on read errors.
+  }
 }
 
 export async function getApiUsageSummary(

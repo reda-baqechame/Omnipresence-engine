@@ -23,7 +23,29 @@ export interface LiveKeywordRow {
   data_source?: "keyword_planner" | "trends_estimated" | "estimated";
 }
 
-export async function researchKeywordsLive(seed: string): Promise<{
+/** Per-tenant Google Ads credentials forwarded to the Keyword Planner. */
+export interface GoogleAdsCredsInput {
+  developerToken?: string;
+  clientId?: string;
+  clientSecret?: string;
+  refreshToken?: string;
+  customerId?: string;
+  loginCustomerId?: string;
+}
+
+export interface KeywordResearchOptions {
+  /** geoTargetConstants/<id> or a bare numeric id (e.g. "2826" for the UK). */
+  geo?: string;
+  /** languageConstants/<id> or a bare numeric id. */
+  language?: string;
+  /** Per-tenant Google Ads OAuth so the tenant's own account/quota is used. */
+  credentials?: GoogleAdsCredsInput;
+}
+
+export async function researchKeywordsLive(
+  seed: string,
+  options?: KeywordResearchOptions
+): Promise<{
   seed: string;
   suggestions: LiveKeywordRow[];
   related: LiveKeywordRow[];
@@ -31,7 +53,12 @@ export async function researchKeywordsLive(seed: string): Promise<{
 } | null> {
   const data = await intelligencePost<{ tasks: Array<{ result: Array<Record<string, unknown>> }> }>(
     "/keywords/suggestions/live",
-    [{ keyword: seed }]
+    [{
+      keyword: seed,
+      geo: options?.geo,
+      language: options?.language,
+      credentials: options?.credentials,
+    }]
   );
   if (data) {
     const result = extractResult<{

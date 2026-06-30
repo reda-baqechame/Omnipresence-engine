@@ -42,6 +42,28 @@ function hasAiUiCapture(): boolean {
 }
 
 /**
+ * Platform can offer at least one first-party data connector (analytics/CRM/
+ * revenue/ads). This is what makes the attribution_proof claim honest: if NO
+ * connector path is configured, the platform cannot prove first-party lift, so
+ * the claim must go unbacked rather than rely on the always-on capability.
+ */
+function hasFirstPartyConnectors(): boolean {
+  const env = (k: string) => {
+    const v = process.env[k];
+    return Boolean(v && v.length > 0 && !v.startsWith("your-"));
+  };
+  return (
+    env("GOOGLE_CLIENT_ID") ||
+    env("BING_CLIENT_ID") ||
+    env("HUBSPOT_CLIENT_ID") ||
+    env("META_CLIENT_ID") ||
+    env("LINKEDIN_CLIENT_ID") ||
+    env("PLAUSIBLE_API_KEY") ||
+    env("POSTHOG_API_KEY")
+  );
+}
+
+/**
  * Capability-key -> live check (referenced by claims.json). The checks are
  * Zero-Paid-Keys aware: when ZERO_PAID_KEYS is on, paid-only capabilities
  * collapse to their keyless equivalents so claims auto-downgrade instead of
@@ -62,6 +84,8 @@ export const CAPABILITY_CHECKS: Record<string, () => boolean> = {
   // Referring-domains LIST needs a real index; domain AUTHORITY is keyless-always.
   backlinksIndex: () => hasBacklinksIndexCapability(),
   domainAuthority: () => true,
+  // Attribution proof requires that a first-party connector path actually exists.
+  firstPartyConnectors: hasFirstPartyConnectors,
 };
 
 export function isClaimBacked(claim: Claim): boolean {

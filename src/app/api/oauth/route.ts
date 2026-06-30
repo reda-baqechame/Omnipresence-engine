@@ -33,6 +33,34 @@ const OAUTH_PROVIDERS = {
     google: true,
     redirectPath: "distribution",
   },
+  hubspot: {
+    authUrl: "https://app.hubspot.com/oauth/authorize",
+    scopes: ["crm.objects.contacts.read", "crm.objects.deals.read", "oauth"],
+    clientIdEnv: "HUBSPOT_CLIENT_ID",
+    google: false,
+    redirectPath: "attribution",
+  },
+  google_ads: {
+    authUrl: "https://accounts.google.com/o/oauth2/v2/auth",
+    scopes: ["https://www.googleapis.com/auth/adwords"],
+    clientIdEnv: "GOOGLE_CLIENT_ID",
+    google: true,
+    redirectPath: "attribution",
+  },
+  meta_ads: {
+    authUrl: "https://www.facebook.com/v19.0/dialog/oauth",
+    scopes: ["ads_read"],
+    clientIdEnv: "META_CLIENT_ID",
+    google: false,
+    redirectPath: "attribution",
+  },
+  linkedin_ads: {
+    authUrl: "https://www.linkedin.com/oauth/v2/authorization",
+    scopes: ["r_ads_reporting", "r_ads"],
+    clientIdEnv: "LINKEDIN_CLIENT_ID",
+    google: false,
+    redirectPath: "attribution",
+  },
 };
 
 export async function GET(request: NextRequest) {
@@ -83,7 +111,7 @@ export async function POST(request: NextRequest) {
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) return apiUnauthorized();
 
-  const { projectId, provider, accessToken, refreshToken, expiresAt } = await readJsonBody(request);
+  const { projectId, provider, accessToken, refreshToken, expiresAt, metadata } = await readJsonBody(request);
 
   const access = await verifyProjectAccess(supabase, projectId, user.id, "admin");
   if (!access) return apiForbidden();
@@ -96,6 +124,7 @@ export async function POST(request: NextRequest) {
       access_token: accessToken,
       refresh_token: refreshToken,
       expires_at: expiresAt,
+      ...(metadata && typeof metadata === "object" ? { metadata } : {}),
     }, { onConflict: "project_id,provider" })
     .select()
     .single();

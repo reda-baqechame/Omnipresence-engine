@@ -3,6 +3,52 @@ import { searchPlaces, hasPlacesProvider, type PlaceResult } from "@/lib/provide
 import { geocode, findNearbyBusinesses, type NearbyBusiness } from "@/lib/providers/osm";
 
 /**
+ * Keyless map-grid ranking via OpenStreetMap proximity (sovereign fallback when
+ * no Serper Places key is set). Pulls same-category businesses once over the grid
+ * radius via Overpass, then ranks the brand at each cell by distance — a real,
+ * keyless proxy for the proximity-driven local pack. Returns null when the brand
+ * isn't discoverable in OSM (honest: no fabricated ranks).
+ */
+async function rankGridKeyless(
+  points: { row: number; col: number; lat: number; lng: number }[],
+  center: { lat: number; lng: number },
+  radiusKm: number,
+  keyword: string,
+  brandNorm: string,
+  domainNorm: string
+): Promise<GridCell[] | null> {
+  const nearby = await findNearbyBusinesses({
+    lat: center.lat,
+    lng: center.lng,
+    radiusMeters: Math.round(radiusKm * 1000) + 2000,
+    category: keyword,
+    limit: 100,
+  });
+  if (!nearby.available || nearby.businesses.length === 0) return null;
+
+  const brand = nearby.businesses.find((b) => {
+    const t = normalize(b.name);
+    const w = normalize((b.website || "").replace(/^https?:\/\//, "").split("/")[0]);
+    return (
+      (brandNorm.length > 0 && (t.includes(brandNorm) || brandNorm.includes(t))) ||
+      (domainNorm.length > 0 && w.includes(domainNorm))
+    );
+  });
+  if (!brand) {
+    // Brand not present in OSM for this category — report null ranks honestly.
+    return points.map((p) => ({ row: p.row, col: p.col, lat: p.lat, lng: p.lng, rank: null }));
+  }
+
+  return points.map((p) => {
+    const ranked = [...nearby.businesses].sort(
+      (a, b) => haversineKm(p.lat, p.lng, a.lat, a.lng) - haversineKm(p.lat, p.lng, b.lat, b.lng)
+    );
+    const idx = ranked.findIndex((b) => b === brand);
+    return { row: p.row, col: p.col, lat: p.lat, lng: p.lng, rank: idx >= 0 ? idx + 1 : null };
+  });
+}
+
+/**
  * Local SEO engine (Phase 12): GBP audit, map-grid rank tracking (Local Falcon
  * style), NAP consistency, review velocity, and local landing-page generation.
  * Everything uses real Places data; when no Places provider is configured we
@@ -108,6 +154,19 @@ export interface MapGridResult {
   avgRank: number | null;
   foundCells: number;
   totalCells: number;
+  /** Where the grid ranking came from: Serper Places (paid) or keyless OSM proximity. */
+  source: "serper" | "openstreetmap";
+}
+
+/** Haversine distance in km between two lat/lng points. */
+function haversineKm(aLat: number, aLng: number, bLat: number, bLng: number): number {
+  const R = 6371;
+  const dLat = ((bLat - aLat) * Math.PI) / 180;
+  const dLng = ((bLng - aLng) * Math.PI) / 180;
+  const s =
+    Math.sin(dLat / 2) ** 2 +
+    Math.cos((aLat * Math.PI) / 180) * Math.cos((bLat * Math.PI) / 180) * Math.sin(dLng / 2) ** 2;
+  return 2 * R * Math.asin(Math.min(1, Math.sqrt(s)));
 }
 
 function buildGrid(centerLat: number, centerLng: number, size: number, radiusKm: number): { row: number; col: number; lat: number; lng: number }[] {
@@ -144,54 +203,64 @@ export async function runMapGrid(
 ): Promise<MapGridResult> {
   const gridSize = Math.min(7, Math.max(3, input.gridSize || 5));
   const radiusKm = Math.min(20, Math.max(0.5, input.radiusKm || 2));
+  const useKeyless = !hasPlacesProvider();
+  const source: MapGridResult["source"] = useKeyless ? "openstreetmap" : "serper";
 
-  if (!hasPlacesProvider()) {
-    return {
-      available: false,
-      reason: "Set SERPER_API_KEY to run map-grid local rank tracking.",
-      keyword: input.keyword,
-      gridSize,
-      radiusKm,
-      cells: [],
-      avgRank: null,
-      foundCells: 0,
-      totalCells: 0,
-    };
-  }
+  const empty = (reason: string): MapGridResult => ({
+    available: false,
+    reason,
+    keyword: input.keyword,
+    gridSize,
+    radiusKm,
+    cells: [],
+    avgRank: null,
+    foundCells: 0,
+    totalCells: 0,
+    source,
+  });
 
-  // Resolve a center if not supplied via a GBP lookup.
+  // Resolve a center: GBP lookup (Serper) or OSM geocode (keyless).
   let center = input.center;
-  if (!center) {
+  if (!center && !useKeyless) {
     const audit = await auditGbpProfile({ name: input.name, domain: input.domain, location: input.location });
     center = audit.center;
   }
+  if (!center && useKeyless) {
+    const q = input.location ? `${input.name} ${input.location}` : input.name;
+    let geo = await geocode(q);
+    if ((!geo.available || !geo.results[0]) && input.location) geo = await geocode(input.location);
+    if (geo.available && geo.results[0]) center = { lat: geo.results[0].lat, lng: geo.results[0].lng };
+  }
   if (!center) {
-    return {
-      available: false,
-      reason: "Could not resolve business coordinates. Ensure your GBP is on the map.",
-      keyword: input.keyword,
-      gridSize,
-      radiusKm,
-      cells: [],
-      avgRank: null,
-      foundCells: 0,
-      totalCells: 0,
-    };
+    return empty(
+      useKeyless
+        ? "Could not geocode the business/location via OpenStreetMap. Pass a center or location."
+        : "Could not resolve business coordinates. Ensure your GBP is on the map."
+    );
   }
 
   const brandNorm = normalize(input.name);
   const domainNorm = normalize((input.domain || "").replace(/^https?:\/\//, "").split("/")[0]);
   const points = buildGrid(center.lat, center.lng, gridSize, radiusKm);
 
-  const cells: GridCell[] = [];
-  for (const p of points) {
-    const places = await searchPlaces(input.keyword, { ll: `@${p.lat},${p.lng},14z` });
-    let rank: number | null = null;
-    if (places) {
-      const idx = places.findIndex((pl) => matchesBrand(pl, brandNorm, domainNorm));
-      rank = idx >= 0 ? idx + 1 : null;
+  let cells: GridCell[];
+  if (useKeyless) {
+    const keyless = await rankGridKeyless(points, center, radiusKm, input.keyword, brandNorm, domainNorm);
+    if (!keyless) {
+      return empty("No same-category businesses found in OpenStreetMap for this area/keyword.");
     }
-    cells.push({ row: p.row, col: p.col, lat: p.lat, lng: p.lng, rank });
+    cells = keyless;
+  } else {
+    cells = [];
+    for (const p of points) {
+      const places = await searchPlaces(input.keyword, { ll: `@${p.lat},${p.lng},14z` });
+      let rank: number | null = null;
+      if (places) {
+        const idx = places.findIndex((pl) => matchesBrand(pl, brandNorm, domainNorm));
+        rank = idx >= 0 ? idx + 1 : null;
+      }
+      cells.push({ row: p.row, col: p.col, lat: p.lat, lng: p.lng, rank });
+    }
   }
 
   const found = cells.filter((c) => c.rank != null);
@@ -220,6 +289,7 @@ export async function runMapGrid(
     avgRank,
     foundCells: found.length,
     totalCells: cells.length,
+    source,
   };
 }
 

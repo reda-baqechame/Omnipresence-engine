@@ -7,6 +7,7 @@ import {
   modelChannelAttribution,
   type AttributionModel,
 } from "@/lib/engines/attribution";
+import { getConnectorHealth } from "@/lib/engines/connector-health";
 
 export default async function AttributionPage({
   params,
@@ -31,6 +32,14 @@ export default async function AttributionPage({
 
   const ga4Conn = connections?.find((c) => c.provider === "google_analytics");
   const plausibleConn = connections?.find((c) => c.provider === "plausible");
+
+  const connectorHealth = await getConnectorHealth(supabase, id);
+  const healthBadge: Record<string, string> = {
+    ok: "bg-emerald-500/15 text-emerald-600 dark:text-emerald-400",
+    expired: "bg-amber-500/15 text-amber-600 dark:text-amber-400",
+    stale: "bg-amber-500/15 text-amber-600 dark:text-amber-400",
+    disconnected: "bg-muted text-muted-foreground",
+  };
 
   const latest = (attribution || [])[0] as AttributionMetric | undefined;
   const channelTotals = latest
@@ -60,6 +69,48 @@ export default async function AttributionPage({
 
   return (
     <div className="space-y-6">
+      <div className="bg-card border border-border rounded-xl p-6">
+        <div className="flex items-start justify-between gap-4">
+          <div>
+            <h3 className="font-semibold">Connector Health</h3>
+            <p className="text-sm text-muted-foreground mt-1">
+              First-party data feeding your outcome proof. {connectorHealth.reason}
+            </p>
+          </div>
+          <span
+            className={`shrink-0 rounded-full px-3 py-1 text-xs font-medium ${
+              connectorHealth.outcomeGuaranteeEligible
+                ? "bg-emerald-500/15 text-emerald-600 dark:text-emerald-400"
+                : "bg-amber-500/15 text-amber-600 dark:text-amber-400"
+            }`}
+          >
+            {connectorHealth.outcomeGuaranteeEligible
+              ? "Outcome guarantee: active"
+              : "Outcome guarantee: not yet eligible"}
+          </span>
+        </div>
+        <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3 mt-4">
+          {connectorHealth.connectors.map((c) => (
+            <div
+              key={c.provider}
+              className="flex items-center justify-between rounded-lg border border-border px-3 py-2"
+            >
+              <span className="text-xs capitalize">
+                {c.provider.replace(/_/g, " ")}
+                {c.isOutcomeSource && (
+                  <span className="ml-1 text-[10px] text-muted-foreground">(outcome)</span>
+                )}
+              </span>
+              <span
+                className={`rounded-full px-2 py-0.5 text-[10px] font-medium ${healthBadge[c.health]}`}
+              >
+                {c.health}
+              </span>
+            </div>
+          ))}
+        </div>
+      </div>
+
       <AttributionPanel
         projectId={id}
         domain={project.domain}

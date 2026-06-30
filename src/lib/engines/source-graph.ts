@@ -17,6 +17,8 @@
  */
 import { createServiceClient } from "@/lib/supabase/server";
 import { logProviderError } from "@/lib/observability/log";
+import { resolveDomainAuthority } from "@/lib/providers/domain-authority";
+import type { SupabaseClient } from "@supabase/supabase-js";
 
 type SourceType =
   | "directory"
@@ -75,7 +77,7 @@ function typeSignals(type: SourceType): { difficulty: number; reachability: numb
   }
 }
 
-function classifyIntent(prompt: string): string {
+export function classifyIntent(prompt: string): string {
   const p = prompt.toLowerCase();
   if (/\b(buy|price|pricing|cost|deal|discount|cheap|order|coupon)\b/.test(p)) return "transactional";
   if (/\b(best|top|review|compare|vs|alternative|which|recommend)\b/.test(p)) return "commercial";
@@ -510,4 +512,51 @@ export async function getPathToCitation(
     logProviderError("sourceGraph.path", error, { projectId, promptText });
     return { available: false, prompt: promptText, engines: [] };
   }
+}
+
+/**
+ * Enrich `source_domains.authority` (P1) for a project's most influential
+ * sources using the keyless authority chain (Common Crawl webgraph → Tranco →
+ * rank.to). Only domains with a null authority are resolved, capped to the top
+ * `limit` by influence so cost/time stay bounded. Provenance is recorded in
+ * `authority_source`; nothing is faked — domains that resolve to "unlisted"
+ * stay null.
+ */
+export async function enrichSourceDomainAuthority(
+  supabase: SupabaseClient,
+  projectId: string,
+  limit = 50
+): Promise<number> {
+  const { data: domains } = await supabase
+    .from("source_domains")
+    .select("id, domain, authority")
+    .eq("project_id", projectId)
+    .is("authority", null)
+    .order("influence_score", { ascending: false })
+    .limit(limit);
+
+  if (!domains || domains.length === 0) return 0;
+
+  let enriched = 0;
+  // Small concurrency to avoid hammering the resolver chain.
+  const BATCH = 5;
+  for (let i = 0; i < domains.length; i += BATCH) {
+    const slice = domains.slice(i, i + BATCH);
+    await Promise.all(
+      slice.map(async (row) => {
+        try {
+          const res = await resolveDomainAuthority(row.domain);
+          if (res.source === "unlisted" || !res.score) return;
+          await supabase
+            .from("source_domains")
+            .update({ authority: res.score, authority_source: res.source })
+            .eq("id", row.id);
+          enriched += 1;
+        } catch {
+          // best-effort; leave authority null on failure
+        }
+      })
+    );
+  }
+  return enriched;
 }

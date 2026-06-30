@@ -45,4 +45,13 @@ export type Events = {
   "project/ranks.check": {
     data: { projectId: string };
   };
+  "panel/run.requested": {
+    data: { panelId: string; projectId: string };
+  };
+  "ops/execute.requested": {
+    data: { opsId: string; projectId: string };
+  };
+  "asset/deployed": {
+    data: { projectId: string; organizationId: string; url: string; assetId?: string; keyword?: string; taskId?: string };
+  };
 };

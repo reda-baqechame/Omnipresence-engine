@@ -49,6 +49,61 @@ async function exchangeBingToken(code: string, redirectUri: string) {
   };
 }
 
+async function exchangeHubspotToken(code: string, redirectUri: string) {
+  const response = await fetch("https://api.hubapi.com/oauth/v1/token", {
+    method: "POST",
+    headers: { "Content-Type": "application/x-www-form-urlencoded" },
+    body: new URLSearchParams({
+      code,
+      client_id: process.env.HUBSPOT_CLIENT_ID || "",
+      client_secret: process.env.HUBSPOT_CLIENT_SECRET || "",
+      redirect_uri: redirectUri,
+      grant_type: "authorization_code",
+    }),
+  });
+
+  if (!response.ok) return null;
+
+  return (await response.json()) as {
+    access_token: string;
+    refresh_token?: string;
+    expires_in: number;
+  };
+}
+
+async function exchangeMetaToken(code: string, redirectUri: string) {
+  const params = new URLSearchParams({
+    code,
+    client_id: process.env.META_CLIENT_ID || "",
+    client_secret: process.env.META_CLIENT_SECRET || "",
+    redirect_uri: redirectUri,
+  });
+  const response = await fetch(`https://graph.facebook.com/v19.0/oauth/access_token?${params.toString()}`);
+  if (!response.ok) return null;
+  const data = (await response.json()) as { access_token: string; expires_in?: number };
+  return {
+    access_token: data.access_token,
+    expires_in: data.expires_in ?? 60 * 24 * 3600,
+    refresh_token: undefined as string | undefined,
+  };
+}
+
+async function exchangeLinkedInToken(code: string, redirectUri: string) {
+  const response = await fetch("https://www.linkedin.com/oauth/v2/accessToken", {
+    method: "POST",
+    headers: { "Content-Type": "application/x-www-form-urlencoded" },
+    body: new URLSearchParams({
+      code,
+      client_id: process.env.LINKEDIN_CLIENT_ID || "",
+      client_secret: process.env.LINKEDIN_CLIENT_SECRET || "",
+      redirect_uri: redirectUri,
+      grant_type: "authorization_code",
+    }),
+  });
+  if (!response.ok) return null;
+  return (await response.json()) as { access_token: string; expires_in: number; refresh_token?: string };
+}
+
 export async function GET(request: NextRequest) {
   const { searchParams } = new URL(request.url);
   const code = searchParams.get("code");
@@ -80,7 +135,13 @@ export async function GET(request: NextRequest) {
   const tokens =
     payload.provider === "bing_webmaster"
       ? await exchangeBingToken(code, redirectUri)
-      : await exchangeGoogleToken(code, redirectUri);
+      : payload.provider === "hubspot"
+        ? await exchangeHubspotToken(code, redirectUri)
+        : payload.provider === "meta_ads"
+          ? await exchangeMetaToken(code, redirectUri)
+          : payload.provider === "linkedin_ads"
+            ? await exchangeLinkedInToken(code, redirectUri)
+            : await exchangeGoogleToken(code, redirectUri);
 
   if (!tokens) {
     const failPath =

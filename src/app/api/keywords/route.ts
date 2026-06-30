@@ -7,6 +7,7 @@ import {
   analyzeContentGaps,
   analyzeBacklinkGaps,
   scoreSingleKeyword,
+  loadPlannerOptions,
 } from "@/lib/engines/keyword-intelligence";
 import { verifyProjectAccess } from "@/lib/security/project-access";
 import { apiError, apiForbidden, apiUnauthorized, readJsonBody } from "@/lib/security/api-response";
@@ -42,11 +43,12 @@ export async function POST(request: NextRequest) {
   if (!user) return apiUnauthorized();
 
   const body = await readJsonBody(request);
-  const { projectId, seed, seeds, action, keyword } = body as {
+  const { projectId, seed, seeds, action, keyword, geo } = body as {
     projectId: string;
     seed?: string;
     seeds?: string[];
     keyword?: string;
+    geo?: string;
     action?: "research" | "bulk_research" | "content_gaps" | "backlink_gaps" | "difficulty" | "universe";
     depth?: "shallow" | "deep";
   };
@@ -95,11 +97,13 @@ export async function POST(request: NextRequest) {
 
     try {
       const anchor = await deriveVolumeAnchorFromGsc(supabase, projectId, project.domain);
+      const plannerOptions = await loadPlannerOptions(supabase, projectId, geo);
       const { opportunities, live, processed } = await runBulkKeywordResearch(
         seedList,
         project.domain,
         anchor,
         {
+          plannerOptions,
           onProgress: async (p, found) => {
             if (job?.id) {
               await supabase
@@ -188,8 +192,9 @@ export async function POST(request: NextRequest) {
   // query the site ranks top-10 for, where impressions ≈ monthly searches.
   // Lets us extrapolate absolute volume for other keywords via Google Trends.
   const anchor = await deriveVolumeAnchorFromGsc(supabase, projectId, project.domain);
+  const plannerOptions = await loadPlannerOptions(supabase, projectId, geo);
 
-  const { opportunities, live } = await runKeywordResearch(researchSeed, project.domain, anchor);
+  const { opportunities, live } = await runKeywordResearch(researchSeed, project.domain, anchor, 20, plannerOptions);
   const saved = await persistKeywordOpportunities(supabase, projectId, opportunities);
 
   return NextResponse.json({

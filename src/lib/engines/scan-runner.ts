@@ -26,6 +26,8 @@ import {
 } from "@/lib/demo/scan-data";
 import { resolveAndPersistCompetitors } from "@/lib/engines/competitor-resolver";
 import { syncExecutionTasks, verifyTaskResolution } from "@/lib/engines/execution-tasks";
+import { syncFastestPathTasks } from "@/lib/engines/fastest-path-service";
+import { emitWebhookEvent } from "@/lib/notifications/webhooks";
 import { buildSourceGraph } from "@/lib/engines/source-graph";
 import type {
   Project,
@@ -267,12 +269,20 @@ export async function runProjectScan(
   if (p.organization_id) {
     await verifyTaskResolution(supabase, projectId).catch(() => null);
     await syncExecutionTasks(supabase, projectId, p.organization_id).catch(() => null);
+    await syncFastestPathTasks(supabase, projectId, p.organization_id).catch(() => null);
   }
 
   await supabase.from("projects").update({
     status: "active",
     last_scan_at: new Date().toISOString(),
   }).eq("id", projectId);
+
+  // Notify any configured outbound webhooks (agency integrations). Fire-and-forget.
+  void emitWebhookEvent({
+    event: "scan.completed",
+    projectId,
+    data: { omnipresence_score: score.omnipresence_score, domain: p.domain },
+  });
 
   if (options?.notifyEmail) {
     await sendScanCompleteEmail(options.notifyEmail, p.name, score.omnipresence_score, projectId);

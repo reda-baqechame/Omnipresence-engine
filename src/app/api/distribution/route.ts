@@ -6,134 +6,14 @@ import { createGBPLocalPost } from "@/lib/providers/gbp";
 import { submitBingUrls } from "@/lib/providers/bing-webmaster";
 import { recordLedgerAction } from "@/lib/engines/results-ledger";
 import { submitIndexNow } from "@/lib/engines/indexnow";
-import { loadProjectIntegration, type CmsCredentials } from "@/lib/integrations/store";
+import { loadProjectIntegration, publishViaCms, type CmsCredentials, type CmsPlatform } from "@/lib/integrations/store";
 import { getValidOAuthToken } from "@/lib/oauth/tokens";
 import { verifyProjectAccess } from "@/lib/security/project-access";
 import { apiError, apiForbidden, apiNotFound, apiUnauthorized, readJsonBody } from "@/lib/security/api-response";
 
-const PUBLISHERS = {
-  wordpress: async (
-    url: string,
-    apiKey: string,
-    content: { title: string; content: string },
-    collectionId?: string
-  ) => {
-    const response = await fetch(`${url.replace(/\/$/, "")}/wp-json/wp/v2/posts`, {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${apiKey}`,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        title: content.title,
-        content: content.content,
-        status: "publish",
-      }),
-    });
-    if (!response.ok) return { ok: false, publishedUrl: undefined };
-    const data = await response.json() as { link?: string };
-    return { ok: true, publishedUrl: data.link };
-  },
-  webflow: async (
-    siteId: string,
-    apiKey: string,
-    content: { title: string; content: string },
-    collectionId?: string
-  ) => {
-    if (!collectionId) return { ok: false, publishedUrl: undefined };
-    const response = await fetch(
-      `https://api.webflow.com/v2/collections/${collectionId}/items`,
-      {
-        method: "POST",
-        headers: {
-          Authorization: `Bearer ${apiKey}`,
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          fieldData: {
-            name: content.title,
-            slug: content.title.toLowerCase().replace(/[^a-z0-9]+/g, "-").slice(0, 60),
-            "post-body": content.content,
-          },
-          isDraft: false,
-        }),
-      }
-    );
-    if (!response.ok) return { ok: false, publishedUrl: undefined };
-    const data = await response.json() as { id?: string };
-    return { ok: true, publishedUrl: `https://webflow.com/item/${data.id}` };
-  },
-  ghost: async (
-    adminUrl: string,
-    apiKey: string,
-    content: { title: string; content: string },
-    _collectionId?: string
-  ) => {
-    // Ghost Admin API uses a short-lived JWT signed (HS256) from the
-    // {id}:{secret} admin key. Built with Node crypto to avoid a JWT dependency.
-    try {
-      const [keyId, secret] = apiKey.split(":");
-      if (!keyId || !secret) return { ok: false, publishedUrl: undefined };
-      const crypto = await import("node:crypto");
-      const b64url = (buf: Buffer) =>
-        buf.toString("base64").replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
-      const now = Math.floor(Date.now() / 1000);
-      const header = b64url(Buffer.from(JSON.stringify({ alg: "HS256", typ: "JWT", kid: keyId })));
-      const payload = b64url(
-        Buffer.from(JSON.stringify({ iat: now, exp: now + 300, aud: "/admin/" }))
-      );
-      const sig = b64url(
-        crypto.createHmac("sha256", Buffer.from(secret, "hex")).update(`${header}.${payload}`).digest()
-      );
-      const token = `${header}.${payload}.${sig}`;
-
-      const base = adminUrl.replace(/\/$/, "");
-      const response = await fetch(`${base}/ghost/api/admin/posts/?source=html`, {
-        method: "POST",
-        headers: {
-          Authorization: `Ghost ${token}`,
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          posts: [{ title: content.title, html: content.content, status: "published" }],
-        }),
-      });
-      if (!response.ok) return { ok: false, publishedUrl: undefined };
-      const data = (await response.json()) as { posts?: Array<{ url?: string }> };
-      return { ok: true, publishedUrl: data.posts?.[0]?.url };
-    } catch {
-      return { ok: false, publishedUrl: undefined };
-    }
-  },
-  shopify: async (
-    shop: string,
-    apiKey: string,
-    content: { title: string; content: string },
-    collectionId?: string
-  ) => {
-    const blogId = collectionId || "news";
-    const response = await fetch(
-      `https://${shop.replace(/\.myshopify\.com$/, "")}.myshopify.com/admin/api/2024-01/blogs/${blogId}/articles.json`,
-      {
-        method: "POST",
-        headers: {
-          "X-Shopify-Access-Token": apiKey,
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          article: {
-            title: content.title,
-            body_html: content.content,
-            published: true,
-          },
-        }),
-      }
-    );
-    if (!response.ok) return { ok: false, publishedUrl: undefined };
-    const data = await response.json() as { article?: { id: number } };
-    return { ok: true, publishedUrl: `shopify://article/${data.article?.id}` };
-  },
-};
+// Publishers are unified in @/lib/integrations/store (publishViaCms). This route
+// only needs the supported-platform allowlist for request validation.
+const SUPPORTED_CMS: CmsPlatform[] = ["wordpress", "webflow", "shopify", "wix", "framer", "ghost"];
 
 export async function POST(request: NextRequest) {
   const supabase = await createClient();
@@ -153,8 +33,9 @@ export async function POST(request: NextRequest) {
   const access = await verifyProjectAccess(supabase, asset.project_id, user.id, "member");
   if (!access) return apiForbidden();
 
-  const publisher = PUBLISHERS[platform as keyof typeof PUBLISHERS];
-  if (!publisher) return NextResponse.json({ error: "Unknown platform" }, { status: 400 });
+  if (!SUPPORTED_CMS.includes(platform as CmsPlatform)) {
+    return NextResponse.json({ error: "Unknown platform" }, { status: 400 });
+  }
 
   let credentials = inlineCredentials as CmsCredentials | undefined;
   if (!credentials?.apiKey) {
@@ -171,12 +52,10 @@ export async function POST(request: NextRequest) {
   }
 
   try {
-    const result = await publisher(
-      credentials.url || credentials.siteId || credentials.shop || "",
-      credentials.apiKey,
-      { title: asset.title, content: asset.content || "" },
-      credentials.collectionId
-    );
+    const result = await publishViaCms(platform as CmsPlatform, credentials, {
+      title: asset.title,
+      content: asset.content || "",
+    });
 
     if (result.ok) {
       await supabase

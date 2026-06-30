@@ -64,7 +64,7 @@ export async function syncExecutionTasks(
 ): Promise<{ created: number; total: number }> {
   const seeds: TaskSeed[] = [];
 
-  const [findings, gaps, keywords, coverage, authority, roadmap] = await Promise.all([
+  const [findings, gaps, keywords, coverage, authority, roadmap, sourceOpps] = await Promise.all([
     supabase
       .from("technical_findings")
       .select("id, title, description, fix_recommendation, category, severity, is_resolved")
@@ -101,6 +101,13 @@ export async function syncExecutionTasks(
       .order("created_at", { ascending: false })
       .limit(1)
       .maybeSingle(),
+    supabase
+      .from("source_opportunities")
+      .select("id, source_domain, recommended_action, influence_score, difficulty, status")
+      .eq("project_id", projectId)
+      .eq("status", "open")
+      .order("influence_score", { ascending: false })
+      .limit(10),
   ]);
 
   for (const f of findings.data || []) {
@@ -173,6 +180,24 @@ export async function syncExecutionTasks(
       priority: impact >= 60 ? "high" : "medium",
       impact,
       effort: 5,
+    });
+  }
+
+  // "Win these sources" — top influence-ranked citation gaps become tracked
+  // execution tasks (P2). Effort scales with how hard the source is to win.
+  for (const s of sourceOpps.data || []) {
+    const influence = s.influence_score ?? 0;
+    if (influence < 25) continue;
+    const difficulty = typeof s.difficulty === "number" ? s.difficulty : 50;
+    seeds.push({
+      source_module: "source_opportunity",
+      source_id: String(s.id),
+      title: `Win citation source: ${s.source_domain}`,
+      description: s.recommended_action || `Earn a citation on ${s.source_domain} — it cites competitors but never you.`,
+      category: "authority",
+      priority: scoreToPriority(influence),
+      impact: Math.round(influence),
+      effort: difficulty >= 60 ? 5 : difficulty >= 40 ? 4 : 3,
     });
   }
 

@@ -1,5 +1,5 @@
 import type { KeywordSuggestion } from "../types.js";
-import { getKeywordMetrics, hasKeywordPlanner } from "./keyword-planner.js";
+import { getKeywordMetrics, hasKeywordPlanner, type KeywordMetricsOptions } from "./keyword-planner.js";
 import { getTrendsComparison } from "./trends.js";
 
 const SERPER_KEY = process.env.SERPER_API_KEY;
@@ -73,7 +73,10 @@ function clusterKeywords(suggestions: string[]): KeywordSuggestion[] {
   return out;
 }
 
-export async function runKeywords(seed: string): Promise<{
+export async function runKeywords(
+  seed: string,
+  plannerOptions?: KeywordMetricsOptions
+): Promise<{
   seed: string;
   suggestions: KeywordSuggestion[];
   related: KeywordSuggestion[];
@@ -108,13 +111,13 @@ export async function runKeywords(seed: string): Promise<{
 
   // Upgrade to REAL volume + CPC via Google Ads Keyword Planner when configured.
   let dataSource: "keyword_planner" | "trends_estimated" | "estimated" = "estimated";
-  if (hasKeywordPlanner()) {
+  if (hasKeywordPlanner(plannerOptions?.creds)) {
     const allKeywords = [
       seed,
       ...suggestions.map((s) => s.keyword),
       ...related.map((r) => r.keyword),
     ];
-    const metrics = await getKeywordMetrics(allKeywords);
+    const metrics = await getKeywordMetrics(allKeywords, plannerOptions);
     if (metrics && metrics.length > 0) {
       const byKw = new Map(metrics.map((m) => [m.keyword.toLowerCase(), m]));
       const enrich = (s: KeywordSuggestion): KeywordSuggestion => {

@@ -15,7 +15,7 @@ import {
   type DirectSocialPlatform,
 } from "@/lib/providers/social/direct";
 
-const CMS_PLATFORMS = new Set<CmsPlatform>(["wordpress", "webflow", "shopify"]);
+const CMS_PLATFORMS = new Set<CmsPlatform>(["wordpress", "webflow", "shopify", "wix", "framer", "ghost"]);
 
 /** Map a stored destination/platform label to a native social platform. */
 function socialPlatformFor(destination: string): DirectSocialPlatform | null {

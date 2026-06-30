@@ -56,6 +56,18 @@ function hasBacklinksIndex() {
   return omnidata || dataforseo;
 }
 
+function hasFirstPartyConnectors() {
+  return (
+    hasEnv("GOOGLE_CLIENT_ID") ||
+    hasEnv("BING_CLIENT_ID") ||
+    hasEnv("HUBSPOT_CLIENT_ID") ||
+    hasEnv("META_CLIENT_ID") ||
+    hasEnv("LINKEDIN_CLIENT_ID") ||
+    hasEnv("PLAUSIBLE_API_KEY") ||
+    hasEnv("POSTHOG_API_KEY")
+  );
+}
+
 const CAP = {
   always: () => true,
   serp: hasSerp,
@@ -64,6 +76,7 @@ const CAP = {
   aiUiCapture: hasAiUiCapture,
   backlinksIndex: hasBacklinksIndex,
   domainAuthority: () => true,
+  firstPartyConnectors: hasFirstPartyConnectors,
 };
 
 function isBacked(claim) {

@@ -22,18 +22,25 @@ export interface PlanLimits {
   projects: number;
   promptGeneration: number;
   scanPrompts: number;
+  /** Max probe cells (prompts × engines × geos × personas × runs) per panel run. */
+  panelCells: number;
 }
 
 const PLAN_LIMITS: Record<SubscriptionPlan, PlanLimits> = {
-  free: { projects: 1, promptGeneration: 50, scanPrompts: 25 },
-  audit: { projects: 1, promptGeneration: 150, scanPrompts: 50 },
-  tracking: { projects: 3, promptGeneration: 300, scanPrompts: 100 },
-  agency: { projects: 25, promptGeneration: 500, scanPrompts: 150 },
-  enterprise: { projects: Infinity, promptGeneration: 1000, scanPrompts: 300 },
+  free: { projects: 1, promptGeneration: 50, scanPrompts: 25, panelCells: 60 },
+  audit: { projects: 1, promptGeneration: 150, scanPrompts: 50, panelCells: 120 },
+  tracking: { projects: 3, promptGeneration: 300, scanPrompts: 100, panelCells: 400 },
+  agency: { projects: 25, promptGeneration: 500, scanPrompts: 150, panelCells: 1200 },
+  enterprise: { projects: Infinity, promptGeneration: 1000, scanPrompts: 300, panelCells: 5000 },
 };
 
 export function getPlanLimits(plan?: SubscriptionPlan): PlanLimits {
   return PLAN_LIMITS[(plan || "free") as SubscriptionPlan] || PLAN_LIMITS.free;
+}
+
+/** Max probe cells allowed per panel run for this plan (the cost cap). */
+export function getPanelCellLimit(plan?: SubscriptionPlan): number {
+  return getPlanLimits(plan).panelCells;
 }
 
 export async function getOrganizationPlan(

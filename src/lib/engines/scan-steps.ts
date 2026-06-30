@@ -3,6 +3,8 @@
  */
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { runTechnicalAudit } from "@/lib/engines/technical-audit";
+import { buildSourceGraph, enrichSourceDomainAuthority } from "@/lib/engines/source-graph";
+import { scoreSourceInfluenceV2 } from "@/lib/engines/source-influence";
 import { analyzePassageReadiness } from "@/lib/engines/passage-readiness";
 import { extractBrandProfile } from "@/lib/engines/brand-extraction";
 import { generatePromptUniverse, generateTemplatePrompts } from "@/lib/engines/prompt-generator";
@@ -18,6 +20,7 @@ import { getPageSpeed, pageSpeedToRetrievalScore } from "@/lib/providers/pagespe
 import { hasWikipediaPresence, hasWikidataEntity } from "@/lib/providers/wikimedia";
 import { conversionSignalFromRows } from "@/lib/engines/behavior-analytics";
 import { recordScanBaseline } from "@/lib/engines/results-ledger";
+import { attachEvidenceToResults } from "@/lib/engines/evidence";
 import { lockGuaranteeBaseline } from "@/lib/engines/guarantee";
 import { syncTechnicalFindingsToOpsQueue } from "@/lib/engines/on-page-queue";
 import {
@@ -29,6 +32,7 @@ import {
 import { getPromptGenerationLimit, getVisibilityScanPromptLimit, getOrganizationPlan } from "@/lib/plans/limits";
 import { resolveAndPersistCompetitors } from "@/lib/engines/competitor-resolver";
 import { syncExecutionTasks, verifyTaskResolution } from "@/lib/engines/execution-tasks";
+import { syncFastestPathTasks } from "@/lib/engines/fastest-path-service";
 import { computeAndRecordFindingDiff } from "@/lib/engines/finding-diff";
 import type { Project, AuthorityOpportunity } from "@/types/database";
 
@@ -156,6 +160,16 @@ export async function stepVisibilityScan(supabase: SupabaseClient, project: Proj
 
   if (visibilityResults.length) {
     const now = new Date().toISOString();
+    // Evidence spine: persist tamper-evident evidence for measured probes and
+    // stamp evidence_url back onto each row (real scans only, never demo).
+    if (!demo) {
+      await attachEvidenceToResults(
+        supabase,
+        project.id,
+        run!.id,
+        visibilityResults as unknown as Parameters<typeof attachEvidenceToResults>[3]
+      ).catch(() => 0);
+    }
     const rows = (visibilityResults as Array<Record<string, unknown>>).map((r) => {
       const ds = (r.data_source as string | undefined) ?? (demo ? "simulated" : undefined);
       return {
@@ -188,6 +202,16 @@ export async function stepVisibilityScan(supabase: SupabaseClient, project: Proj
     ).map((row) => ({ ...row, project_id: project.id, run_id: run!.id }));
     await supabase.from("citation_sources").delete().eq("project_id", project.id);
     if (citationRows.length) await supabase.from("citation_sources").insert(citationRows);
+
+    // Rebuild the market Source/Citation Graph from the fresh citations on the
+    // Inngest path too (P1) — previously only the legacy sync path did this, so
+    // scheduled rescans left the graph stale. Then enrich domain authority from
+    // the sovereign webgraph/Tranco instead of leaving it null.
+    await buildSourceGraph(project.id).catch(() => undefined);
+    await enrichSourceDomainAuthority(supabase, project.id).catch(() => undefined);
+    // Re-score opportunities with the full v2 signal set now that authority is
+    // enriched, so "win these 3 sources" reflects real authority + intent (P2).
+    await scoreSourceInfluenceV2(supabase, project.id).catch(() => undefined);
   }
 
   await supabase
@@ -376,6 +400,7 @@ export async function stepScoreAndRoadmap(
   if (project.organization_id) {
     await verifyTaskResolution(supabase, project.id).catch(() => null);
     await syncExecutionTasks(supabase, project.id, project.organization_id).catch(() => null);
+    await syncFastestPathTasks(supabase, project.id, project.organization_id).catch(() => null);
   }
 
   await recordScanBaseline(supabase, project.id, {

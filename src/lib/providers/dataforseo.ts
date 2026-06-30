@@ -342,6 +342,183 @@ export async function getBacklinks(
   }
 }
 
+export interface BacklinkGraphLink {
+  sourceUrl: string;
+  sourceDomain: string;
+  targetUrl: string;
+  anchor: string;
+  rel: string[];
+  nofollow: boolean;
+  sponsored: boolean;
+  ugc: boolean;
+  firstSeen: string;
+  lastSeen: string;
+  domainRank?: number;
+  spamRisk: number;
+  linkValue: number;
+  verification: "crawl_verified" | "lost" | "candidate";
+}
+
+export interface BacklinkGraph {
+  target: string;
+  totalLinks: number;
+  referringDomains: number;
+  nofollowCount: number;
+  dofollowCount: number;
+  newCount: number;
+  lostCount: number;
+  toxicCount: number;
+  dataSource: "crawl_verified" | "candidate" | "unavailable";
+  persisted: boolean;
+  links: BacklinkGraphLink[];
+}
+
+export interface LinkIntersectionRow {
+  sourceDomain: string;
+  linksTo: string[];
+  count: number;
+  authority: number | null;
+  brandGap: boolean;
+}
+
+export interface LinkIntersection {
+  target: string;
+  competitors: string[];
+  minOverlap: number;
+  dataSource: "commoncrawl_webgraph" | "unavailable";
+  rows: LinkIntersectionRow[];
+}
+
+/**
+ * URL-level Presence Backlink Graph (crawl-verified links with anchor + rel +
+ * first/last seen) via OmniData's /backlinks/graph/live. Returns null when
+ * OmniData isn't configured. This is the URL-level companion to getBacklinks
+ * (domain-level) and the moat behind anchor/rel/temporal link intelligence.
+ */
+export async function getBacklinkGraph(
+  domain: string,
+  maxSources = 40
+): Promise<BacklinkGraph | null> {
+  if (!USE_OMNIDATA) return null;
+  try {
+    const data = await dataForSEORequest<{
+      tasks: Array<{
+        result: Array<{
+          target?: string;
+          total_links?: number;
+          referring_domains?: number;
+          nofollow_count?: number;
+          dofollow_count?: number;
+          data_source?: BacklinkGraph["dataSource"];
+          persisted?: boolean;
+          new_count?: number;
+          lost_count?: number;
+          toxic_count?: number;
+          items?: Array<{
+            source_url: string;
+            source_domain: string;
+            target_url: string;
+            anchor?: string;
+            rel?: string[];
+            nofollow?: boolean;
+            sponsored?: boolean;
+            ugc?: boolean;
+            first_seen?: string;
+            last_seen?: string;
+            domain_rank?: number;
+            spam_risk?: number;
+            link_value?: number;
+            verification?: BacklinkGraphLink["verification"];
+          }>;
+        }>;
+      }>;
+    }>("/backlinks/graph/live", [{ target: domain, max_sources: maxSources }]);
+    const r = data.tasks?.[0]?.result?.[0];
+    if (!r) return null;
+    return {
+      target: r.target ?? domain,
+      totalLinks: r.total_links ?? 0,
+      referringDomains: r.referring_domains ?? 0,
+      nofollowCount: r.nofollow_count ?? 0,
+      dofollowCount: r.dofollow_count ?? 0,
+      newCount: r.new_count ?? 0,
+      lostCount: r.lost_count ?? 0,
+      toxicCount: r.toxic_count ?? 0,
+      dataSource: r.data_source ?? "unavailable",
+      persisted: Boolean(r.persisted),
+      links: (r.items ?? []).map((i) => ({
+        sourceUrl: i.source_url,
+        sourceDomain: i.source_domain,
+        targetUrl: i.target_url,
+        anchor: i.anchor ?? "",
+        rel: i.rel ?? [],
+        nofollow: Boolean(i.nofollow),
+        sponsored: Boolean(i.sponsored),
+        ugc: Boolean(i.ugc),
+        firstSeen: i.first_seen ?? "",
+        lastSeen: i.last_seen ?? "",
+        domainRank: i.domain_rank,
+        spamRisk: i.spam_risk ?? 0,
+        linkValue: i.link_value ?? 0,
+        verification: i.verification ?? "crawl_verified",
+      })),
+    };
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Competitor link intersection (referring domains linking to N+ competitors,
+ * brand-gap first) via OmniData's /backlinks/intersection/live. Returns null
+ * when OmniData isn't configured.
+ */
+export async function getLinkIntersection(
+  domain: string,
+  competitors: string[],
+  minOverlap = 2
+): Promise<LinkIntersection | null> {
+  if (!USE_OMNIDATA || competitors.length === 0) return null;
+  try {
+    const data = await dataForSEORequest<{
+      tasks: Array<{
+        result: Array<{
+          target?: string;
+          competitors?: string[];
+          min_overlap?: number;
+          data_source?: LinkIntersection["dataSource"];
+          rows?: Array<{
+            source_domain: string;
+            links_to?: string[];
+            count?: number;
+            authority?: number | null;
+            brand_gap?: boolean;
+          }>;
+        }>;
+      }>;
+    }>("/backlinks/intersection/live", [
+      { target: domain, competitors, min_overlap: minOverlap },
+    ]);
+    const r = data.tasks?.[0]?.result?.[0];
+    if (!r) return null;
+    return {
+      target: r.target ?? domain,
+      competitors: r.competitors ?? competitors,
+      minOverlap: r.min_overlap ?? minOverlap,
+      dataSource: r.data_source ?? "unavailable",
+      rows: (r.rows ?? []).map((row) => ({
+        sourceDomain: row.source_domain,
+        linksTo: row.links_to ?? [],
+        count: row.count ?? 0,
+        authority: row.authority ?? null,
+        brandGap: Boolean(row.brand_gap),
+      })),
+    };
+  } catch {
+    return null;
+  }
+}
+
 /**
  * Real Common Crawl domain authority (0-100 harmonic centrality) + the true
  * distinct referring-domain count, via OmniData's /domain/authority/live. This

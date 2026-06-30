@@ -38,8 +38,15 @@ export interface AiUiCaptureResult {
  * null when disabled or on any failure — callers must fall back to the API path
  * and label the result honestly.
  */
+export type AiUiCaptureSurface =
+  | "chatgpt"
+  | "gemini"
+  | "perplexity"
+  | "google_ai_overview"
+  | "bing_copilot";
+
 export async function captureAiUiSurface(
-  surface: "chatgpt" | "gemini" | "perplexity" | "google_ai_overview",
+  surface: AiUiCaptureSurface,
   prompt: string,
   brandName: string,
   brandDomain: string,

@@ -21,7 +21,7 @@ import { searchGoogleOrganicBrave } from "@/lib/providers/brave-search";
 import { searchGoogleOrganicSerper } from "@/lib/providers/serper";
 import { searchGoogleOrganicSearxng, hasSearxngCapability } from "@/lib/providers/searxng";
 import { searchGoogleOrganicFirecrawl, hasFirecrawlCapability } from "@/lib/providers/firecrawl";
-import { isZeroPaidKeysMode } from "@/lib/config/capabilities";
+import { isZeroPaidKeysMode, isBenchmarkOnlyForced, type ProviderCategory } from "@/lib/config/capabilities";
 import type { ProviderResult, SERPResult } from "./types";
 
 export type Capability = "serp" | "crawl" | "backlinks" | "generate" | "email" | "social" | "enrich";
@@ -30,6 +30,12 @@ export type Freshness = "live" | "recent" | "cached" | "none";
 export interface Adapter<TArgs extends unknown[] = unknown[], TData = unknown> {
   id: string;
   capability: Capability;
+  /**
+   * Engine role (Wave N1). Drives the cost firewall: `benchmark_only` adapters
+   * are never used for customer-facing results; `fallback_only` is tried last;
+   * `internal_reasoning` prefers local/self-hosted models.
+   */
+  category: ProviderCategory;
   /** Paid third-party vendor — excluded entirely in Zero-Paid-Keys mode. */
   paid: boolean;
   /** Self-hosted / keyless engine — preferred first. */
@@ -41,6 +47,11 @@ export interface Adapter<TArgs extends unknown[] = unknown[], TData = unknown> {
   costPerCall: number;
   enabled: () => boolean;
   run?: (...args: TArgs) => Promise<ProviderResult<TData>>;
+}
+
+/** Effective engine role, applying the runtime BENCHMARK_ONLY_PROVIDERS override. */
+export function effectiveCategory(a: Adapter): ProviderCategory {
+  return isBenchmarkOnlyForced(a.id) ? "benchmark_only" : a.category;
 }
 
 interface Health {
@@ -77,6 +88,7 @@ const serpAdapters: Adapter<[string, string, string, string[]], SERPResult>[] = 
   {
     id: "serper",
     capability: "serp",
+    category: "surface_measurement",
     paid: true,
     selfHosted: false,
     confidence: 0.95,
@@ -88,6 +100,7 @@ const serpAdapters: Adapter<[string, string, string, string[]], SERPResult>[] = 
   {
     id: "brave",
     capability: "serp",
+    category: "surface_measurement",
     paid: false,
     selfHosted: false,
     confidence: 0.85,
@@ -99,6 +112,7 @@ const serpAdapters: Adapter<[string, string, string, string[]], SERPResult>[] = 
   {
     id: "searxng",
     capability: "serp",
+    category: "surface_measurement",
     paid: false,
     selfHosted: true,
     confidence: 0.8,
@@ -110,6 +124,7 @@ const serpAdapters: Adapter<[string, string, string, string[]], SERPResult>[] = 
   {
     id: "omnidata",
     capability: "serp",
+    category: "surface_measurement",
     paid: false,
     selfHosted: true,
     confidence: 0.85,
@@ -119,8 +134,10 @@ const serpAdapters: Adapter<[string, string, string, string[]], SERPResult>[] = 
     run: (kw, loc, brand, comp) => searchGoogleOrganicDataForSEO(kw, loc, brand, comp),
   },
   {
+    // Paid SEO vendor: last-resort fallback for customer results (sovereign first).
     id: "dataforseo",
     capability: "serp",
+    category: "fallback_only",
     paid: true,
     selfHosted: false,
     confidence: 0.95,
@@ -132,6 +149,7 @@ const serpAdapters: Adapter<[string, string, string, string[]], SERPResult>[] = 
   {
     id: "firecrawl",
     capability: "serp",
+    category: "fallback_only",
     paid: true,
     selfHosted: false,
     confidence: 0.75,
@@ -151,22 +169,22 @@ const serpAdapters: Adapter<[string, string, string, string[]], SERPResult>[] = 
 // removed so adapterStatuses()/compareCapabilities() never advertise a dead path.
 // Clearbit is still used as a paid upgrade INSIDE the ip-asn-enrich runner.
 const catalogAdapters: Adapter[] = [
-  { id: "playwright-crawl", capability: "crawl", paid: false, selfHosted: true, confidence: 0.85, freshness: "live", costPerCall: 0, enabled: () => true },
-  { id: "firecrawl-crawl", capability: "crawl", paid: true, selfHosted: false, confidence: 0.8, freshness: "live", costPerCall: 0.002, enabled: () => hasFirecrawlCapability() },
+  { id: "playwright-crawl", capability: "crawl", category: "surface_measurement", paid: false, selfHosted: true, confidence: 0.85, freshness: "live", costPerCall: 0, enabled: () => true },
+  { id: "firecrawl-crawl", capability: "crawl", category: "fallback_only", paid: true, selfHosted: false, confidence: 0.8, freshness: "live", costPerCall: 0.002, enabled: () => hasFirecrawlCapability() },
 
-  { id: "commoncrawl-webgraph", capability: "backlinks", paid: false, selfHosted: true, confidence: 0.7, freshness: "recent", costPerCall: 0, enabled: () => true },
-  { id: "dataforseo-backlinks", capability: "backlinks", paid: true, selfHosted: false, confidence: 0.95, freshness: "recent", costPerCall: 0.02, enabled: () => hasDataForSeoBackend() },
+  { id: "commoncrawl-webgraph", capability: "backlinks", category: "surface_measurement", paid: false, selfHosted: true, confidence: 0.7, freshness: "recent", costPerCall: 0, enabled: () => true },
+  { id: "dataforseo-backlinks", capability: "backlinks", category: "fallback_only", paid: true, selfHosted: false, confidence: 0.95, freshness: "recent", costPerCall: 0.02, enabled: () => hasDataForSeoBackend() },
 
-  { id: "ollama-generate", capability: "generate", paid: false, selfHosted: true, confidence: 0.75, freshness: "live", costPerCall: 0, enabled: () => hasEnv("OLLAMA_BASE_URL") },
-  { id: "openai-generate", capability: "generate", paid: true, selfHosted: false, confidence: 0.95, freshness: "live", costPerCall: 0.01, enabled: () => hasEnv("OPENAI_API_KEY") },
-  { id: "anthropic-generate", capability: "generate", paid: true, selfHosted: false, confidence: 0.95, freshness: "live", costPerCall: 0.01, enabled: () => hasEnv("ANTHROPIC_API_KEY") },
+  { id: "ollama-generate", capability: "generate", category: "internal_reasoning", paid: false, selfHosted: true, confidence: 0.75, freshness: "live", costPerCall: 0, enabled: () => hasEnv("OLLAMA_BASE_URL") },
+  { id: "openai-generate", capability: "generate", category: "internal_reasoning", paid: true, selfHosted: false, confidence: 0.95, freshness: "live", costPerCall: 0.01, enabled: () => hasEnv("OPENAI_API_KEY") },
+  { id: "anthropic-generate", capability: "generate", category: "internal_reasoning", paid: true, selfHosted: false, confidence: 0.95, freshness: "live", costPerCall: 0.01, enabled: () => hasEnv("ANTHROPIC_API_KEY") },
 
-  { id: "smtp-email", capability: "email", paid: false, selfHosted: true, confidence: 0.8, freshness: "live", costPerCall: 0, enabled: () => hasEnv("SMTP_HOST") },
-  { id: "resend-email", capability: "email", paid: true, selfHosted: false, confidence: 0.9, freshness: "live", costPerCall: 0.0004, enabled: () => hasEnv("RESEND_API_KEY") },
+  { id: "smtp-email", capability: "email", category: "execution", paid: false, selfHosted: true, confidence: 0.8, freshness: "live", costPerCall: 0, enabled: () => hasEnv("SMTP_HOST") },
+  { id: "resend-email", capability: "email", category: "execution", paid: true, selfHosted: false, confidence: 0.9, freshness: "live", costPerCall: 0.0004, enabled: () => hasEnv("RESEND_API_KEY") },
 
-  { id: "direct-social", capability: "social", paid: false, selfHosted: true, confidence: 0.75, freshness: "live", costPerCall: 0, enabled: () => hasEnv("X_ACCESS_TOKEN") || (hasEnv("LINKEDIN_ACCESS_TOKEN") && hasEnv("LINKEDIN_AUTHOR_URN")) },
+  { id: "direct-social", capability: "social", category: "execution", paid: false, selfHosted: true, confidence: 0.75, freshness: "live", costPerCall: 0, enabled: () => hasEnv("X_ACCESS_TOKEN") || (hasEnv("LINKEDIN_ACCESS_TOKEN") && hasEnv("LINKEDIN_AUTHOR_URN")) },
 
-  { id: "ip-asn-enrich", capability: "enrich", paid: false, selfHosted: true, confidence: 0.5, freshness: "recent", costPerCall: 0, enabled: () => true },
+  { id: "ip-asn-enrich", capability: "enrich", category: "surface_measurement", paid: false, selfHosted: true, confidence: 0.5, freshness: "recent", costPerCall: 0, enabled: () => true },
 ];
 
 const registry: Record<Capability, Adapter[]> = {
@@ -192,15 +210,24 @@ export function attachRunner<TArgs extends unknown[], TData>(
 }
 
 /**
- * Ranked, currently-usable adapters for a capability. Order: self-hosted/free
- * first, then higher confidence, then healthier (fewer recent failures), then
- * cheaper. Paid adapters are dropped entirely in Zero-Paid-Keys mode.
+ * Ranked, currently-usable adapters for a capability (customer-facing). Order:
+ * non-fallback before `fallback_only`, then self-hosted/free first, then higher
+ * confidence, then healthier (fewer recent failures), then cheaper. Two hard
+ * exclusions enforce the cost firewall:
+ *   - `benchmark_only` adapters (incl. BENCHMARK_ONLY_PROVIDERS overrides) are
+ *     NEVER returned — they exist only for audit/comparison scripts.
+ *   - paid adapters are dropped entirely in Zero-Paid-Keys mode.
+ * Because `internal_reasoning` adapters that are self-hosted (Ollama) sort ahead
+ * of paid ones, internal reasoning is local-first by construction.
  */
 export function rankedAdapters(capability: Capability): Adapter[] {
   const zeroPaid = isZeroPaidKeysMode();
   return registry[capability]
-    .filter((a) => a.enabled() && !(zeroPaid && a.paid))
+    .filter((a) => a.enabled() && effectiveCategory(a) !== "benchmark_only" && !(zeroPaid && a.paid))
     .sort((a, b) => {
+      const fbA = a.category === "fallback_only" ? 1 : 0;
+      const fbB = b.category === "fallback_only" ? 1 : 0;
+      if (fbA !== fbB) return fbA - fbB;
       if (a.paid !== b.paid) return a.paid ? 1 : -1;
       if (b.confidence !== a.confidence) return b.confidence - a.confidence;
       const fa = getHealth(a.id).failures;
@@ -208,6 +235,16 @@ export function rankedAdapters(capability: Capability): Adapter[] {
       if (fa !== fb) return fa - fb;
       return a.costPerCall - b.costPerCall;
     });
+}
+
+/**
+ * Adapters that are benchmark-only right now (either declared or forced via
+ * BENCHMARK_ONLY_PROVIDERS). Audit/benchmark scripts may call these directly;
+ * route() never will.
+ */
+export function benchmarkOnlyAdapters(): Adapter[] {
+  const all: Adapter[] = (Object.keys(registry) as Capability[]).flatMap((c) => registry[c]);
+  return all.filter((a) => effectiveCategory(a) === "benchmark_only");
 }
 
 export interface RouteOutcome<TData> extends ProviderResult<TData> {
@@ -274,6 +311,7 @@ export function routeSerp(
 export interface AdapterStatus {
   id: string;
   capability: Capability;
+  category: ProviderCategory;
   paid: boolean;
   selfHosted: boolean;
   enabled: boolean;
@@ -288,18 +326,24 @@ export interface AdapterStatus {
 export function describeProviders(): AdapterStatus[] {
   const zeroPaid = isZeroPaidKeysMode();
   const all: Adapter[] = (Object.keys(registry) as Capability[]).flatMap((c) => registry[c]);
-  return all.map((a) => ({
-    id: a.id,
-    capability: a.capability,
-    paid: a.paid,
-    selfHosted: a.selfHosted,
-    enabled: a.enabled(),
-    usableNow: a.enabled() && !(zeroPaid && a.paid),
-    confidence: a.confidence,
-    freshness: a.freshness,
-    costPerCall: a.costPerCall,
-    failures: getHealth(a.id).failures,
-  }));
+  return all.map((a) => {
+    const category = effectiveCategory(a);
+    return {
+      id: a.id,
+      capability: a.capability,
+      category,
+      paid: a.paid,
+      selfHosted: a.selfHosted,
+      enabled: a.enabled(),
+      // Usable for a customer-facing route right now: enabled, not benchmark-only,
+      // and not a paid vendor while in Zero-Paid-Keys mode.
+      usableNow: a.enabled() && category !== "benchmark_only" && !(zeroPaid && a.paid),
+      confidence: a.confidence,
+      freshness: a.freshness,
+      costPerCall: a.costPerCall,
+      failures: getHealth(a.id).failures,
+    };
+  });
 }
 
 export interface CapabilityComparison {

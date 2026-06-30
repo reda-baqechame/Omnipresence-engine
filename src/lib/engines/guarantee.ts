@@ -3,6 +3,7 @@ import Stripe from "stripe";
 import type { ResultsLedgerEntry } from "@/types/database";
 import type { AeoLever } from "@/lib/engines/aeo-readiness";
 import { findForbiddenClaims } from "@/lib/config/claims";
+import { isOutcomeGuaranteeEligible } from "@/lib/engines/connector-health";
 
 export interface DeterministicDeliverable {
   id: string;
@@ -82,12 +83,27 @@ const DEFAULT_THRESHOLDS: Record<GuaranteeKpi, number> = {
   visibility_mention_rate: 0.2,
 };
 
+/**
+ * KPIs that measure a business OUTCOME derived from first-party data. These can
+ * only be guaranteed when a healthy connector is feeding real numbers — gating
+ * them is the "no connected data = no outcome guarantee" rule.
+ */
+const OUTCOME_KPIS = new Set<GuaranteeKpi>(["ai_referral_traffic"]);
+
 export async function lockGuaranteeBaseline(
   supabase: SupabaseClient,
   projectId: string,
   snapshot: Record<string, unknown>,
   kpi: GuaranteeKpi = "omnipresence_score"
 ): Promise<GuaranteeContract | null> {
+  // Hard rule: an outcome-KPI guarantee requires a healthy first-party data
+  // connection. Without it we cannot measure the outcome, so we must NOT promise
+  // it (refund-safety). Deterministic/measured-by-us KPIs are unaffected.
+  if (OUTCOME_KPIS.has(kpi)) {
+    const eligibility = await isOutcomeGuaranteeEligible(supabase, projectId);
+    if (!eligibility.eligible) return null;
+  }
+
   const threshold = DEFAULT_THRESHOLDS[kpi];
   const { data, error } = await supabase
     .from("guarantee_contracts")
@@ -355,6 +371,43 @@ export interface DeterministicGuaranteeReport {
   evidenceCount: number;
   copyAudit: { allowed: boolean; violations: string[] };
   disclaimer: string;
+}
+
+/**
+ * Marketing/guarantee gate driven by the minimum-gate PresenceOS Score (Wave
+ * T1). Outcome-style guarantees and superlative marketing ("prove ROI", "500x")
+ * may only be shown when every critical gate is ready. Below that we fall back
+ * to the deterministic (work-we-control) guarantee, never an outcome promise.
+ */
+export interface MarketingGateInput {
+  /** minimum-gate composite (0-100). */
+  presenceGateScore: number;
+  /** all critical gates evaluable AND score ≥ threshold. */
+  presenceGateReady: boolean;
+  limitingGate?: string | null;
+  marketingCopy?: string;
+}
+
+export function evaluateMarketingGate(input: MarketingGateInput): {
+  outcomeGuaranteeAllowed: boolean;
+  superlativesAllowed: boolean;
+  copyAudit: { allowed: boolean; violations: string[] };
+  reason: string;
+} {
+  const copyAudit = auditMarketingCopy(input.marketingCopy || "");
+  const outcomeGuaranteeAllowed = input.presenceGateReady && copyAudit.allowed;
+  return {
+    outcomeGuaranteeAllowed,
+    // Superlative/aggressive marketing requires both a clean copy audit and a
+    // proven (≥80) minimum-gate score so we never over-promise.
+    superlativesAllowed: outcomeGuaranteeAllowed && input.presenceGateScore >= 80,
+    copyAudit,
+    reason: !copyAudit.allowed
+      ? `Forbidden claim(s): ${copyAudit.violations.join(", ")}`
+      : input.presenceGateReady
+        ? "All critical gates ready — outcome guarantee permitted."
+        : `Outcome guarantee gated by '${input.limitingGate ?? "a critical gate"}' (minimum-gate score ${input.presenceGateScore}).`,
+  };
 }
 
 const GUARANTEE_DISCLAIMER =

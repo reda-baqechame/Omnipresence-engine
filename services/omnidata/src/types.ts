@@ -35,6 +35,36 @@ export interface BacklinkRow {
   link_count?: number;
 }
 
+/**
+ * URL-level backlink edge (the Presence Backlink Graph row). Unlike BacklinkRow
+ * (domain-level, webgraph-derived), this is crawl-verified: the link was found
+ * live in the source page's HTML with its real anchor text and rel attributes.
+ */
+export interface BacklinkLinkRow {
+  source_url: string;
+  source_domain: string;
+  target_url: string;
+  target_domain: string;
+  anchor: string;
+  /** rel tokens present on the <a>, e.g. ["nofollow","sponsored"]. */
+  rel: string[];
+  nofollow: boolean;
+  sponsored: boolean;
+  ugc: boolean;
+  http_status: number;
+  /** First time this exact (source_url -> target_url) edge was crawl-verified. */
+  first_seen: string;
+  /** Most recent time the edge was crawl-verified live. */
+  last_seen: string;
+  domain_rank?: number;
+  /**
+   * "crawl_verified" = link confirmed live in the source HTML this run;
+   * "lost" = previously seen but absent on this re-crawl;
+   * "candidate" = webgraph seed not yet (or not) crawl-confirmed.
+   */
+  verification: "crawl_verified" | "lost" | "candidate";
+}
+
 export interface KeywordSuggestion {
   keyword: string;
   source: "autocomplete" | "related" | "cluster";

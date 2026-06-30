@@ -13,6 +13,12 @@ export interface AIVisibilityResult {
   sourceDomains: string[];
   citedUrls: string[];
   rawResponse: string;
+  /**
+   * True when the answer was produced with a live web-search tool (real cited
+   * URLs). False for the parametric/model-knowledge path. Lets the scanner label
+   * the measurement_mode honestly (grounded vs model_knowledge).
+   */
+  grounded?: boolean;
 }
 
 export interface SERPResult {

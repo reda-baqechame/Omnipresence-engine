@@ -103,7 +103,7 @@
       "id": "attribution_proof",
       "text": "Prove organic and AI-referral lift from connected analytics",
       "metric": "attribution",
-      "requires": ["always"],
+      "requires": ["firstPartyConnectors"],
       "provenance": "first_party_when_connected",
       "category": "proof"
     },

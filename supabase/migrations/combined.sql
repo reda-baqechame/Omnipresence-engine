@@ -32,7 +32,7 @@ CREATE TYPE content_asset_type AS ENUM (
   'service_page', 'location_page', 'comparison_page', 'best_of_page', 'faq_page',
   'blog_brief', 'blog_post', 'case_study', 'youtube_script', 'shorts_script',
   'linkedin_post', 'x_thread', 'reddit_draft', 'quora_draft', 'newsletter',
-  'podcast_script', 'gbp_post', 'directory_description'
+  'podcast_script', 'gbp_post', 'directory_description', 'alternative_page', 'llms_txt'
 );
 CREATE TYPE content_status AS ENUM (
   'drafted', 'approved', 'published', 'indexed', 'getting_traffic', 'needs_refresh'
@@ -717,6 +717,21 @@ CREATE TABLE IF NOT EXISTS ops_queue (
 
 CREATE INDEX IF NOT EXISTS idx_ops_queue_status ON ops_queue(status);
 CREATE INDEX IF NOT EXISTS idx_ops_queue_org ON ops_queue(organization_id);
+
+-- Wave Q1/Q4 — real ops execution result + proof-chain task_id.
+ALTER TABLE ops_queue ADD COLUMN IF NOT EXISTS result JSONB;
+ALTER TABLE ops_queue ADD COLUMN IF NOT EXISTS error TEXT;
+ALTER TABLE ops_queue ADD COLUMN IF NOT EXISTS published_url TEXT;
+ALTER TABLE ops_queue ADD COLUMN IF NOT EXISTS attempts INT NOT NULL DEFAULT 0;
+ALTER TABLE ops_queue ADD COLUMN IF NOT EXISTS task_id UUID;
+CREATE INDEX IF NOT EXISTS idx_ops_queue_task ON ops_queue(task_id);
+
+-- Wave Q4 — proof chain task_id + impact estimate.
+ALTER TABLE results_ledger ADD COLUMN IF NOT EXISTS task_id UUID;
+ALTER TABLE content_assets ADD COLUMN IF NOT EXISTS task_id UUID;
+ALTER TABLE execution_tasks ADD COLUMN IF NOT EXISTS impact_estimate JSONB;
+CREATE INDEX IF NOT EXISTS idx_results_ledger_task ON results_ledger(task_id);
+CREATE INDEX IF NOT EXISTS idx_content_assets_task ON content_assets(task_id);
 
 -- Extend existing tables
 ALTER TABLE authority_opportunities
@@ -2336,5 +2351,153 @@ CREATE POLICY ai_visibility_snapshots_all ON ai_visibility_snapshots FOR ALL
 DROP POLICY IF EXISTS data_quality_scores_all ON data_quality_scores;
 CREATE POLICY data_quality_scores_all ON data_quality_scores FOR ALL
   USING (project_id IN (SELECT id FROM projects WHERE organization_id IN (SELECT get_user_org_ids())));
+
+-- ============================================================================
+-- Wave N4 — Evidence artifact spine (ai_capture_evidence + ai-evidence bucket)
+-- ============================================================================
+
+CREATE TABLE IF NOT EXISTS ai_capture_evidence (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  project_id UUID NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+  run_id UUID,
+  prompt_id UUID,
+  engine TEXT NOT NULL,
+  surface_type TEXT NOT NULL DEFAULT 'api',
+  prompt TEXT NOT NULL,
+  measurement_mode TEXT,
+  response_hash TEXT NOT NULL,
+  raw_answer TEXT,
+  cited_urls TEXT[] NOT NULL DEFAULT '{}',
+  source_domains TEXT[] NOT NULL DEFAULT '{}',
+  screenshot_path TEXT,
+  dom_path TEXT,
+  evidence_url TEXT,
+  captured_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE INDEX IF NOT EXISTS idx_ai_capture_evidence_project ON ai_capture_evidence(project_id, captured_at DESC);
+CREATE INDEX IF NOT EXISTS idx_ai_capture_evidence_run ON ai_capture_evidence(run_id);
+CREATE INDEX IF NOT EXISTS idx_ai_capture_evidence_hash ON ai_capture_evidence(response_hash);
+
+ALTER TABLE ai_capture_evidence ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS ai_capture_evidence_all ON ai_capture_evidence;
+CREATE POLICY ai_capture_evidence_all ON ai_capture_evidence FOR ALL
+  USING (project_id IN (SELECT id FROM projects WHERE organization_id IN (SELECT get_user_org_ids())));
+
+INSERT INTO storage.buckets (id, name, public, file_size_limit, allowed_mime_types)
+VALUES (
+  'ai-evidence',
+  'ai-evidence',
+  false,
+  26214400,
+  ARRAY['application/json', 'text/html', 'text/plain', 'image/png', 'image/jpeg']
+)
+ON CONFLICT (id) DO NOTHING;
+
+-- ============================================================================
+-- Wave O1 — Prompt panels (engines × geos × personas × runs matrix)
+-- ============================================================================
+
+CREATE TABLE IF NOT EXISTS ai_prompt_panels (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  project_id UUID NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+  name TEXT NOT NULL,
+  description TEXT,
+  geos TEXT[] NOT NULL DEFAULT '{}',
+  personas TEXT[] NOT NULL DEFAULT '{}',
+  engines TEXT[] NOT NULL DEFAULT '{}',
+  runs_per_prompt INT NOT NULL DEFAULT 3,
+  is_active BOOLEAN NOT NULL DEFAULT true,
+  last_run_at TIMESTAMPTZ,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE TABLE IF NOT EXISTS ai_prompt_panel_members (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  panel_id UUID NOT NULL REFERENCES ai_prompt_panels(id) ON DELETE CASCADE,
+  project_id UUID NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+  prompt_id UUID REFERENCES prompts(id) ON DELETE SET NULL,
+  prompt_text TEXT NOT NULL,
+  weight NUMERIC NOT NULL DEFAULT 1,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE INDEX IF NOT EXISTS idx_ai_prompt_panels_project ON ai_prompt_panels(project_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_ai_prompt_panel_members_panel ON ai_prompt_panel_members(panel_id);
+CREATE INDEX IF NOT EXISTS idx_ai_prompt_panel_members_project ON ai_prompt_panel_members(project_id);
+
+ALTER TABLE ai_prompt_panels ENABLE ROW LEVEL SECURITY;
+ALTER TABLE ai_prompt_panel_members ENABLE ROW LEVEL SECURITY;
+
+DROP POLICY IF EXISTS ai_prompt_panels_all ON ai_prompt_panels;
+CREATE POLICY ai_prompt_panels_all ON ai_prompt_panels FOR ALL
+  USING (project_id IN (SELECT id FROM projects WHERE organization_id IN (SELECT get_user_org_ids())));
+
+DROP POLICY IF EXISTS ai_prompt_panel_members_all ON ai_prompt_panel_members;
+CREATE POLICY ai_prompt_panel_members_all ON ai_prompt_panel_members FOR ALL
+  USING (project_id IN (SELECT id FROM projects WHERE organization_id IN (SELECT get_user_org_ids())));
+
+-- ============================================================================
+-- Wave O2/O3 — Panel run summaries + geo conditioning on probe traces
+-- ============================================================================
+
+CREATE TABLE IF NOT EXISTS ai_panel_runs (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  panel_id UUID NOT NULL REFERENCES ai_prompt_panels(id) ON DELETE CASCADE,
+  project_id UUID NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+  run_id UUID,
+  sample_size INT NOT NULL DEFAULT 0,
+  sufficient_sample BOOLEAN NOT NULL DEFAULT false,
+  mention_rate NUMERIC,
+  mention_ci_low NUMERIC,
+  mention_ci_high NUMERIC,
+  citation_rate NUMERIC,
+  share_of_voice NUMERIC,
+  volatility_index NUMERIC,
+  engines_measured INT NOT NULL DEFAULT 0,
+  cells_total INT NOT NULL DEFAULT 0,
+  stats JSONB NOT NULL DEFAULT '{}'::jsonb,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE INDEX IF NOT EXISTS idx_ai_panel_runs_panel ON ai_panel_runs(panel_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_ai_panel_runs_project ON ai_panel_runs(project_id, created_at DESC);
+
+ALTER TABLE ai_panel_runs ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS ai_panel_runs_all ON ai_panel_runs;
+CREATE POLICY ai_panel_runs_all ON ai_panel_runs FOR ALL
+  USING (project_id IN (SELECT id FROM projects WHERE organization_id IN (SELECT get_user_org_ids())));
+
+ALTER TABLE ai_probe_traces ADD COLUMN IF NOT EXISTS geo TEXT;
+
+-- ============================================================================
+-- Wave R2 — URL-level Presence Backlink Graph rollup snapshots
+-- ============================================================================
+
+CREATE TABLE IF NOT EXISTS backlink_graph_snapshots (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  project_id UUID NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+  total_links INT NOT NULL DEFAULT 0,
+  referring_domains INT NOT NULL DEFAULT 0,
+  new_count INT NOT NULL DEFAULT 0,
+  lost_count INT NOT NULL DEFAULT 0,
+  toxic_count INT NOT NULL DEFAULT 0,
+  nofollow_count INT NOT NULL DEFAULT 0,
+  data_source TEXT NOT NULL DEFAULT 'unavailable',
+  top_links JSONB NOT NULL DEFAULT '[]'::jsonb,
+  intersection JSONB NOT NULL DEFAULT '[]'::jsonb,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE INDEX IF NOT EXISTS idx_backlink_graph_snapshots_project
+  ON backlink_graph_snapshots(project_id, created_at DESC);
+
+ALTER TABLE backlink_graph_snapshots ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS backlink_graph_snapshots_org ON backlink_graph_snapshots;
+CREATE POLICY backlink_graph_snapshots_org ON backlink_graph_snapshots FOR ALL USING (
+  project_id IN (SELECT p.id FROM projects p JOIN memberships m ON m.organization_id = p.organization_id WHERE m.user_id = auth.uid())
+);
 
 

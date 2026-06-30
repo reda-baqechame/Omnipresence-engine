@@ -292,6 +292,7 @@ export interface KeywordOpportunity {
 export interface ResultsLedgerEntry {
   id: string;
   project_id: string;
+  task_id?: string;
   action_type: string;
   action_surface?: string;
   description: string;
@@ -503,6 +504,8 @@ export type ExecutionTaskSource =
   | "video"
   | "reputation"
   | "merchant"
+  | "source_opportunity"
+  | "fastest_path"
   | "manual";
 
 export type ExecutionTaskStatus =

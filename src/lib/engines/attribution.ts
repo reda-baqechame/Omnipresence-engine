@@ -1,6 +1,7 @@
 import type { AttributionMetric } from "@/types/database";
 import { logProviderError } from "@/lib/observability/log";
 import { fetchWithTimeout } from "@/lib/providers/http";
+import { computeMoneyMath } from "@/lib/engines/ad-connectors";
 
 export interface AttributionInputs {
   organicTraffic: number;
@@ -15,6 +16,16 @@ export interface AttributionInputs {
   revenue: number;
   monthlyAdSpend?: number;
   industry?: string;
+  /**
+   * Real blended CPC imported from connected ad accounts (Google/Meta/LinkedIn).
+   * When present this replaces the modeled CPC_BENCHMARKS so paid-equivalent
+   * value is measured, not estimated.
+   */
+  realCpc?: number;
+  /** Real paid spend in the window (sum across connected ad accounts). */
+  paidSpend?: number;
+  /** Real paid conversions in the window (for CAC). */
+  paidConversions?: number;
 }
 
 // Industry-average CPC benchmarks for paid-ads-equivalent calculation
@@ -36,12 +47,26 @@ export function calculateAttribution(
   periodStart: string,
   periodEnd: string
 ): Omit<AttributionMetric, "id" | "created_at"> {
-  const cpc = CPC_BENCHMARKS[inputs.industry?.toLowerCase() || "default"] || CPC_BENCHMARKS.default;
+  // Prefer the real blended CPC imported from connected ad accounts; fall back
+  // to the industry benchmark (clearly labeled via cpc_source).
+  const hasRealCpc = typeof inputs.realCpc === "number" && inputs.realCpc > 0;
+  const cpc = hasRealCpc
+    ? (inputs.realCpc as number)
+    : CPC_BENCHMARKS[inputs.industry?.toLowerCase() || "default"] || CPC_BENCHMARKS.default;
 
   const totalOrganicClicks =
     inputs.organicTraffic + inputs.aiReferralTraffic + inputs.socialClicks + inputs.directoryReferrals;
 
-  const paidAdsEquivalent = totalOrganicClicks * cpc;
+  const money = computeMoneyMath({
+    organicClicks: totalOrganicClicks,
+    searchClicks: inputs.searchClicks,
+    cpc,
+    purchases: inputs.purchases,
+    revenue: inputs.revenue,
+    paidSpend: inputs.paidSpend,
+    paidConversions: inputs.paidConversions,
+  });
+  const paidAdsEquivalent = money.paidAdsEquivalent;
 
   const totalConversions = inputs.leads + inputs.calls + inputs.bookings + inputs.purchases;
   const conversionRate = totalOrganicClicks > 0 ? totalConversions / totalOrganicClicks : 0;
@@ -73,7 +98,15 @@ export function calculateAttribution(
       search: inputs.searchClicks,
       conversion_rate: Math.round(conversionRate * 10000) / 100,
       ad_spend_savings: Math.round(adSpendSavings * 100) / 100,
-      cpc_used: cpc,
+      cpc_used: Math.round(cpc * 100) / 100,
+      // 1 = real imported CPC, 0 = modeled benchmark (drives provenance UI).
+      cpc_is_real: hasRealCpc ? 1 : 0,
+      paid_spend: Math.round((inputs.paidSpend || 0) * 100) / 100,
+      paid_conversions: inputs.paidConversions || 0,
+      paid_cac: money.paidCac,
+      customer_ltv: money.customerLtv,
+      ltv_to_cac: money.ltvToCac,
+      revenue_influenced: money.revenueInfluenced,
     },
   };
 }

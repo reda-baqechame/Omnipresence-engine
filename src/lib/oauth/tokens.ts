@@ -28,6 +28,26 @@ export async function refreshGoogleAccessToken(refreshToken: string): Promise<{
   return response.json();
 }
 
+async function refreshHubspotAccessToken(refreshToken: string): Promise<{
+  access_token: string;
+  expires_in: number;
+  refresh_token?: string;
+} | null> {
+  const response = await fetchWithTimeout("https://api.hubapi.com/oauth/v1/token", {
+    method: "POST",
+    headers: { "Content-Type": "application/x-www-form-urlencoded" },
+    body: new URLSearchParams({
+      client_id: process.env.HUBSPOT_CLIENT_ID || "",
+      client_secret: process.env.HUBSPOT_CLIENT_SECRET || "",
+      refresh_token: refreshToken,
+      grant_type: "refresh_token",
+    }),
+  });
+
+  if (!response.ok) return null;
+  return response.json();
+}
+
 export async function getValidOAuthToken(
   supabase: SupabaseClient,
   projectId: string,
@@ -56,6 +76,23 @@ export async function getValidOAuthToken(
     provider === "google_business_profile"
   ) {
     const refreshed = await refreshGoogleAccessToken(conn.refresh_token);
+    if (!refreshed) return conn.access_token;
+
+    await supabase
+      .from("oauth_connections")
+      .update({
+        access_token: refreshed.access_token,
+        refresh_token: refreshed.refresh_token || conn.refresh_token,
+        expires_at: new Date(Date.now() + refreshed.expires_in * 1000).toISOString(),
+      })
+      .eq("project_id", projectId)
+      .eq("provider", provider);
+
+    return refreshed.access_token;
+  }
+
+  if (provider === "hubspot") {
+    const refreshed = await refreshHubspotAccessToken(conn.refresh_token);
     if (!refreshed) return conn.access_token;
 
     await supabase

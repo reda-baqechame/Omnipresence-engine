@@ -1,5 +1,5 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
-import { getBacklinks } from "@/lib/providers/dataforseo";
+import { getBacklinks, getBacklinkGraph, getLinkIntersection } from "@/lib/providers/dataforseo";
 import { getBacklinksFree } from "@/lib/providers/backlinks-free";
 import { hasSerpCapability } from "@/lib/config/capabilities";
 
@@ -75,6 +75,89 @@ export async function snapshotProjectBacklinks(
     : undefined;
 
   return { count: backlinks.length, diff };
+}
+
+export interface BacklinkGraphSnapshotResult {
+  available: boolean;
+  reason?: string;
+  totalLinks: number;
+  newCount: number;
+  lostCount: number;
+  toxicCount: number;
+}
+
+/**
+ * Refresh the URL-level Presence Backlink Graph for a project: triggers a
+ * crawl-verified re-scan (which updates the OmniData temporal store and thus
+ * new/lost), computes competitor link intersection, and persists a rollup
+ * snapshot. Best-effort and keyless-first; degrades to unavailable when OmniData
+ * isn't configured/ingested. Called weekly by weeklyBacklinkMonitor.
+ */
+export async function snapshotProjectBacklinkGraph(
+  supabase: SupabaseClient,
+  projectId: string,
+  domain: string,
+  competitors: string[] = []
+): Promise<BacklinkGraphSnapshotResult> {
+  const graph = await getBacklinkGraph(domain, 40);
+  if (!graph || graph.dataSource === "unavailable") {
+    return {
+      available: false,
+      reason: "URL-level graph unavailable (OmniData/webgraph not ingested).",
+      totalLinks: 0,
+      newCount: 0,
+      lostCount: 0,
+      toxicCount: 0,
+    };
+  }
+
+  const intersection = competitors.length
+    ? await getLinkIntersection(domain, competitors, 2)
+    : null;
+
+  const topLinks = graph.links
+    .filter((l) => l.verification !== "lost")
+    .slice(0, 100)
+    .map((l) => ({
+      source_url: l.sourceUrl,
+      source_domain: l.sourceDomain,
+      anchor: l.anchor,
+      nofollow: l.nofollow,
+      domain_rank: l.domainRank ?? null,
+      spam_risk: l.spamRisk,
+      link_value: l.linkValue,
+      first_seen: l.firstSeen,
+      last_seen: l.lastSeen,
+    }));
+
+  const intersectionRows = (intersection?.rows ?? []).slice(0, 100).map((r) => ({
+    source_domain: r.sourceDomain,
+    links_to: r.linksTo,
+    count: r.count,
+    authority: r.authority,
+    brand_gap: r.brandGap,
+  }));
+
+  await supabase.from("backlink_graph_snapshots").insert({
+    project_id: projectId,
+    total_links: graph.totalLinks,
+    referring_domains: graph.referringDomains,
+    new_count: graph.newCount,
+    lost_count: graph.lostCount,
+    toxic_count: graph.toxicCount,
+    nofollow_count: graph.nofollowCount,
+    data_source: graph.dataSource,
+    top_links: topLinks,
+    intersection: intersectionRows,
+  });
+
+  return {
+    available: true,
+    totalLinks: graph.totalLinks,
+    newCount: graph.newCount,
+    lostCount: graph.lostCount,
+    toxicCount: graph.toxicCount,
+  };
 }
 
 export async function getLatestBacklinkDiff(

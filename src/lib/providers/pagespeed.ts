@@ -1,4 +1,5 @@
 import type { ProviderResult } from "./types";
+import { getPageSpeedViaOmniData } from "./omnidata-performance";
 
 /**
  * Google PageSpeed Insights — free Core Web Vitals + performance score.
@@ -92,6 +93,14 @@ export async function getPageSpeed(
   if (cached && Date.now() - cached.at < PS_CACHE_TTL_MS) {
     return cached.result;
   }
+
+  // Prefer the unified OmniData /v3 spine when configured; fall back to direct PSI.
+  const viaOmni = await getPageSpeedViaOmniData(fullUrl, strategy);
+  if (viaOmni) {
+    psCache.set(cacheKey, { at: Date.now(), result: viaOmni });
+    return viaOmni;
+  }
+
   const key = process.env.PAGESPEED_API_KEY;
   const params = new URLSearchParams({
     url: fullUrl,

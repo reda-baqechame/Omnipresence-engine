@@ -6,6 +6,7 @@ import {
   backlinkGapsLive,
   keywordOpportunitiesLive,
   hasIntelligenceApi,
+  type KeywordResearchOptions,
 } from "@/lib/providers/intelligence-api";
 import { preferLiveData } from "@/lib/config/capabilities";
 import {
@@ -16,6 +17,44 @@ import {
   type VolumeConfidence,
 } from "@/lib/engines/keyword-volume";
 import { scoreKeywordsKeyless, hasKeylessDifficulty } from "@/lib/engines/keyword-difficulty";
+import { loadProjectIntegration } from "@/lib/integrations/store";
+
+interface GoogleAdsIntegration extends Record<string, unknown> {
+  developerToken?: string;
+  clientId?: string;
+  clientSecret?: string;
+  refreshToken?: string;
+  customerId?: string;
+  loginCustomerId?: string;
+}
+
+/**
+ * Resolve per-tenant Keyword Planner options for a project: loads the project's
+ * connected Google Ads OAuth (if any) so its own account/quota powers real
+ * volume/CPC, plus an optional geo. When no integration is connected the planner
+ * falls back to process-wide env (if set) or the clearly-labeled heuristic.
+ */
+export async function loadPlannerOptions(
+  supabase: SupabaseClient,
+  projectId: string,
+  geo?: string
+): Promise<KeywordResearchOptions | undefined> {
+  const creds = await loadProjectIntegration<GoogleAdsIntegration>(supabase, projectId, "google_ads");
+  if (!creds && !geo) return undefined;
+  return {
+    geo,
+    credentials: creds
+      ? {
+          developerToken: creds.developerToken,
+          clientId: creds.clientId,
+          clientSecret: creds.clientSecret,
+          refreshToken: creds.refreshToken,
+          customerId: creds.customerId,
+          loginCustomerId: creds.loginCustomerId,
+        }
+      : undefined,
+  };
+}
 
 export interface KeywordOpportunityRow {
   keyword: string;
@@ -41,13 +80,14 @@ export async function runKeywordResearch(
   seed: string,
   domain?: string,
   anchor?: VolumeAnchor | null,
-  maxKeywords = 20
+  maxKeywords = 20,
+  plannerOptions?: KeywordResearchOptions
 ): Promise<{ opportunities: KeywordOpportunityRow[]; live: boolean }> {
   if (!preferLiveData() || !hasIntelligenceApi()) {
     return { opportunities: [], live: false };
   }
 
-  const research = await researchKeywordsLive(seed);
+  const research = await researchKeywordsLive(seed, plannerOptions);
   if (!research) return { opportunities: [], live: false };
 
   const allKeywords = [
@@ -127,7 +167,11 @@ export async function runBulkKeywordResearch(
   seeds: string[],
   domain?: string,
   anchor?: VolumeAnchor | null,
-  options?: { maxPerSeed?: number; onProgress?: (processed: number, found: number) => Promise<void> | void }
+  options?: {
+    maxPerSeed?: number;
+    onProgress?: (processed: number, found: number) => Promise<void> | void;
+    plannerOptions?: KeywordResearchOptions;
+  }
 ): Promise<{ opportunities: KeywordOpportunityRow[]; live: boolean; processed: number }> {
   const maxPerSeed = options?.maxPerSeed ?? 50;
   const cleaned = Array.from(
@@ -139,7 +183,7 @@ export async function runBulkKeywordResearch(
   let processed = 0;
 
   for (const seed of cleaned) {
-    const { opportunities, live } = await runKeywordResearch(seed, domain, anchor, maxPerSeed);
+    const { opportunities, live } = await runKeywordResearch(seed, domain, anchor, maxPerSeed, options?.plannerOptions);
     if (live) anyLive = true;
     for (const o of opportunities) {
       const key = o.keyword.trim().toLowerCase();
