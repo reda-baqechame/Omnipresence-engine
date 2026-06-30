@@ -86,9 +86,11 @@ function normalizeUsage(u?: CallUsage): { inputTokens: number; outputTokens: num
 }
 
 export class BudgetExceededError extends Error {
-  constructor(public reason: string) {
+  reason: string;
+  constructor(reason: string) {
     super(`cost-guard: ${reason}`);
     this.name = "BudgetExceededError";
+    this.reason = reason;
   }
 }
 

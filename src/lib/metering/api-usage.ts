@@ -53,9 +53,11 @@ export class ApiCreditExceededError extends Error {
 }
 
 export class TenantBudgetExceededError extends Error {
-  constructor(public reason: string) {
+  reason: string;
+  constructor(reason: string) {
     super(`tenant-budget: ${reason}`);
     this.name = "TenantBudgetExceededError";
+    this.reason = reason;
   }
 }
 

@@ -53,6 +53,7 @@ const steps = [
       ]),
   },
   { name: "accuracy-golden", ok: () => run("node", ["scripts/verify-accuracy.mjs"]) },
+  { name: "stress", ok: () => run("node", ["scripts/verify-stress.mjs"]) },
   { name: "typecheck", ok: () => run("npm", ["run", "typecheck"]) },
   { name: "lint", ok: () => run("npm", ["run", "lint"]) },
   { name: "build", ok: () => run("npm", ["run", "build"]) },
