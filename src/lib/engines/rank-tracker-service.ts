@@ -4,6 +4,12 @@ import { searchGoogleOrganicRouter } from "@/lib/providers/serp-router";
 import { getValidOAuthToken } from "@/lib/oauth/tokens";
 import { buildGscPositionMap, type GscPositionEntry } from "@/lib/engines/gsc-queries";
 import { logProviderError } from "@/lib/observability/log";
+import {
+  ctrByPosition,
+  shareOfVoiceFromPositions,
+  isStrikingDistance,
+  classifyRankChange,
+} from "@/lib/engines/rank-math";
 
 export type RankDevice = "desktop" | "mobile";
 
@@ -33,18 +39,6 @@ export interface RankCheckResult {
   /** Public SERP position kept alongside first-party for cross-checking. */
   publicPosition: number | null;
   confidence: number;
-}
-
-/** Approximate organic CTR by position — used for share-of-voice weighting. */
-function ctrByPosition(position: number | null): number {
-  if (position == null) return 0;
-  if (position <= 1) return 0.28;
-  if (position <= 2) return 0.15;
-  if (position <= 3) return 0.1;
-  if (position <= 5) return 0.06;
-  if (position <= 10) return 0.025;
-  if (position <= 20) return 0.008;
-  return 0;
 }
 
 function hostnameOf(url: string): string {
@@ -139,9 +133,10 @@ export async function runRankCheckForProject(
       return { domain: c, position: hit?.position ?? null };
     });
 
-    const ourCtr = ctrByPosition(position);
-    const compCtr = competitorOverlay.reduce((s, c) => s + ctrByPosition(c.position), 0);
-    shareOfVoice = ourCtr + compCtr > 0 ? Math.round((ourCtr / (ourCtr + compCtr)) * 1000) / 1000 : 0;
+    shareOfVoice = shareOfVoiceFromPositions(
+      position,
+      competitorOverlay.map((c) => c.position)
+    );
 
     serpFeatures = serp.data.serpFeatures || [];
     brandInAiOverview = serp.data.aiOverview
@@ -174,7 +169,7 @@ export async function runRankCheckForProject(
     confidence = 0.99;
   }
 
-  const strikingDistance = position != null && position > 3 && position <= 20;
+  const strikingDistance = isStrikingDistance(position);
 
   await supabase.from("rank_snapshots").insert({
     keyword_id: keywordId,
@@ -213,10 +208,8 @@ export async function runRankCheckForProject(
     .eq("id", keywordId);
 
   // Rank-drop alert: fell off page 1, or dropped 5+ positions, or lost ranking.
-  const droppedOffPage1 = previousPosition != null && previousPosition <= 10 && (position == null || position > 10);
-  const bigDrop = previousPosition != null && position != null && position - previousPosition >= 5;
-  const lostRanking = previousPosition != null && position == null;
-  if (droppedOffPage1 || bigDrop || lostRanking) {
+  const rankChange = classifyRankChange(previousPosition, position);
+  if (rankChange.isAlert) {
     await supabase.from("rank_alerts").insert({
       project_id: projectId,
       keyword_id: keywordId,
@@ -224,7 +217,7 @@ export async function runRankCheckForProject(
       alert_type: "rank_drop",
       previous_position: previousPosition,
       current_position: position,
-      delta: position != null && previousPosition != null ? position - previousPosition : null,
+      delta: rankChange.delta,
     });
   }
 
