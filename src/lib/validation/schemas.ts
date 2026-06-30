@@ -54,12 +54,27 @@ export const OpsPatchSchema = z
   });
 export type OpsPatchInput = z.infer<typeof OpsPatchSchema>;
 
-/** Project-scoped action triggers (fastest-path sync, etc.). */
+/** Project-scoped action triggers (fastest-path sync, attribution sync, etc.). */
 export const ProjectIdSchema = z.object({ projectId: uuid });
 
-/** Keyword research request. */
+/** Keyword-intelligence actions the POST handler dispatches on. */
+export const KEYWORD_ACTIONS = [
+  "research",
+  "bulk_research",
+  "content_gaps",
+  "backlink_gaps",
+  "difficulty",
+  "universe",
+] as const;
+
+/** Keyword research request (covers all `action` variants of the route). */
 export const KeywordsSchema = z.object({
   projectId: uuid,
+  action: z.enum(KEYWORD_ACTIONS).optional(),
+  seed: z.string().trim().max(200).optional(),
   seeds: z.array(nonEmpty.max(200)).max(200).optional(),
+  keyword: z.string().trim().max(200).optional(),
   geo: z.string().trim().max(64).optional(),
+  depth: z.enum(["shallow", "deep"]).optional(),
 });
+export type KeywordsInput = z.infer<typeof KeywordsSchema>;

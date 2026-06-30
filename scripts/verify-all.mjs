@@ -36,6 +36,7 @@ const steps = [
         "src/lib/observability/__tests__/log.test.ts",
         "src/lib/validation/__tests__/schemas.test.ts",
         "src/lib/providers/__tests__/circuit-breaker.test.ts",
+        "src/lib/providers/__tests__/router-failover.smoke.test.ts",
       ]),
   },
   { name: "typecheck", ok: () => run("npm", ["run", "typecheck"]) },

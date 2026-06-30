@@ -76,3 +76,28 @@ test("KeywordsSchema bounds seeds array and geo length", () => {
     false
   );
 });
+
+test("KeywordsSchema accepts the real route payload variants", () => {
+  // bulk_research
+  assert.equal(
+    parseOrError(KeywordsSchema, {
+      projectId: UUID,
+      action: "bulk_research",
+      seeds: ["plumber near me", "emergency plumber"],
+      geo: "US",
+    }).ok,
+    true
+  );
+  // universe
+  assert.equal(
+    parseOrError(KeywordsSchema, { projectId: UUID, action: "universe", seed: "saas seo", depth: "deep" }).ok,
+    true
+  );
+  // difficulty
+  assert.equal(parseOrError(KeywordsSchema, { projectId: UUID, action: "difficulty", keyword: "ai seo" }).ok, true);
+});
+
+test("KeywordsSchema rejects an unknown action and bad depth", () => {
+  assert.equal(parseOrError(KeywordsSchema, { projectId: UUID, action: "delete_everything" }).ok, false);
+  assert.equal(parseOrError(KeywordsSchema, { projectId: UUID, depth: "infinite" }).ok, false);
+});

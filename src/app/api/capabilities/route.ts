@@ -18,6 +18,7 @@ export async function GET() {
   }
 
   const coverage = getClaimsCoverage();
+  const adapters = describeProviders();
   return NextResponse.json({
     ...getCapabilitiesSummary(),
     production: getProductionReadiness(),
@@ -27,7 +28,12 @@ export async function GET() {
       coverage,
     },
     providerRouter: {
-      adapters: describeProviders(),
+      adapters,
+      // Operator signal: providers the circuit breaker is currently fast-failing
+      // (open) or trialing (half-open) so a degraded upstream is visible at a glance.
+      degraded: adapters
+        .filter((a) => a.circuit !== "closed")
+        .map((a) => ({ id: a.id, capability: a.capability, circuit: a.circuit, failures: a.failures })),
       zeroPaidKeys: zeroPaidKeysReadiness(),
       comparison: compareCapabilities(),
     },

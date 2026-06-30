@@ -10,7 +10,8 @@ import {
   loadPlannerOptions,
 } from "@/lib/engines/keyword-intelligence";
 import { verifyProjectAccess } from "@/lib/security/project-access";
-import { apiError, apiForbidden, apiUnauthorized, readJsonBody } from "@/lib/security/api-response";
+import { apiError, apiForbidden, apiUnauthorized, validateBody } from "@/lib/security/api-response";
+import { KeywordsSchema } from "@/lib/validation/schemas";
 import { getValidOAuthToken } from "@/lib/oauth/tokens";
 import { fetchGscTopQueries } from "@/lib/engines/gsc-queries";
 import { deriveGscAnchor, type VolumeAnchor } from "@/lib/engines/keyword-volume";
@@ -42,18 +43,9 @@ export async function POST(request: NextRequest) {
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) return apiUnauthorized();
 
-  const body = await readJsonBody(request);
-  const { projectId, seed, seeds, action, keyword, geo } = body as {
-    projectId: string;
-    seed?: string;
-    seeds?: string[];
-    keyword?: string;
-    geo?: string;
-    action?: "research" | "bulk_research" | "content_gaps" | "backlink_gaps" | "difficulty" | "universe";
-    depth?: "shallow" | "deep";
-  };
-
-  if (!projectId) return apiError("projectId required");
+  const parsed = await validateBody(request, KeywordsSchema);
+  if (parsed.response) return parsed.response;
+  const { projectId, seed, seeds, action, keyword, geo, depth } = parsed.data;
 
   const access = await verifyProjectAccess(supabase, projectId, user.id, "member");
   if (!access) return apiForbidden();
@@ -74,7 +66,7 @@ export async function POST(request: NextRequest) {
 
   if (action === "universe") {
     const universeSeed = (seed || project.industry || project.domain.replace(/^www\./, "").split(".")[0]).trim();
-    const universe = await buildKeywordUniverse({ seed: universeSeed, depth: (body as { depth?: "shallow" | "deep" }).depth });
+    const universe = await buildKeywordUniverse({ seed: universeSeed, depth });
     return NextResponse.json(universe);
   }
 

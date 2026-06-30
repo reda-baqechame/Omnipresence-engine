@@ -22,7 +22,7 @@ import { searchGoogleOrganicSerper } from "@/lib/providers/serper";
 import { searchGoogleOrganicSearxng, hasSearxngCapability } from "@/lib/providers/searxng";
 import { searchGoogleOrganicFirecrawl, hasFirecrawlCapability } from "@/lib/providers/firecrawl";
 import { isZeroPaidKeysMode, isBenchmarkOnlyForced, type ProviderCategory } from "@/lib/config/capabilities";
-import { withBreaker, CircuitOpenError } from "@/lib/providers/http";
+import { withBreaker, CircuitOpenError, circuitStatus, type CircuitStatus } from "@/lib/providers/http";
 import type { ProviderResult, SERPResult } from "./types";
 
 export type Capability = "serp" | "crawl" | "backlinks" | "generate" | "email" | "social" | "enrich";
@@ -329,6 +329,8 @@ export interface AdapterStatus {
   freshness: Freshness;
   costPerCall: number;
   failures: number;
+  /** Circuit-breaker state for this adapter's route() calls (operator signal). */
+  circuit: CircuitStatus;
 }
 
 /** Diagnostic catalog of every adapter and whether it's usable right now. */
@@ -351,6 +353,7 @@ export function describeProviders(): AdapterStatus[] {
       freshness: a.freshness,
       costPerCall: a.costPerCall,
       failures: getHealth(a.id).failures,
+      circuit: circuitStatus(`route:${a.id}`),
     };
   });
 }
