@@ -2,12 +2,15 @@
 /**
  * Verify production deployment readiness.
  * Usage: node scripts/verify-production.mjs [baseUrl]
+ *
+ * Uses the public /api/health endpoint (no auth). /api/capabilities is
+ * intentionally auth-gated — a 401 there is correct, not a deploy failure.
  */
 
 const base = process.argv[2] || process.env.SMOKE_BASE_URL || "https://omnipresence-engine.vercel.app";
 
-async function fetchJson(path) {
-  const res = await fetch(`${base}${path}`, { signal: AbortSignal.timeout(30_000) });
+async function fetchJson(path, opts = {}) {
+  const res = await fetch(`${base}${path}`, { signal: AbortSignal.timeout(30_000), ...opts });
   if (!res.ok) throw new Error(`${path} → ${res.status}`);
   return res.json();
 }
@@ -16,14 +19,28 @@ console.log(`\nVerifying ${base}\n`);
 
 try {
   const health = await fetchJson("/api/health");
-  const caps = await fetchJson("/api/capabilities");
+
+  // Optional: authenticated operator view (401 without session is expected).
+  let caps = null;
+  try {
+    const res = await fetch(`${base}/api/capabilities`, { signal: AbortSignal.timeout(15_000) });
+    if (res.ok) caps = await res.json();
+  } catch {
+    /* health is the source of truth for unauthenticated prod checks */
+  }
+
+  const liveData = health.checks?.live_data === "ok" || Boolean(caps?.liveData);
+  const citationTracking =
+    health.checks?.citation_tracking === "ok" || Boolean(caps?.citationTracking);
+  const serpOn = health.checks?.serp === "ok" || Boolean(caps?.serpCapability);
+  const production = health.production || caps?.production;
 
   console.log(`Version:     ${health.version}`);
   console.log(`Status:      ${health.status}`);
-  console.log(`Prod ready:  ${health.production?.ready ? "YES" : "NO"} (score ${health.production?.score ?? 0}%)`);
-  console.log(`Live data:   ${caps.liveData ? "ON" : "OFF (demo fallback)"}`);
-  console.log(`Citation tracking: ${caps.citationTracking ? "ON" : "OFF"}`);
-  console.log(`SERP providers: ${caps.serpCapability ? "ON" : "OFF"}`);
+  console.log(`Prod ready:  ${production?.ready ? "YES" : "NO"} (score ${production?.score ?? 0}%)`);
+  console.log(`Live data:   ${liveData ? "ON" : "OFF (demo fallback)"}`);
+  console.log(`Citation tracking: ${citationTracking ? "ON" : "OFF"}`);
+  console.log(`SERP providers: ${serpOn ? "ON" : "OFF"}`);
   console.log(`OmniData:    ${health.checks?.omnidata || "not configured"}`);
   console.log(`Integration encryption: ${health.checks?.integration_encryption || "unknown"}`);
   console.log(`Intelligence schema: ${health.checks?.intelligence_schema || "unknown"}`);
@@ -31,9 +48,10 @@ try {
   console.log(`Phase 9 schema:    ${health.checks?.phase9_schema || "unknown"}`);
   console.log(`Phase 10 schema:   ${health.checks?.phase10_schema || "unknown"}`);
   console.log(`Intelligence API:    ${health.checks?.intelligence_api || "unknown"}`);
-  console.log(`Providers:   ${caps.configuredCount}/${caps.totalProviders} configured\n`);
+  console.log(
+    `Providers:   ${health.providersConfigured ?? caps?.configuredCount ?? "?"}/${caps?.totalProviders ?? "?"} configured\n`
+  );
 
-  const production = health.production || caps.production;
   const checkList = production?.checks || [];
   if (production?.blockers?.length) {
     console.log("BLOCKERS:");
@@ -53,18 +71,20 @@ try {
     console.log("");
   }
 
-  const required = caps.providers.filter((p) => p.required && !p.configured);
-  if (required.length) {
-    console.log("Missing required providers:");
-    for (const p of required) console.log(`  ✗ ${p.name} (${p.id})`);
-    console.log("");
+  if (caps?.providers) {
+    const required = caps.providers.filter((p) => p.required && !p.configured);
+    if (required.length) {
+      console.log("Missing required providers:");
+      for (const p of required) console.log(`  ✗ ${p.name} (${p.id})`);
+      console.log("");
+    }
   }
 
   if (health.checks?.supabase === "skipped") {
     console.log("Next step: Add Supabase env vars on Vercel, run npm run db:migrate, redeploy.\n");
   }
 
-  if (!caps.liveData) {
+  if (!liveData) {
     console.log("Next step: Add SERPER or OMNIDATA + OPENAI/PERPLEXITY keys for live citation tracking.\n");
   }
 

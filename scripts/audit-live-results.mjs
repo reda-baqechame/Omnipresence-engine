@@ -10,21 +10,28 @@ let failed = 0;
 console.log("\n=== Live Results Audit ===\n");
 
 try {
-  const caps = await fetch(`${base}/api/capabilities`, {
+  // /api/capabilities is auth-gated; /api/health exposes the same live-data signals.
+  const health = await fetch(`${base}/api/health`, {
     headers: { connection: "close" },
     signal: AbortSignal.timeout(15_000),
-  }).then((r) => r.json());
-  console.log(`Live data: ${caps.liveData ? "ON" : "OFF"}`);
-  console.log(`Citation tracking: ${caps.citationTracking ? "ON" : "OFF"}`);
-  console.log(`SERP: ${caps.activeSerpProvider || "none"}`);
-  if (!caps.liveData) {
+  }).then((r) => {
+    if (!r.ok) throw new Error(`health → ${r.status}`);
+    return r.json();
+  });
+  const liveData = health.checks?.live_data === "ok";
+  const citationOn = health.checks?.citation_tracking === "ok";
+  const serpOn = health.checks?.serp === "ok";
+  console.log(`Live data: ${liveData ? "ON" : "OFF"}`);
+  console.log(`Citation tracking: ${citationOn ? "ON" : "OFF"}`);
+  console.log(`SERP: ${serpOn ? "on" : "none"} (${health.activeSerpProvider || "n/a"})`);
+  if (!liveData) {
     console.log("  ✗ Production should have live data ON");
     failed++;
   } else {
     console.log("  ✓ Live data enabled");
   }
 } catch (e) {
-  console.log("  ✗ capabilities unreachable", e instanceof Error ? e.message : "");
+  console.log("  ✗ health unreachable", e instanceof Error ? e.message : "");
   failed++;
 }
 

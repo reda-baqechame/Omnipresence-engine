@@ -122,19 +122,21 @@ console.log(`  ${has("PAGESPEED_API_KEY") ? "✓" : "○"} Real-user CrUX field 
 let remoteOk = false;
 if (base) {
   try {
-    const res = await fetch(`${base}/api/capabilities`, {
+    const res = await fetch(`${base}/api/health`, {
       headers: { connection: "close" },
       signal: AbortSignal.timeout(15_000),
     });
     if (res.ok) {
-      const caps = await res.json();
+      const health = await res.json();
+      const liveData = health.checks?.live_data === "ok";
+      const production = health.production;
       console.log(`\nRemote (${base}):`);
-      console.log(`  Live data: ${caps.liveData ? "ON" : "OFF"}`);
-      console.log(`  Citation tracking: ${caps.citationTracking ? "ON" : "OFF"}`);
-      console.log(`  Active SERP: ${caps.activeSerpProvider || "none"}`);
-      console.log(`  Providers: ${caps.configuredCount}/${caps.totalProviders}`);
-      console.log(`  Production ready: ${caps.production?.ready ? "YES" : "NO"} (${caps.production?.score ?? 0}%)`);
-      remoteOk = caps.production?.ready === true;
+      console.log(`  Live data: ${liveData ? "ON" : "OFF"}`);
+      console.log(`  Citation tracking: ${health.checks?.citation_tracking === "ok" ? "ON" : "OFF"}`);
+      console.log(`  Active SERP: ${health.activeSerpProvider || "none"}`);
+      console.log(`  Providers configured: ${health.providersConfigured ?? "?"}`);
+      console.log(`  Production ready: ${production?.ready ? "YES" : "NO"} (${production?.score ?? 0}%)`);
+      remoteOk = production?.ready === true;
     }
   } catch {
     console.log(`\nRemote check skipped (${base} unreachable)`);
