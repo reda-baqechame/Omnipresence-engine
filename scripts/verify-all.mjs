@@ -24,12 +24,19 @@ const steps = [
     ok: () =>
       run("node", [
         "--disable-warning=MODULE_TYPELESS_PACKAGE_JSON",
+        // Resolve the app's `@/` alias + extensionless imports so feature tests
+        // can exercise REAL engines without production-code churn.
+        "--import",
+        "./tests/_lib/register-loader.mjs",
         "--test",
         "src/lib/engines/__tests__/content-defects.test.ts",
         "src/lib/engines/__tests__/revenue-connectors.test.ts",
         "src/lib/engines/__tests__/ad-connectors.test.ts",
         "src/lib/engines/__tests__/connector-health.test.ts",
         "src/lib/scoring/__tests__/presence-gate.test.ts",
+        "src/lib/scoring/__tests__/omnipresence.test.ts",
+        "src/lib/engines/__tests__/provenance.test.ts",
+        "src/lib/engines/__tests__/share-of-voice.test.ts",
         "src/lib/engines/__tests__/fastest-path.test.ts",
         "src/lib/notifications/__tests__/webhooks.test.ts",
         "src/lib/security/__tests__/rate-limit.test.ts",
