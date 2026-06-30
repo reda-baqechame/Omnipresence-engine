@@ -19,6 +19,7 @@ const steps = [
   { name: "column-coverage", ok: () => run("node", ["scripts/verify-column-coverage.mjs"]) },
   { name: "route-auth", ok: () => run("node", ["scripts/verify-route-auth.mjs"]) },
   { name: "claims-benchmark", ok: () => run("node", ["scripts/benchmark.mjs"]) },
+  { name: "zero-paid-keys", ok: () => run("node", ["scripts/audit-zero-paid-keys.mjs"]) },
   {
     name: "quality-gate-test",
     ok: () =>
@@ -53,6 +54,7 @@ const steps = [
         "src/lib/providers/__tests__/failure-injection.test.ts",
         "src/lib/inngest/__tests__/functions-reliability.test.ts",
         "src/lib/engines/__tests__/closed-loop.test.ts",
+        "src/lib/config/__tests__/claims-reality.test.ts",
       ]),
   },
   { name: "accuracy-golden", ok: () => run("node", ["scripts/verify-accuracy.mjs"]) },
