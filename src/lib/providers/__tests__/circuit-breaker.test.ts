@@ -53,11 +53,8 @@ test("circuit half-opens after cooldown and a success closes it", async () => {
   for (let i = 0; i < 2; i++) {
     await assert.rejects(withBreaker(key, boom, { threshold: 2, cooldownMs: 1 }));
   }
-  // Spin past the cooldown window.
-  const until = Date.now() + 5;
-  while (Date.now() < until) {
-    /* spin */
-  }
+  // Wait out the cooldown window (real timer — spin-waits are flaky under parallel load).
+  await new Promise((r) => setTimeout(r, 15));
   assert.equal(circuitStatus(key, { threshold: 2, cooldownMs: 1 }), "half-open");
 
   // Half-open allows a trial; a success closes the circuit.

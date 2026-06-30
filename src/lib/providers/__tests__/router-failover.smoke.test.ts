@@ -56,20 +56,20 @@ async function routeOnce(
 }
 
 test("dead primary fails over to healthy fallback, then is fast-failed once its circuit opens", async () => {
-  resetBreaker();
+  const runId = Math.random().toString(36).slice(2);
   let deadInvocations = 0;
   let healthyInvocations = 0;
   const threshold = 3;
 
   const dead: FakeAdapter = {
-    id: "dead-primary",
+    id: `dead-primary-${runId}`,
     run: async () => {
       deadInvocations += 1;
       throw new Error("ECONNREFUSED");
     },
   };
   const healthy: FakeAdapter = {
-    id: "healthy-fallback",
+    id: `healthy-fallback-${runId}`,
     run: async () => {
       healthyInvocations += 1;
       return { success: true, data: "serp-results" };
@@ -77,21 +77,23 @@ test("dead primary fails over to healthy fallback, then is fast-failed once its 
   };
   const adapters = [dead, healthy];
   const opts = { threshold, cooldownMs: 10_000 };
+  resetBreaker(`route:${dead.id}`);
+  resetBreaker(`route:${healthy.id}`);
 
   // First `threshold` calls: dead is tried (fails), healthy serves.
   for (let i = 0; i < threshold; i++) {
     const out = await routeOnce(adapters, opts);
     assert.equal(out.ok, true);
-    assert.equal(out.provider, "healthy-fallback");
+    assert.equal(out.provider, healthy.id);
   }
   assert.equal(deadInvocations, threshold, "dead provider invoked once per call until circuit opens");
-  assert.equal(circuitStatus("route:dead-primary", opts), "open");
+  assert.equal(circuitStatus(`route:${dead.id}`, opts), "open");
 
   // Subsequent calls: dead's circuit is open → fast-failed, NOT invoked again.
   for (let i = 0; i < 5; i++) {
     const out = await routeOnce(adapters, opts);
     assert.equal(out.ok, true);
-    assert.equal(out.provider, "healthy-fallback");
+    assert.equal(out.provider, healthy.id);
     assert.equal(out.trail[0]?.error, "circuit open");
   }
   assert.equal(deadInvocations, threshold, "open circuit must stop invoking the dead provider");
@@ -99,26 +101,25 @@ test("dead primary fails over to healthy fallback, then is fast-failed once its 
 });
 
 test("recovered primary closes its circuit after the cooldown half-open trial", async () => {
-  resetBreaker();
+  const runId = Math.random().toString(36).slice(2);
   let fail = true;
   const flaky: FakeAdapter = {
-    id: "flaky",
+    id: `flaky-${runId}`,
     run: async () => (fail ? { success: false, error: "5xx" } : { success: true, data: "ok" }),
   };
-  const opts = { threshold: 2, cooldownMs: 1 };
+  const opts = { threshold: 2, cooldownMs: 25 };
+  const key = `route:${flaky.id}`;
+  resetBreaker(key);
 
   // Open the circuit.
   for (let i = 0; i < 2; i++) await routeOnce([flaky], opts);
-  assert.equal(circuitStatus("route:flaky", opts), "open");
+  assert.equal(circuitStatus(key, opts), "open");
 
-  // Wait out the cooldown; provider recovers.
-  const until = Date.now() + 5;
-  while (Date.now() < until) {
-    /* spin */
-  }
+  // Wait out the cooldown; provider recovers (real timer — spin-waits are flaky under load).
+  await new Promise((r) => setTimeout(r, opts.cooldownMs + 15));
   fail = false;
   const out = await routeOnce([flaky], opts);
   assert.equal(out.ok, true);
-  assert.equal(out.provider, "flaky");
-  assert.equal(circuitStatus("route:flaky", opts), "closed");
+  assert.equal(out.provider, flaky.id);
+  assert.equal(circuitStatus(key, opts), "closed");
 });
