@@ -12,7 +12,13 @@ export default function EmbedAuditPage() {
   const [form, setForm] = useState({ domain: "", brandName: brand, industry: "", email: "" });
   const [loading, setLoading] = useState(false);
   const [result, setResult] = useState<{
-    score?: { omnipresence: number; ai_visibility: number; search_visibility: number; technical_readiness: number };
+    score?: {
+      omnipresence: number;
+      ai_visibility: number;
+      search_visibility: number;
+      technical_readiness: number;
+      availability?: { ai_visibility: boolean; search_visibility: boolean; technical_readiness: boolean };
+    };
     criticalIssues?: number;
     topIssues?: Array<{ title: string; severity: string }>;
     error?: string;
@@ -87,9 +93,9 @@ export default function EmbedAuditPage() {
           <div className="text-4xl font-bold" style={{ color }}>{result.score.omnipresence}</div>
           <div className="text-sm text-muted-foreground">OmniPresence Score</div>
           <div className="grid grid-cols-2 gap-2 text-xs mt-4">
-            <div className="bg-card border border-border rounded-lg p-2">AI {result.score.ai_visibility}</div>
-            <div className="bg-card border border-border rounded-lg p-2">Search {result.score.search_visibility}</div>
-            <div className="bg-card border border-border rounded-lg p-2">Technical {result.score.technical_readiness}</div>
+            <div className="bg-card border border-border rounded-lg p-2">AI {result.score.availability?.ai_visibility === false ? "n/a" : result.score.ai_visibility}</div>
+            <div className="bg-card border border-border rounded-lg p-2">Search {result.score.availability?.search_visibility === false ? "n/a" : result.score.search_visibility}</div>
+            <div className="bg-card border border-border rounded-lg p-2">Technical {result.score.availability?.technical_readiness === false ? "n/a" : result.score.technical_readiness}</div>
             <div className="bg-card border border-border rounded-lg p-2">Issues {result.criticalIssues ?? 0}</div>
           </div>
         </div>

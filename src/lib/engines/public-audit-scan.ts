@@ -39,8 +39,12 @@ export interface PublicAuditIntelligence {
   coverageItems: Array<{
     platform_name: string;
     is_present: boolean;
+    is_optimized: boolean;
     competitor_present: boolean;
     surface: string;
+    /** Real provenance from coverage-checker: "measured" when the SERP probe ran,
+     *  "unavailable" when the provider was unreachable (must NOT score as absent). */
+    data_quality: "measured" | "unavailable";
   }>;
   backlinkCount: number;
   /** False when no backlink index/provider is configured — render as "unavailable", not 0. */
@@ -202,8 +206,10 @@ export async function runPublicAuditIntelligence(input: {
     coverageItems: coverage.map((c) => ({
       platform_name: c.platform_name,
       is_present: c.is_present,
+      is_optimized: c.is_optimized,
       competitor_present: c.competitor_present,
       surface: c.surface,
+      data_quality: (c.data_quality === "measured" ? "measured" : "unavailable") as "measured" | "unavailable",
     })),
     backlinkCount: backlinks.success ? (backlinks.data?.length ?? 0) : 0,
     backlinksAvailable: backlinks.success,

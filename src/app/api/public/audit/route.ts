@@ -98,10 +98,13 @@ export async function POST(request: NextRequest) {
       platform_name: c.platform_name,
       profile_url: undefined,
       is_present: c.is_present,
-      is_optimized: false,
+      is_optimized: c.is_optimized,
       competitor_present: c.competitor_present,
       notes: undefined,
-      data_quality: "measured" as const,
+      // Propagate REAL provenance: items the SERP probe couldn't verify stay
+      // "unavailable" so the scorer's verifiedCoverage() filter excludes them
+      // instead of scoring them as a confident "absent" (false low sub-score).
+      data_quality: c.data_quality,
       created_at: new Date().toISOString(),
       updated_at: new Date().toISOString(),
     })) as unknown as import("@/types/database").CoverageItem[],
@@ -128,6 +131,9 @@ export async function POST(request: NextRequest) {
     (f) => f.severity === "critical" || f.severity === "high"
   ).length;
 
+  // Dimension availability so the UI can render "Not measured" instead of a
+  // confident 0 for a dimension we couldn't measure this run (refund-grade honesty).
+  const availability = (score.breakdown?.dimension_availability ?? {}) as Record<string, boolean>;
   const scoreSnapshot = {
     omnipresence: score.omnipresence_score,
     ai_visibility: score.ai_visibility,
@@ -136,6 +142,11 @@ export async function POST(request: NextRequest) {
     critical_issues: criticalCount,
     data_mode: intelligence.dataMode,
     measured_rate: intelligence.visibilityMetrics.measuredRate,
+    availability: {
+      ai_visibility: availability.ai_visibility ?? false,
+      search_visibility: availability.search_visibility ?? false,
+      technical_readiness: availability.technical_readiness ?? true,
+    },
   };
 
   try {

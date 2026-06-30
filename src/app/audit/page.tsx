@@ -11,7 +11,13 @@ export default function PublicAuditPage() {
   const [form, setForm] = useState({ domain: "", brandName: "", industry: "", email: "" });
   const [loading, setLoading] = useState(false);
   const [result, setResult] = useState<{
-    score: { omnipresence: number; ai_visibility: number; search_visibility: number; technical_readiness: number };
+    score: {
+      omnipresence: number;
+      ai_visibility: number;
+      search_visibility: number;
+      technical_readiness: number;
+      availability?: { ai_visibility: boolean; search_visibility: boolean; technical_readiness: boolean };
+    };
     criticalIssues: number;
     topIssues: Array<{ title: string; description: string; severity: string; fix_recommendation?: string }>;
     coverageItems?: Array<{ platform_name: string; is_present: boolean; competitor_present: boolean; surface: string }>;
@@ -105,9 +111,9 @@ export default function PublicAuditPage() {
             <div className="bg-card border border-border rounded-xl p-8 text-center">
               <ScoreGauge score={result.score.omnipresence} label="OmniPresence Score" size="lg" />
               <div className="mt-6 space-y-2 text-left max-w-sm mx-auto">
-                <SubScoreBar label="AI Visibility" score={result.score.ai_visibility} />
-                <SubScoreBar label="Search Visibility" score={result.score.search_visibility} />
-                <SubScoreBar label="Technical Readiness" score={result.score.technical_readiness} />
+                <SubScoreBar label="AI Visibility" score={result.score.ai_visibility} available={result.score.availability?.ai_visibility ?? true} />
+                <SubScoreBar label="Search Visibility" score={result.score.search_visibility} available={result.score.availability?.search_visibility ?? true} />
+                <SubScoreBar label="Technical Readiness" score={result.score.technical_readiness} available={result.score.availability?.technical_readiness ?? true} />
               </div>
             </div>
 

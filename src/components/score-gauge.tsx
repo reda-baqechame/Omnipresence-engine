@@ -26,9 +26,25 @@ export function ScoreGauge({ score, label, size = "md" }: ScoreGaugeProps) {
 interface SubScoreBarProps {
   label: string;
   score: number;
+  /** When false, this dimension was NOT measured this run — show "Not measured"
+   *  instead of a confident 0 (which falsely reads as "Invisible"). */
+  available?: boolean;
 }
 
-export function SubScoreBar({ label, score }: SubScoreBarProps) {
+export function SubScoreBar({ label, score, available = true }: SubScoreBarProps) {
+  if (!available) {
+    return (
+      <div>
+        <div className="flex justify-between text-sm mb-1">
+          <span className="text-muted-foreground">{label}</span>
+          <span className="font-medium text-muted-foreground" title="Not measured this run — connect a provider to measure it">
+            Not measured
+          </span>
+        </div>
+        <div className="h-2 bg-secondary rounded-full overflow-hidden" />
+      </div>
+    );
+  }
   return (
     <div>
       <div className="flex justify-between text-sm mb-1">
