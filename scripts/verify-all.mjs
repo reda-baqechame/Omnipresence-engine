@@ -50,6 +50,7 @@ const steps = [
         "src/lib/validation/__tests__/schemas.test.ts",
         "src/lib/providers/__tests__/circuit-breaker.test.ts",
         "src/lib/providers/__tests__/router-failover.smoke.test.ts",
+        "src/lib/providers/__tests__/failure-injection.test.ts",
       ]),
   },
   { name: "accuracy-golden", ok: () => run("node", ["scripts/verify-accuracy.mjs"]) },
