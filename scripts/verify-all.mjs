@@ -52,6 +52,7 @@ const steps = [
         "src/lib/providers/__tests__/router-failover.smoke.test.ts",
         "src/lib/providers/__tests__/failure-injection.test.ts",
         "src/lib/inngest/__tests__/functions-reliability.test.ts",
+        "src/lib/engines/__tests__/closed-loop.test.ts",
       ]),
   },
   { name: "accuracy-golden", ok: () => run("node", ["scripts/verify-accuracy.mjs"]) },
