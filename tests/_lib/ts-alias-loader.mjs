@@ -47,7 +47,18 @@ function resolved(target, context) {
   return out;
 }
 
+// Next.js runtime boundaries that don't exist under `node --test`. We stub only
+// the framework edge (never app logic) so engines that transitively import
+// `next/headers` (via supabase/server) can load for their PURE exports.
+const STUBS = {
+  "next/headers": path.join(root, "tests", "_lib", "stubs", "next-headers.mjs"),
+};
+
 export async function resolve(specifier, context, nextResolve) {
+  if (STUBS[specifier]) {
+    return { url: pathToFileURL(STUBS[specifier]).href, shortCircuit: true };
+  }
+
   // `@/x` → `<repo>/src/x` (with extension probing)
   if (specifier.startsWith("@/")) {
     const target = resolveFile(path.join(SRC, specifier.slice(2)));

@@ -40,6 +40,8 @@ const steps = [
         "src/lib/engines/__tests__/attribution.test.ts",
         "src/lib/engines/__tests__/impact-estimate.test.ts",
         "src/lib/engines/__tests__/guarantee.test.ts",
+        "src/lib/engines/__tests__/structural-aeo.test.ts",
+        "src/lib/engines/__tests__/citation-authority.test.ts",
         "src/lib/engines/__tests__/fastest-path.test.ts",
         "src/lib/notifications/__tests__/webhooks.test.ts",
         "src/lib/security/__tests__/rate-limit.test.ts",
