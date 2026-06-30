@@ -1,0 +1,46 @@
+{
+  "source": "Known great-circle distances between major city coordinates (verifiable via any geodesy calculator), known landmark geocodes (OSM Nominatim), known public tech stacks, and published Core Web Vitals expectations for fast reference sites.",
+  "notes": "Used by perf-local-tech.accuracy.test.ts. Geo + tech-fingerprint cases run fully offline against the extracted pure modules; geocode + PageSpeed cases hit live keyless services and self-skip unless GOLDEN_ALLOW_NETWORK=true.",
+  "distances": [
+    { "a": "New York", "aLat": 40.7128, "aLng": -74.006, "b": "Los Angeles", "bLat": 34.0522, "bLng": -118.2437, "km": 3936, "tolerance": 0.03 },
+    { "a": "London", "aLat": 51.5074, "aLng": -0.1278, "b": "Paris", "bLat": 48.8566, "bLng": 2.3522, "km": 344, "tolerance": 0.05 },
+    { "a": "Sydney", "aLat": -33.8688, "aLng": 151.2093, "b": "Melbourne", "bLat": -37.8136, "bLng": 144.9631, "km": 714, "tolerance": 0.04 }
+  ],
+  "geocodes": [
+    { "query": "Eiffel Tower, Paris, France", "lat": 48.8584, "lng": 2.2945, "tolerance": 0.02 },
+    { "query": "Statue of Liberty, New York, USA", "lat": 40.6892, "lng": -74.0445, "tolerance": 0.02 }
+  ],
+  "techCases": [
+    {
+      "name": "WordPress + WooCommerce",
+      "html": "<html><head><meta name=\"generator\" content=\"WordPress 6.4\"></head><body><link href=\"/wp-content/themes/x/style.css\"><div class=\"woocommerce\">shop</div></body></html>",
+      "headers": {},
+      "expect": ["WordPress", "WooCommerce"],
+      "forbid": ["Shopify", "Drupal", "Magento"]
+    },
+    {
+      "name": "Shopify storefront",
+      "html": "<html><body><script src=\"https://cdn.shopify.com/s/files/x.js\"></script></body></html>",
+      "headers": { "x-shopify-stage": "production" },
+      "expect": ["Shopify"],
+      "forbid": ["WordPress", "WooCommerce"]
+    },
+    {
+      "name": "Next.js on Vercel + Cloudflare",
+      "html": "<html><body><div id=\"__next\"></div><script src=\"/_next/static/chunks/main.js\"></script></body></html>",
+      "headers": { "x-vercel-id": "iad1::abc", "server": "Vercel" },
+      "expect": ["Next.js", "Vercel"],
+      "forbid": ["WordPress", "Shopify"]
+    },
+    {
+      "name": "Plain HTML — must detect nothing (zero false positives)",
+      "html": "<html><head><title>Hello</title></head><body><h1>Just text</h1></body></html>",
+      "headers": {},
+      "expect": [],
+      "forbid": ["WordPress", "Shopify", "React", "Next.js", "Vue.js", "Drupal"]
+    }
+  ],
+  "pageSpeed": [
+    { "url": "https://www.google.com", "maxLcpMs": 4000, "minPerformanceScore": 30 }
+  ]
+}

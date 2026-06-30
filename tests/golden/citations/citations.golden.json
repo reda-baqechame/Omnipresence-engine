@@ -1,0 +1,60 @@
+{
+  "source": "Hand-labeled AI answer transcripts with ground-truth brand/competitor mentions and citations, including adversarial false-positive traps (substring collisions, lookalike domains). This is the integrity ground truth for the AI-visibility measurement that backs the citation/share-of-voice claims.",
+  "notes": "Used by citations.accuracy.test.ts against the pure brand-matcher (EntityMatcher). The doctrine: a single wrong mention/citation discredits the tool, so false positives must be ZERO and true mentions/citations must be found.",
+  "cases": [
+    {
+      "label": "brand mentioned in prose + cited by domain",
+      "brand": { "name": "Stripe", "domain": "stripe.com" },
+      "competitors": ["adyen.com", "PayPal"],
+      "answer": "For online payments, Stripe is a popular choice, though PayPal is also widely used.",
+      "sourceDomains": ["stripe.com", "techcrunch.com"],
+      "citedUrls": ["https://stripe.com/docs", "https://techcrunch.com/x"],
+      "expect": { "brandMentioned": true, "brandCited": true, "competitorsMentioned": ["PayPal"], "competitorsCited": [] }
+    },
+    {
+      "label": "substring trap — 'pineapple' must NOT match brand 'Apple'",
+      "brand": { "name": "Apple", "domain": "apple.com" },
+      "competitors": [],
+      "answer": "A pineapple smoothie recipe with grapples and crabapple garnish.",
+      "sourceDomains": ["recipes.example.com"],
+      "citedUrls": ["https://recipes.example.com/smoothie"],
+      "expect": { "brandMentioned": false, "brandCited": false, "competitorsMentioned": [], "competitorsCited": [] }
+    },
+    {
+      "label": "lookalike domain trap — 'notstripe.com' must NOT count as citing stripe.com",
+      "brand": { "name": "Stripe", "domain": "stripe.com" },
+      "competitors": [],
+      "answer": "There are many billing tools available today.",
+      "sourceDomains": ["notstripe.com", "stripe.com.evil.example"],
+      "citedUrls": ["https://notstripe.com", "https://stripe.com.evil.example/page"],
+      "expect": { "brandMentioned": false, "brandCited": false, "competitorsMentioned": [], "competitorsCited": [] }
+    },
+    {
+      "label": "subdomain + path must still match registrable domain",
+      "brand": { "name": "Stripe", "domain": "stripe.com" },
+      "competitors": [],
+      "answer": "See the docs for details.",
+      "sourceDomains": ["docs.stripe.com"],
+      "citedUrls": ["https://docs.stripe.com/api/charges"],
+      "expect": { "brandMentioned": false, "brandCited": true, "competitorsMentioned": [], "competitorsCited": [] }
+    },
+    {
+      "label": "alias match — legal/product alias mentioned in prose",
+      "brand": { "name": "Meta", "domain": "meta.com", "aliases": ["Facebook"] },
+      "competitors": ["TikTok"],
+      "answer": "Facebook remains the largest social network; TikTok is growing fast.",
+      "sourceDomains": ["wikipedia.org"],
+      "citedUrls": ["https://en.wikipedia.org/wiki/Meta_Platforms"],
+      "expect": { "brandMentioned": true, "brandCited": false, "competitorsMentioned": ["TikTok"], "competitorsCited": [] }
+    },
+    {
+      "label": "word-boundary trap — 'Notion' must NOT match 'notes'/'notebook'",
+      "brand": { "name": "Notion", "domain": "notion.so" },
+      "competitors": [],
+      "answer": "I jotted some notes in a notebook and made a notification rule.",
+      "sourceDomains": ["example.com"],
+      "citedUrls": ["https://example.com"],
+      "expect": { "brandMentioned": false, "brandCited": false, "competitorsMentioned": [], "competitorsCited": [] }
+    }
+  ]
+}

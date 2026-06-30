@@ -1,0 +1,33 @@
+{
+  "source": "Known Google Ads volume bands (public Keyword Planner ranges) and intent classifications. Volume bands reflect the order-of-magnitude bucket each keyword falls in; exact numbers are intentionally avoided since Google reports buckets.",
+  "notes": "Used by keywords.accuracy.test.ts. Bucket cases assert volumeBucket boundaries; band cases assert known keywords land in the right log bucket; intent cases pin classifyIntent; extrapolation cases assert proportional Trends math is monotonic and ±30% banded.",
+  "bucketBoundaries": [
+    { "n": 50, "bucket": "10–100" },
+    { "n": 99, "bucket": "10–100" },
+    { "n": 100, "bucket": "100–1K" },
+    { "n": 999, "bucket": "100–1K" },
+    { "n": 1000, "bucket": "1K–10K" },
+    { "n": 50000, "bucket": "10K–100K" },
+    { "n": 250000, "bucket": "100K–1M" },
+    { "n": 5000000, "bucket": "1M+" },
+    { "n": 0, "bucket": "n/a" },
+    { "n": -5, "bucket": "n/a" }
+  ],
+  "intentCases": [
+    { "keyword": "plumber near me", "intent": "local" },
+    { "keyword": "buy running shoes", "intent": "transactional" },
+    { "keyword": "crm pricing", "intent": "transactional" },
+    { "keyword": "best crm software", "intent": "commercial" },
+    { "keyword": "notion vs obsidian", "intent": "commercial" },
+    { "keyword": "how does dns work", "intent": "informational" }
+  ],
+  "extrapolation": {
+    "anchorKeyword": "project management software",
+    "anchorVolume": 60000,
+    "anchorScore": 100,
+    "cases": [
+      { "keyword": "task management software", "score": 50, "expectedVolume": 30000, "expectedBucket": "10K–100K" },
+      { "keyword": "kanban board app", "score": 10, "expectedVolume": 6000, "expectedBucket": "1K–10K" }
+    ]
+  }
+}

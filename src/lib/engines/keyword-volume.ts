@@ -17,89 +17,33 @@
  * present a bucket label rather than a fake-precise number.
  */
 import { getTrendsComparison } from "@/lib/providers/google-trends";
+import {
+  volumeBucket,
+  extrapolateVolume,
+  type VolumeAnchor,
+  type VolumeEstimate,
+} from "@/lib/engines/keyword-volume-math";
 
-export type VolumeConfidence = "low" | "medium" | "high";
-export type VolumeMethod =
-  | "keyword_planner"
-  | "trends_extrapolated"
-  | "trends_relative"
-  | "heuristic";
-
-export interface VolumeAnchor {
-  keyword: string;
-  /** Approx monthly searches we trust (GSC impressions for a top-10 query, or KP volume). */
-  volume: number;
-}
-
-export interface VolumeEstimate {
-  keyword: string;
-  /** Absolute midpoint estimate when calibrated; undefined when relative-only. */
-  volume?: number;
-  volume_low?: number;
-  volume_high?: number;
-  /** Google-style log bucket, e.g. "1K–10K". */
-  range_bucket: string;
-  /** Relative Google Trends demand index 0-100. */
-  trend_index?: number;
-  confidence: VolumeConfidence;
-  method: VolumeMethod;
-}
-
-const BUCKETS: Array<[number, string]> = [
-  [100, "10–100"],
-  [1000, "100–1K"],
-  [10000, "1K–10K"],
-  [100000, "10K–100K"],
-  [1000000, "100K–1M"],
-  [Infinity, "1M+"],
-];
-
-export function volumeBucket(n: number): string {
-  if (!Number.isFinite(n) || n <= 0) return "n/a";
-  for (const [ceil, label] of BUCKETS) if (n < ceil) return label;
-  return "1M+";
-}
-
-/**
- * Standard organic CTR-by-position curve (Advanced Web Ranking-style). Used to
- * back-solve approximate true volume from GSC impressions when a query's
- * position is high enough that impressions undercount total searches.
- */
-function impressionsToVolume(impressions: number, position: number): number {
-  // For a top-10 ranking, the result is shown for ~all searches, so
-  // impressions ≈ volume. Beyond page 1, scale up modestly.
-  if (position <= 10) return impressions;
-  if (position <= 20) return Math.round(impressions * 1.4);
-  return Math.round(impressions * 2);
-}
-
-/** Build a trustworthy volume anchor from GSC rows (best top-ranked query). */
-export function deriveGscAnchor(
-  rows: Array<{ query: string; impressions: number; position: number }>
-): VolumeAnchor | null {
-  const candidates = rows
-    .filter((r) => r.query.length > 2 && r.position <= 10 && r.impressions >= 50)
-    .sort((a, b) => b.impressions - a.impressions);
-  const best = candidates[0];
-  if (!best) return null;
-  return { keyword: best.query, volume: impressionsToVolume(best.impressions, best.position) };
-}
-
-function relativeEstimate(keyword: string, trendIndex?: number): VolumeEstimate {
-  return {
-    keyword,
-    range_bucket: "n/a",
-    trend_index: trendIndex,
-    confidence: "low",
-    method: "trends_relative",
-  };
-}
+export {
+  volumeBucket,
+  impressionsToVolume,
+  deriveGscAnchor,
+  fromKnownVolume,
+  extrapolateVolume,
+} from "@/lib/engines/keyword-volume-math";
+export type {
+  VolumeConfidence,
+  VolumeMethod,
+  VolumeAnchor,
+  VolumeEstimate,
+} from "@/lib/engines/keyword-volume-math";
 
 /**
  * Calibrate absolute volume estimates for `keywords` using Google Trends
  * proportional extrapolation against a known-volume anchor. Batches into
  * groups of 4 targets + the anchor (Trends allows max 5 per comparison) so the
- * anchor normalizes every batch onto the same scale.
+ * anchor normalizes every batch onto the same scale. The per-keyword math lives
+ * in keyword-volume-math.ts (extrapolateVolume) so it is independently audited.
  */
 export async function calibrateWithAnchor(
   keywords: string[],
@@ -114,22 +58,7 @@ export async function calibrateWithAnchor(
     const cmp = await getTrendsComparison([anchor.keyword, ...batch], geo);
     const anchorScore = cmp?.get(anchor.keyword) ?? 0;
     for (const kw of batch) {
-      const score = cmp?.get(kw);
-      if (cmp && anchorScore > 0 && typeof score === "number") {
-        const vol = Math.max(1, Math.round((score / anchorScore) * anchor.volume));
-        out.set(kw, {
-          keyword: kw,
-          volume: vol,
-          volume_low: Math.round(vol * 0.7),
-          volume_high: Math.round(vol * 1.3),
-          range_bucket: volumeBucket(vol),
-          trend_index: score,
-          confidence: "medium",
-          method: "trends_extrapolated",
-        });
-      } else {
-        out.set(kw, relativeEstimate(kw, score));
-      }
+      out.set(kw, extrapolateVolume(kw, cmp?.get(kw), anchorScore, anchor.volume));
     }
   }
   // The anchor itself is known.
@@ -143,25 +72,4 @@ export async function calibrateWithAnchor(
     method: "keyword_planner",
   });
   return out;
-}
-
-/**
- * Classify a known numeric volume (e.g. from Keyword Planner) into the honest
- * bucket + confidence shape, so all rows share one presentation.
- */
-export function fromKnownVolume(
-  keyword: string,
-  volume: number,
-  method: VolumeMethod = "keyword_planner"
-): VolumeEstimate {
-  const confidence: VolumeConfidence = method === "keyword_planner" ? "high" : "low";
-  return {
-    keyword,
-    volume,
-    volume_low: Math.round(volume * (confidence === "high" ? 0.8 : 0.6)),
-    volume_high: Math.round(volume * (confidence === "high" ? 1.2 : 1.6)),
-    range_bucket: volumeBucket(volume),
-    confidence,
-    method,
-  };
 }

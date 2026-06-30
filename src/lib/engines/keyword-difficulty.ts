@@ -11,11 +11,20 @@
  */
 import { searchGoogleOrganicRouter, getActiveSerpProvider } from "@/lib/providers/serp-router";
 import { resolveDomainAuthority } from "@/lib/providers/domain-authority";
+import {
+  classifyIntent,
+  computeDifficulty,
+  computeOpportunity,
+  difficultyMethod,
+  type DifficultyMethod,
+} from "@/lib/engines/keyword-difficulty-math";
+
+export { classifyIntent, computeDifficulty, computeOpportunity, difficultyMethod };
 
 export interface KeywordDifficultyRow {
   keyword: string;
   difficulty: number;
-  difficulty_method: "ranking_authority" | "heuristic";
+  difficulty_method: DifficultyMethod;
   intent: string;
   our_position: number | null;
   opportunity_score: number;
@@ -25,14 +34,6 @@ export interface KeywordDifficultyRow {
 
 export function hasKeylessDifficulty(): boolean {
   return getActiveSerpProvider() !== null;
-}
-
-function classifyIntent(keyword: string): string {
-  const k = keyword.toLowerCase();
-  if (/\b(near me|in [a-z]+|local)\b/.test(k)) return "local";
-  if (/\b(buy|price|cost|quote|hire|book|order|pricing)\b/.test(k)) return "transactional";
-  if (/\b(best|top|vs|compare|comparison|review|alternative)\b/.test(k)) return "commercial";
-  return "informational";
 }
 
 function hostname(url: string): string {
@@ -86,10 +87,7 @@ export async function scoreKeywordKeyless(
 
   // KD is dominated by how authoritative the ranking pages are; a SERP stacked
   // with high-authority domains is genuinely harder to break into.
-  const difficulty = Math.max(
-    1,
-    Math.min(100, Math.round(avgAuth * 0.85 + highCount * 3 + (hasAi ? 6 : 0)))
-  );
+  const difficulty = computeDifficulty(avgAuth, highCount, hasAi);
 
   // Our position, if the brand appears.
   const ours = organic.find((r) => {
@@ -98,21 +96,14 @@ export async function scoreKeywordKeyless(
   });
   const our_position = ours ? ours.position : null;
 
-  // Opportunity: easier keywords, striking-distance positions, and gaps win.
-  const lowDiffBonus = Math.max(0, 60 - difficulty);
-  const strikingBonus = our_position && our_position >= 4 && our_position <= 20 ? 25 : 0;
-  const notRankingBonus = our_position ? 0 : 15;
-  const opportunity_score = Math.min(
-    100,
-    lowDiffBonus + strikingBonus + notRankingBonus + (hasAi ? 10 : 0)
-  );
+  const opportunity_score = computeOpportunity(difficulty, our_position, hasAi);
 
   return {
     keyword,
     difficulty,
     // Only claim the strong "ranking_authority" method when we resolved authority
     // for a majority of the SERP; otherwise it's a weaker estimate.
-    difficulty_method: coverage >= 0.5 && authScores.length >= 3 ? "ranking_authority" : "heuristic",
+    difficulty_method: difficultyMethod(coverage, authScores.length),
     intent: classifyIntent(keyword),
     our_position,
     opportunity_score,

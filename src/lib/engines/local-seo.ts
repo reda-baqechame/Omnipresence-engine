@@ -1,6 +1,7 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { searchPlaces, hasPlacesProvider, type PlaceResult } from "@/lib/providers/serper-places";
 import { geocode, findNearbyBusinesses, type NearbyBusiness } from "@/lib/providers/osm";
+import { haversineKm, buildGrid } from "@/lib/engines/geo-math";
 
 /**
  * Keyless map-grid ranking via OpenStreetMap proximity (sovereign fallback when
@@ -156,36 +157,6 @@ export interface MapGridResult {
   totalCells: number;
   /** Where the grid ranking came from: Serper Places (paid) or keyless OSM proximity. */
   source: "serper" | "openstreetmap";
-}
-
-/** Haversine distance in km between two lat/lng points. */
-function haversineKm(aLat: number, aLng: number, bLat: number, bLng: number): number {
-  const R = 6371;
-  const dLat = ((bLat - aLat) * Math.PI) / 180;
-  const dLng = ((bLng - aLng) * Math.PI) / 180;
-  const s =
-    Math.sin(dLat / 2) ** 2 +
-    Math.cos((aLat * Math.PI) / 180) * Math.cos((bLat * Math.PI) / 180) * Math.sin(dLng / 2) ** 2;
-  return 2 * R * Math.asin(Math.min(1, Math.sqrt(s)));
-}
-
-function buildGrid(centerLat: number, centerLng: number, size: number, radiusKm: number): { row: number; col: number; lat: number; lng: number }[] {
-  const points: { row: number; col: number; lat: number; lng: number }[] = [];
-  const half = Math.floor(size / 2);
-  // ~111km per degree latitude; longitude scaled by cos(lat).
-  const latStep = radiusKm / 111 / Math.max(1, half);
-  const lngStep = radiusKm / (111 * Math.cos((centerLat * Math.PI) / 180)) / Math.max(1, half);
-  for (let r = 0; r < size; r++) {
-    for (let c = 0; c < size; c++) {
-      points.push({
-        row: r,
-        col: c,
-        lat: centerLat + (r - half) * latStep,
-        lng: centerLng + (c - half) * lngStep,
-      });
-    }
-  }
-  return points;
 }
 
 export async function runMapGrid(

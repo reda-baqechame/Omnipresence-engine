@@ -1,0 +1,46 @@
+{
+  "source": "Hand-curated from widely-known public web structure (Common Crawl host webgraph reality). Authority ordering reflects well-established relative domain authority (Ahrefs/Moz DR consensus tiers as of 2024-2025). Referring-domain samples list domains that, by their nature, demonstrably link to the target (official ecosystem/registry/reference sites). Recall is measured with a floor (not 1.0) because the sovereign webgraph is a Common Crawl sample, not an exhaustive index.",
+  "notes": "Used by backlinks.accuracy.test.ts. Authority ordering is the primary monotonicity check; referring-domain recall is a secondary floor check on high-confidence inbound links.",
+  "authorityOrdering": [
+    "google.com",
+    "youtube.com",
+    "wikipedia.org",
+    "facebook.com",
+    "amazon.com",
+    "github.com",
+    "microsoft.com",
+    "apple.com",
+    "nytimes.com",
+    "stackoverflow.com",
+    "stripe.com",
+    "mozilla.org",
+    "cloudflare.com",
+    "shopify.com",
+    "wordpress.org",
+    "nodejs.org",
+    "npmjs.com",
+    "vercel.com",
+    "ahrefs.com",
+    "semrush.com"
+  ],
+  "referringSamples": [
+    {
+      "target": "nodejs.org",
+      "minReferringDomains": 1000,
+      "highConfidenceReferrers": ["github.com", "npmjs.com", "developer.mozilla.org", "stackoverflow.com", "wikipedia.org"],
+      "recallFloor": 0.4
+    },
+    {
+      "target": "wordpress.org",
+      "minReferringDomains": 5000,
+      "highConfidenceReferrers": ["wikipedia.org", "github.com", "stackoverflow.com"],
+      "recallFloor": 0.33
+    },
+    {
+      "target": "stripe.com",
+      "minReferringDomains": 1000,
+      "highConfidenceReferrers": ["github.com", "wikipedia.org"],
+      "recallFloor": 0.5
+    }
+  ]
+}

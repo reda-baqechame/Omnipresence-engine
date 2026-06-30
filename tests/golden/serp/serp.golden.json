@@ -1,0 +1,16 @@
+{
+  "source": "Stable navigational/branded queries whose #1 organic result is unambiguous and stable over time (the brand's own domain). Used to detect SERP parser/ranking drift in the sovereign SearXNG/OmniData path.",
+  "notes": "Used by serp.accuracy.test.ts. For each branded query the known domain MUST appear in the top 3 (robust to minor ordering churn); across all cases the known domain must be the #1 result for a strong majority. Skips when no SERP provider is configured.",
+  "topDomainInTop3Floor": 1.0,
+  "exactTop1Floor": 0.7,
+  "cases": [
+    { "query": "openai", "domain": "openai.com" },
+    { "query": "github", "domain": "github.com" },
+    { "query": "wikipedia", "domain": "wikipedia.org" },
+    { "query": "stripe", "domain": "stripe.com" },
+    { "query": "nasa", "domain": "nasa.gov" },
+    { "query": "new york times", "domain": "nytimes.com" },
+    { "query": "cloudflare", "domain": "cloudflare.com" },
+    { "query": "shopify", "domain": "shopify.com" }
+  ]
+}

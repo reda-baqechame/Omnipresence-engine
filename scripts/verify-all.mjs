@@ -39,6 +39,7 @@ const steps = [
         "src/lib/providers/__tests__/router-failover.smoke.test.ts",
       ]),
   },
+  { name: "accuracy-golden", ok: () => run("node", ["scripts/verify-accuracy.mjs"]) },
   { name: "typecheck", ok: () => run("npm", ["run", "typecheck"]) },
   { name: "lint", ok: () => run("npm", ["run", "lint"]) },
   { name: "build", ok: () => run("npm", ["run", "build"]) },
