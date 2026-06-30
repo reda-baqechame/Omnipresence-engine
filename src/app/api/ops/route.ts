@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
-import { apiError, apiForbidden, apiUnauthorized, readJsonBody } from "@/lib/security/api-response";
+import { apiError, apiForbidden, apiUnauthorized, validateBody } from "@/lib/security/api-response";
+import { OpsCreateSchema, OpsPatchSchema } from "@/lib/validation/schemas";
 import { verifyProjectAccess } from "@/lib/security/project-access";
 import { inngest } from "@/lib/inngest/client";
 
@@ -33,14 +34,9 @@ export async function POST(request: NextRequest) {
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) return apiUnauthorized();
 
-  let body: { projectId?: string; organizationId?: string; actionType?: string; title?: string; payload?: Record<string, unknown>; riskLevel?: string; taskId?: string };
-  try {
-    body = await readJsonBody(request);
-  } catch {
-    return apiError("Invalid JSON body");
-  }
-  const { projectId, organizationId, actionType, title, payload, riskLevel, taskId } = body;
-  if (!projectId || !organizationId) return apiError("projectId and organizationId required");
+  const parsed = await validateBody(request, OpsCreateSchema);
+  if (parsed.response) return parsed.response;
+  const { projectId, organizationId, actionType, title, payload, riskLevel, taskId } = parsed.data;
 
   // Verify the caller can act on this project AND that the project actually
   // belongs to the supplied organization (prevents cross-org queue injection).
@@ -74,14 +70,9 @@ export async function PATCH(request: NextRequest) {
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) return apiUnauthorized();
 
-  let body: { id?: string; status?: string; assignedTo?: string; execute?: boolean };
-  try {
-    body = await readJsonBody(request);
-  } catch {
-    return apiError("Invalid JSON body");
-  }
-  const { id, status, assignedTo, execute } = body;
-  if (!id) return apiError("id required");
+  const parsed = await validateBody(request, OpsPatchSchema);
+  if (parsed.response) return parsed.response;
+  const { id, status, assignedTo, execute } = parsed.data;
 
   // Verify the caller owns the queue item's project before mutating/executing it.
   const { data: existing } = await supabase

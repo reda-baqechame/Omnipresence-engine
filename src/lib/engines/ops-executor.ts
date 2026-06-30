@@ -255,10 +255,21 @@ export async function executeOpsItem(supabase: SupabaseClient, item: OpsItem): P
 export async function runQueuedOps(supabase: SupabaseClient, opsId: string): Promise<OpsExecutionResult> {
   const { data: item } = await supabase
     .from("ops_queue")
-    .select("id, project_id, organization_id, action_type, title, payload, task_id, attempts")
+    .select("id, project_id, organization_id, action_type, title, payload, task_id, attempts, status, result, published_url")
     .eq("id", opsId)
     .single();
   if (!item) return { ok: false, error: "ops item not found" };
+
+  // Idempotency guard: a completed item must never be re-executed. Inngest
+  // retries and double-clicks would otherwise re-publish content, re-post to
+  // GBP/social, or re-send outreach. Return the recorded result instead.
+  if (item.status === "completed") {
+    return {
+      ok: true,
+      publishedUrl: item.published_url ?? undefined,
+      result: (item.result as Record<string, unknown>) ?? undefined,
+    };
+  }
 
   await supabase
     .from("ops_queue")

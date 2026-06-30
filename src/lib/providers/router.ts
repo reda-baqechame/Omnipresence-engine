@@ -22,6 +22,7 @@ import { searchGoogleOrganicSerper } from "@/lib/providers/serper";
 import { searchGoogleOrganicSearxng, hasSearxngCapability } from "@/lib/providers/searxng";
 import { searchGoogleOrganicFirecrawl, hasFirecrawlCapability } from "@/lib/providers/firecrawl";
 import { isZeroPaidKeysMode, isBenchmarkOnlyForced, type ProviderCategory } from "@/lib/config/capabilities";
+import { withBreaker, CircuitOpenError } from "@/lib/providers/http";
 import type { ProviderResult, SERPResult } from "./types";
 
 export type Capability = "serp" | "crawl" | "backlinks" | "generate" | "email" | "social" | "enrich";
@@ -266,21 +267,29 @@ export async function route<TArgs extends unknown[], TData>(
   let lastError = `No ${capability} provider configured`;
 
   for (const adapter of adapters) {
+    const breakerKey = `route:${adapter.id}`;
     try {
-      const result = (await adapter.run!(...(args as unknown[]))) as ProviderResult<TData>;
-      if (result.success && result.data !== undefined) {
-        const h = getHealth(adapter.id);
-        h.failures = 0;
-        h.lastOkAt = Date.now();
-        trail.push({ id: adapter.id, ok: true });
-        return { ...result, provider: adapter.id, trail };
-      }
-      lastError = result.error || lastError;
+      // The breaker fast-fails a provider that has failed repeatedly so we don't
+      // pay its full timeout on every call while it's down — failover stays snappy.
+      const result = await withBreaker(breakerKey, async () => {
+        const r = (await adapter.run!(...(args as unknown[]))) as ProviderResult<TData>;
+        // Treat an unsuccessful provider envelope as a breaker failure too (many
+        // adapters return {success:false} instead of throwing).
+        if (!r.success || r.data === undefined) {
+          throw new Error(r.error || `${adapter.id} returned no data`);
+        }
+        return r;
+      });
       const h = getHealth(adapter.id);
-      h.failures += 1;
-      h.lastError = lastError;
-      trail.push({ id: adapter.id, ok: false, error: lastError });
+      h.failures = 0;
+      h.lastOkAt = Date.now();
+      trail.push({ id: adapter.id, ok: true });
+      return { ...result, provider: adapter.id, trail };
     } catch (err) {
+      if (err instanceof CircuitOpenError) {
+        trail.push({ id: adapter.id, ok: false, error: "circuit open" });
+        continue;
+      }
       lastError = err instanceof Error ? err.message : String(err);
       const h = getHealth(adapter.id);
       h.failures += 1;

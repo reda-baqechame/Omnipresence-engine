@@ -1,4 +1,6 @@
 import { NextResponse } from "next/server";
+import { parseOrError } from "@/lib/validation/schemas";
+import type { z } from "zod";
 
 export function apiError(message: string, status = 400) {
   return NextResponse.json({ error: message }, { status });
@@ -39,4 +41,26 @@ export async function readJsonBody<T = any>(
   } catch {
     return fallback;
   }
+}
+
+/**
+ * Parse + validate a JSON request body against a zod schema. Returns either the
+ * typed data or a ready-to-return 400 Response carrying the first validation
+ * message. Never throws — a malformed body becomes a clean 400, not a 500.
+ *
+ * Usage:
+ *   const parsed = await validateBody(request, OpsCreateSchema);
+ *   if (parsed.response) return parsed.response;
+ *   const { projectId } = parsed.data;
+ */
+export async function validateBody<T>(
+  request: Request,
+  schema: z.ZodType<T>
+): Promise<{ data: T; response: null } | { data: null; response: NextResponse }> {
+  const body = await readJsonBody(request);
+  const result = parseOrError(schema, body);
+  if (!result.ok) {
+    return { data: null, response: apiError(result.error) };
+  }
+  return { data: result.data, response: null };
 }
