@@ -18,11 +18,15 @@ RUN npm run build
 # --- runtime ---
 FROM base AS runtime
 ENV NODE_ENV=production
-COPY --from=build /app/node_modules ./node_modules
-COPY --from=build /app/.next ./.next
-COPY --from=build /app/public ./public
-COPY --from=build /app/package.json ./package.json
-COPY --from=build /app/next.config.ts ./next.config.ts
+# Run as the unprivileged `node` user shipped in the base image (never root).
+COPY --from=build --chown=node:node /app/node_modules ./node_modules
+COPY --from=build --chown=node:node /app/.next ./.next
+COPY --from=build --chown=node:node /app/public ./public
+COPY --from=build --chown=node:node /app/package.json ./package.json
+COPY --from=build --chown=node:node /app/next.config.ts ./next.config.ts
+USER node
 
 EXPOSE 3000
+# Railway provides PORT; `next start` binds to it. Healthcheck is configured in
+# railway.json (/api/health). CMD stays the npm script for parity with local.
 CMD ["npm", "run", "start"]

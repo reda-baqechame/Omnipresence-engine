@@ -20,6 +20,23 @@ const AI_BOTS = [
 
 export { AI_BOTS };
 
+/**
+ * Default (cheap, effective) model id per provider, overridable via env so an
+ * operator can swap in their preferred low-cost model without a code change.
+ * Defaults are deliberately the cheapest capable models for this workload
+ * (probes + structured extraction). Per-provider because a model id is not
+ * portable across SDKs (you can't run a GPT id on Anthropic).
+ */
+export function defaultModelId(provider: "openai" | "gemini" | "anthropic"): string {
+  const env = (k: string, dflt: string) => {
+    const v = process.env[k];
+    return v && v.trim() ? v.trim() : dflt;
+  };
+  if (provider === "openai") return env("AI_OPENAI_MODEL", "gpt-4o-mini");
+  if (provider === "gemini") return env("AI_GEMINI_MODEL", "gemini-2.0-flash");
+  return env("AI_ANTHROPIC_MODEL", "claude-3-5-haiku-latest");
+}
+
 export interface VisibilityQueryOptions {
   /**
    * Use a live web-search tool so the answer carries REAL cited URLs (grounded
@@ -90,18 +107,18 @@ async function runGroundedSearch(
   let tools: Record<string, unknown>;
   if (provider === "openai") {
     const { openai } = await import("@ai-sdk/openai");
-    modelId = "gpt-4o-mini";
+    modelId = defaultModelId("openai");
     model = openai(modelId);
     // searchContextSize "low" keeps the per-call search cost down.
     tools = { web_search: openai.tools.webSearch({ searchContextSize: "low" }) };
   } else if (provider === "gemini") {
     const { google } = await import("@ai-sdk/google");
-    modelId = "gemini-2.0-flash";
+    modelId = defaultModelId("gemini");
     model = google(modelId);
     tools = { google_search: google.tools.googleSearch({}) };
   } else {
     const { anthropic } = await import("@ai-sdk/anthropic");
-    modelId = "claude-3-5-haiku-latest";
+    modelId = defaultModelId("anthropic");
     model = anthropic(modelId);
     tools = { web_search: anthropic.tools.webSearch_20250305({ maxUses: 2 }) };
   }
@@ -202,15 +219,15 @@ export async function queryLLMForVisibility(
       let model: Parameters<typeof generateText>[0]["model"];
       if (provider === "openai") {
         const { openai } = await import("@ai-sdk/openai");
-        modelId = "gpt-4o-mini";
+        modelId = defaultModelId("openai");
         model = openai(modelId);
       } else if (provider === "gemini") {
         const { google } = await import("@ai-sdk/google");
-        modelId = "gemini-2.0-flash";
+        modelId = defaultModelId("gemini");
         model = google(modelId);
       } else {
         const { anthropic } = await import("@ai-sdk/anthropic");
-        modelId = "claude-3-5-haiku-latest";
+        modelId = defaultModelId("anthropic");
         model = anthropic(modelId);
       }
       const result = await generateText({
@@ -317,15 +334,15 @@ export async function generateStructured<T>(
     let model;
     if (provider === "openai") {
       const { openai } = await import("@ai-sdk/openai");
-      modelId = "gpt-4o-mini";
+      modelId = defaultModelId("openai");
       model = openai(modelId);
     } else if (provider === "anthropic") {
       const { anthropic } = await import("@ai-sdk/anthropic");
-      modelId = "claude-3-5-haiku-latest";
+      modelId = defaultModelId("anthropic");
       model = anthropic(modelId);
     } else {
       const { google } = await import("@ai-sdk/google");
-      modelId = "gemini-2.0-flash";
+      modelId = defaultModelId("gemini");
       model = google(modelId);
     }
 

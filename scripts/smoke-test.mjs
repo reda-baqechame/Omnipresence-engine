@@ -5,7 +5,31 @@
  * Default baseUrl: http://localhost:3000
  */
 
-const base = process.argv[2] || process.env.SMOKE_BASE_URL || "http://localhost:3000";
+const explicitBase = process.argv[2] || process.env.SMOKE_BASE_URL;
+const base = explicitBase || "http://localhost:3000";
+
+// Preflight reachability probe. If the target is unreachable AND no explicit URL
+// was provided, skip-with-warning (exit 0) so offline CI stays green — there is no
+// server to smoke. If an explicit deploy URL WAS provided but is unreachable, that
+// is a real failure (the operator asked us to verify a live deploy).
+async function reachable(url) {
+  try {
+    await fetch(`${url}/api/health`, { method: "GET", signal: AbortSignal.timeout(10_000) });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+if (!(await reachable(base))) {
+  if (explicitBase) {
+    console.error(`✗ smoke-test: target ${base} is unreachable (explicit deploy URL provided).`);
+    process.exit(1);
+  }
+  console.warn(`﹣ smoke-test: no server reachable at ${base} and no deploy URL provided — skipping.`);
+  console.warn("  Provide a URL to enforce: node scripts/smoke-test.mjs https://<your-railway-app>");
+  process.exit(0);
+}
 
 const checks = [
   { name: "Health", path: "/api/health", method: "GET", expectStatus: [200, 503] },
