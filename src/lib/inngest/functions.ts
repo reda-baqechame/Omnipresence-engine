@@ -32,6 +32,7 @@ import {
   recordDeployDelta,
 } from "@/lib/engines/deploy-rescan";
 import { runAllRankChecks } from "@/lib/engines/rank-tracker-service";
+import { runDueRankSchedules } from "@/lib/engines/rank-schedule-service";
 import { snapshotProjectBacklinks, snapshotProjectBacklinkGraph } from "@/lib/engines/backlink-monitor";
 import { processScheduledContent } from "@/lib/engines/content-publish-scheduler";
 import {
@@ -626,6 +627,8 @@ export const dailyRankCheck = inngest.createFunction(
       });
       checked++;
     }
+
+    await step.run("rank-schedules", async () => runDueRankSchedules(supabase));
 
     return { checked };
   }

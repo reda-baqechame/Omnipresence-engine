@@ -116,3 +116,29 @@ export async function recordDeployDelta(
     status: lift.citationLiftPp > 0 || lift.mentionLiftPp > 0 ? "verified" : "completed",
   }).catch((e) => logProviderError("deployRescan.record", e, { projectId, url }));
 }
+
+/** Post-deploy verifier: HTTP 200 + optional schema marker + IndexNow ping. */
+export async function verifyDeployment(url: string, domain: string): Promise<{
+  ok: boolean;
+  httpStatus?: number;
+  hasSchema?: boolean;
+  indexNowSubmitted?: number;
+  error?: string;
+}> {
+  try {
+    const { submitIndexNow } = await import("@/lib/engines/indexnow");
+    const res = await fetch(url, { method: "GET", redirect: "follow", signal: AbortSignal.timeout(15000) });
+    const html = await res.text();
+    const hasSchema = /application\/ld\+json/i.test(html) || /schema\.org/i.test(html);
+    const indexNowSubmitted = res.ok ? await submitIndexNow([url], domain).catch(() => 0) : 0;
+    return {
+      ok: res.ok,
+      httpStatus: res.status,
+      hasSchema,
+      indexNowSubmitted,
+      error: res.ok ? undefined : `HTTP ${res.status}`,
+    };
+  } catch (e) {
+    return { ok: false, error: e instanceof Error ? e.message : "verify failed" };
+  }
+}

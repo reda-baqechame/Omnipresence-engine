@@ -20,6 +20,7 @@ const steps = [
   { name: "route-auth", ok: () => run("node", ["scripts/verify-route-auth.mjs"]) },
   { name: "claims-benchmark", ok: () => run("node", ["scripts/benchmark.mjs"]) },
   { name: "zero-paid-keys", ok: () => run("node", ["scripts/audit-zero-paid-keys.mjs"]) },
+  { name: "superiority-strict", ok: () => run("node", ["scripts/provider-superiority.mjs", "--strict"]) },
   {
     name: "quality-gate-test",
     ok: () =>

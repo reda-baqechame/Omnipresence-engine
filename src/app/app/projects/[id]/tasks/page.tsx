@@ -2,6 +2,7 @@ import { notFound } from "next/navigation";
 import { getProject } from "@/lib/projects";
 import { TasksBoard } from "@/components/tasks-board";
 import { ExportButtons } from "@/components/export-buttons";
+import { OpsApprovalPanel } from "@/components/ops-approval-panel";
 
 export default async function TasksPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
@@ -20,6 +21,7 @@ export default async function TasksPage({ params }: { params: Promise<{ id: stri
         </div>
         <ExportButtons projectId={id} types={["tasks", "ledger"]} />
       </div>
+      <OpsApprovalPanel projectId={id} />
       <TasksBoard projectId={id} />
     </div>
   );

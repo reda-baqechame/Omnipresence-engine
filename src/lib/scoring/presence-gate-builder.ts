@@ -53,6 +53,7 @@ export async function buildPresenceGateScore(
 
   const [
     evidenceCount,
+    measurementEvidenceCount,
     keywordCount,
     rankCount,
     sourceDomainCount,
@@ -60,12 +61,17 @@ export async function buildPresenceGateScore(
     backlinkSnapCount,
   ] = await Promise.all([
     count(supabase, "ai_capture_evidence", projectId),
+    count(supabase, "measurement_evidence", projectId),
     count(supabase, "keyword_opportunities", projectId),
     count(supabase, "rank_snapshots", projectId),
     count(supabase, "source_domains", projectId),
     count(supabase, "results_ledger", projectId, ["completed", "verified"]),
     count(supabase, "backlink_graph_snapshots", projectId),
   ]);
+
+  const totalEvidence = evidenceCount + measurementEvidenceCount;
+  const evidenceTarget = Math.max(1, measuredInputs || 5, rankCount + keywordCount);
+  const evidenceRate = rate(totalEvidence, evidenceTarget);
 
   const connector = await getConnectorHealth(supabase, projectId);
   const production = getProductionReadiness();
@@ -89,10 +95,20 @@ export async function buildPresenceGateScore(
       Boolean(latestScore),
       "Share of measured (vs modeled) inputs in the latest score"
     ),
-    // Evidence: auditable artifacts captured for measured probes.
-    gateFromRate("evidence", rate(evidenceCount, Math.max(1, measuredInputs || 5)), true, `${evidenceCount} evidence artifacts`),
-    // Measurement: how much of the scoring surface we could actually measure.
-    gateFromRate("measurement", dimCoverage, Boolean(latestScore), "Dimension coverage of the latest scan"),
+    // Evidence: auditable artifacts (AI capture + measurement_evidence) for measured inputs.
+    gateFromRate(
+      "evidence",
+      evidenceRate,
+      true,
+      `${totalEvidence} evidence rows (${measurementEvidenceCount} measurement + ${evidenceCount} AI)`
+    ),
+    // Measurement: dimension coverage AND evidence coverage for recent measured inputs.
+    gateFromRate(
+      "measurement",
+      dimCoverage > 0 && evidenceTarget > 0 ? (dimCoverage + evidenceRate) / 2 : dimCoverage,
+      Boolean(latestScore),
+      `Dimension coverage ${Math.round(dimCoverage * 100)}% · evidence ${Math.round(evidenceRate * 100)}%`
+    ),
     // AI capture: measured AI-engine probes present.
     gateFromRate("ai_capture", rate(measuredInputs, 6), true, `${measuredInputs} measured AI/search probes`),
     gateFromRate("keyword", rate(keywordCount, 20), true, `${keywordCount} keyword opportunities`),

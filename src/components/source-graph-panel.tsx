@@ -201,7 +201,50 @@ export function SourceGraphPanel({ projectId }: { projectId: string }) {
       )}
 
       <div>
-        <h3 className="text-base font-semibold mb-2">Ranked source opportunities</h3>
+        <h3 className="text-base font-semibold mb-2">Win these 3 sources first</h3>
+        {!opps?.available ? (
+          <p className="text-sm text-muted-foreground">{opps?.reason || "No opportunities yet."}</p>
+        ) : (
+          <div className="space-y-2">
+            {opps.opportunities.slice(0, 3).map((o) => (
+              <div key={`top-${o.source_domain}`} className="rounded-md border border-primary/30 bg-primary/5 p-3">
+                <div className="flex items-center justify-between gap-3">
+                  <span className="font-medium">{o.source_domain}</span>
+                  <span className="text-xs text-muted-foreground">influence {o.influence_score}</span>
+                </div>
+                {o.recommended_action && (
+                  <p className="mt-1 text-sm text-muted-foreground">{o.recommended_action}</p>
+                )}
+                <button
+                  type="button"
+                  className="mt-2 text-xs text-primary hover:underline"
+                  onClick={async () => {
+                    await fetch("/api/tasks", {
+                      method: "POST",
+                      headers: { "Content-Type": "application/json" },
+                      body: JSON.stringify({
+                        projectId,
+                        title: `Outreach: earn mention on ${o.source_domain}`,
+                        description: o.recommended_action,
+                        sourceModule: "source_graph",
+                        sourceId: o.source_domain,
+                        category: "authority",
+                        priority: "high",
+                      }),
+                    });
+                    setMsg(`Task created for ${o.source_domain}`);
+                  }}
+                >
+                  Create outreach task →
+                </button>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+
+      <div>
+        <h3 className="text-base font-semibold mb-2">All ranked source opportunities</h3>
         {!opps?.available ? (
           <p className="text-sm text-muted-foreground">{opps?.reason || "No opportunities yet."}</p>
         ) : (

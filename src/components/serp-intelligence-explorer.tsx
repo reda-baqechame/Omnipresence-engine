@@ -2,6 +2,8 @@
 
 import { useState } from "react";
 import { Loader2, Search, Sparkles, ShieldCheck } from "lucide-react";
+import { EvidenceDrawer } from "@/components/evidence-drawer";
+import { ProvenanceBadge } from "@/components/provenance-badge";
 
 interface SerpIntel {
   keyword: string;
@@ -138,8 +140,10 @@ export function SerpIntelligenceExplorer({ projectId }: { projectId: string }) {
         <div className="space-y-4">
           <div className="flex flex-wrap items-center gap-2 text-xs">
             <span className="inline-flex items-center gap-1 rounded-full bg-green-500/15 px-2 py-1 text-green-300">
-              <ShieldCheck className="h-3 w-3" /> measured · {serp.provider} · evidence stored
+              <ShieldCheck className="h-3 w-3" /> measured · {serp.provider}
             </span>
+            <ProvenanceBadge quality="measured" />
+            <EvidenceDrawer projectId={projectId} capability="serp" target={serp.keyword} label="View proof" />
             {serp.featureTypes.map((f) => (
               <span key={f} className="rounded-full bg-secondary px-2 py-1 text-muted-foreground">
                 {FEATURE_LABEL[f] || f}

@@ -38,6 +38,8 @@ jobs:
           SUPABASE_SERVICE_ROLE_KEY: placeholder
       - name: Zero-paid-keys sovereignty audit
         run: npm run audit:zero-paid-keys
+      - name: Provider superiority audit (strict)
+        run: npm run audit:superiority:strict
       - run: npm run start &
       - run: npx wait-on http://localhost:3000 -t 120000
       - run: npm run smoke

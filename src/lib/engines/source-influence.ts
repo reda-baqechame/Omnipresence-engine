@@ -158,3 +158,53 @@ export async function scoreSourceInfluenceV2(
     return { scored: 0, top: [] };
   }
 }
+
+/**
+ * Create execution tasks for the top influence-ranked open source opportunities.
+ * Upserts by deterministic source_id so rescans refresh task metadata, not dupes.
+ */
+export async function createTopInfluenceOutreachTasks(
+  supabase: SupabaseClient,
+  projectId: string,
+  limit = 3
+): Promise<number> {
+  const [{ data: project }, { data: opps }] = await Promise.all([
+    supabase.from("projects").select("organization_id").eq("id", projectId).single(),
+    supabase
+      .from("source_opportunities")
+      .select("id, source_domain, influence_score, difficulty, recommended_action")
+      .eq("project_id", projectId)
+      .eq("status", "open")
+      .order("influence_score", { ascending: false })
+      .limit(limit),
+  ]);
+
+  if (!project?.organization_id || !opps?.length) return 0;
+
+  const rows = opps.map((opp) => {
+    const influence = Number(opp.influence_score) || 0;
+    const difficulty = typeof opp.difficulty === "number" ? opp.difficulty : 50;
+    return {
+      project_id: projectId,
+      organization_id: project.organization_id,
+      title: `Outreach: win ${opp.source_domain} citation`,
+      description:
+        opp.recommended_action ||
+        `Earn a brand mention/citation on ${opp.source_domain} where competitors are already cited.`,
+      source_module: "source_opportunity" as const,
+      source_id: `outreach:${opp.id}`,
+      category: "authority",
+      priority: influence >= 70 ? "high" : influence >= 45 ? "medium" : "low",
+      impact: Math.min(100, Math.max(0, Math.round(influence))),
+      effort: difficulty >= 60 ? 5 : difficulty >= 40 ? 4 : 3,
+      status: "todo" as const,
+      evidence: { source_domain: opp.source_domain, influence_score: influence },
+    };
+  });
+
+  await supabase.from("execution_tasks").upsert(rows, {
+    onConflict: "project_id,source_module,source_id",
+  });
+
+  return rows.length;
+}

@@ -37,6 +37,7 @@ const TABS = [
   { href: "/merchant", label: "Merchant" },
   { href: "/behavior", label: "Behavior" },
   { href: "/reputation", label: "Reputation" },
+  { href: "/community", label: "Social" },
   { href: "/trends", label: "Trends" },
   { href: "/internal-links", label: "Internal Links" },
   { href: "/indexation", label: "Indexation" },

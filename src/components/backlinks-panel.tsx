@@ -1,6 +1,8 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { ProvenanceBadge } from "@/components/provenance-badge";
+import { EvidenceDrawer } from "@/components/evidence-drawer";
 
 interface BacklinkRow {
   url: string;
@@ -117,7 +119,13 @@ export function BacklinksPanel({ projectId }: BacklinksPanelProps) {
     <div className="space-y-6">
       <div className="bg-card border border-border rounded-xl p-4 flex items-center justify-between gap-4">
         <div>
-          <h3 className="font-semibold">Backlink Monitor</h3>
+          <div className="flex items-center gap-2">
+            <h3 className="font-semibold">Backlink Monitor</h3>
+            <ProvenanceBadge quality={latest ? "measured" : "unavailable"} />
+            {latest && (
+              <EvidenceDrawer projectId={projectId} capability="backlink_graph" target="snapshot" label="Proof" />
+            )}
+          </div>
           <p className="text-sm text-muted-foreground">
             Track referring domains via OmniData / Serper. Weekly cron snapshots new and lost links.
           </p>

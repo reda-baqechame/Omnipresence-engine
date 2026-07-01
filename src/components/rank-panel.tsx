@@ -1,6 +1,7 @@
 "use client";
 
 import { Fragment, useEffect, useState } from "react";
+import { EvidenceDrawer } from "@/components/evidence-drawer";
 
 interface CompetitorOverlayEntry {
   domain: string;
@@ -200,6 +201,7 @@ export function RankPanel({ projectId }: RankPanelProps) {
                     <tr className="border-t border-border">
                       <td className="p-3">
                         {k.keyword}
+                        <EvidenceDrawer projectId={projectId} capability="rank" target={k.keyword} className="ml-1" />
                         <span className="block text-xs text-muted-foreground">{k.location}</span>
                       </td>
                       <td className="p-3">{k.last_position ?? "—"}</td>

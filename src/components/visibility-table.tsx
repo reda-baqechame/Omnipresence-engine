@@ -3,11 +3,13 @@
 import type { VisibilityResult } from "@/types/database";
 import { resultDataQuality } from "@/lib/engines/provenance";
 import { ProvenanceBadge } from "@/components/provenance-badge";
+import { EvidenceDrawer } from "@/components/evidence-drawer";
 
 interface VisibilityTableProps {
   results: VisibilityResult[];
   brandName: string;
   competitors: string[];
+  projectId?: string;
 }
 
 function sentimentIcon(s?: VisibilityResult["sentiment"]) {
@@ -17,7 +19,7 @@ function sentimentIcon(s?: VisibilityResult["sentiment"]) {
   return <span className="text-muted-foreground/40" title="Unknown">—</span>;
 }
 
-export function VisibilityTable({ results, brandName, competitors }: VisibilityTableProps) {
+export function VisibilityTable({ results, brandName, competitors, projectId }: VisibilityTableProps) {
   if (results.length === 0) {
     return <p className="text-muted-foreground text-sm">No visibility results yet. Run a scan first.</p>;
   }
@@ -46,6 +48,14 @@ export function VisibilityTable({ results, brandName, competitors }: VisibilityT
               <td className="p-3 text-muted-foreground capitalize">{r.engine.replace(/_/g, " ")}</td>
               <td className="p-3 text-xs">
                 <ProvenanceBadge quality={resultDataQuality(r)} confidence={r.confidence} />
+                {projectId && r.data_source === "measured" && (
+                  <EvidenceDrawer
+                    projectId={projectId}
+                    capability="visibility"
+                    target={r.prompt_text?.slice(0, 80) || r.engine}
+                    className="ml-1"
+                  />
+                )}
               </td>
               <td className="p-3 text-center">{r.brand_mentioned ? "✓" : "—"}</td>
               <td className="p-3 text-center">{r.brand_cited ? "✓" : "—"}</td>

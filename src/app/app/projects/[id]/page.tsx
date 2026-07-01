@@ -10,6 +10,8 @@ import type { VisibilityResult, ExecutionTask } from "@/types/database";
 import { getProject } from "@/lib/projects";
 import { buildActionPlan } from "@/lib/engines/action-plan";
 import { ActionPlanPanel } from "@/components/action-plan-panel";
+import { buildPresenceGateScore } from "@/lib/scoring/presence-gate-builder";
+import { PresenceGateCard } from "@/components/presence-gate-card";
 
 export default async function ProjectOverviewPage({
   params,
@@ -39,6 +41,7 @@ export default async function ProjectOverviewPage({
   ]);
 
   const actionPlan = buildActionPlan(id, (tasks || []) as ExecutionTask[]);
+  const gate = await buildPresenceGateScore(supabase, id);
 
   const latestScore = scores?.[scores.length - 1];
   const previousScore = scores && scores.length >= 2 ? scores[scores.length - 2] : null;
@@ -53,6 +56,8 @@ export default async function ProjectOverviewPage({
   return (
     <div className="space-y-8">
       <ScanPoller projectId={id} initialStatus={project.status} />
+
+      <PresenceGateCard projectId={id} gate={gate} />
 
       <ActionPlanPanel projectId={id} plan={actionPlan} />
 

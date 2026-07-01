@@ -1,0 +1,23 @@
+name: Benchmark Live
+
+on:
+  schedule:
+    - cron: "0 6 * * 1"
+  workflow_dispatch:
+
+jobs:
+  benchmark-live:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm install --no-audit --no-fund
+      - name: benchmark:live refresh
+        run: npm run benchmark:live
+        continue-on-error: true
+        env:
+          OMNIDATA_BASE_URL: ${{ secrets.OMNIDATA_BASE_URL }}
+          SERPER_API_KEY: ${{ secrets.SERPER_API_KEY }}

@@ -340,7 +340,7 @@ export default async function VisibilityPage({
 
       <div>
         <h2 className="text-xl font-semibold mb-4">Prompt Results ({results.length})</h2>
-        <VisibilityTable results={results} brandName={project.name} competitors={project.competitors || []} />
+        <VisibilityTable results={results} brandName={project.name} competitors={project.competitors || []} projectId={id} />
       </div>
 
       <AiTracesPanel projectId={id} />

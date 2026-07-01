@@ -17,6 +17,11 @@ interface GuaranteePanelProps {
   ledger: ResultsLedgerEntry[];
   latestMetrics: GuaranteeMetrics;
   twoTier?: TwoTierGuarantee;
+  marketingGate?: {
+    outcomeGuaranteeAllowed: boolean;
+    superlativesAllowed: boolean;
+    reason?: string;
+  };
 }
 
 export function GuaranteePanel({
@@ -26,6 +31,7 @@ export function GuaranteePanel({
   ledger,
   latestMetrics,
   twoTier,
+  marketingGate,
 }: GuaranteePanelProps) {
   const [message, setMessage] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
@@ -62,6 +68,12 @@ export function GuaranteePanel({
         <p className="text-sm text-muted-foreground">
           Two-tier model: deterministic deliverables are shipped outright, and the measured citation/visibility lift is backed by a service credit if the threshold is not met after the window.
         </p>
+        {marketingGate && !marketingGate.outcomeGuaranteeAllowed && (
+          <p className="mt-2 text-sm text-amber-400 border border-amber-500/30 rounded-lg px-3 py-2 bg-amber-500/5">
+            Outcome guarantee locked until Presence Gate is ready (all critical gates ≥60).
+            {marketingGate.reason ? ` ${marketingGate.reason}` : ""}
+          </p>
+        )}
       </div>
 
       {twoTier && (

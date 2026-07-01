@@ -70,14 +70,14 @@ export default function LandingPage() {
             { title: "Execution Tools", desc: "Content generation, authority CRM, distribution, attribution" },
           ].map((p) => (
             <div key={p.title} className="bg-card border border-primary/30 rounded-xl p-6">
-              <div className="text-sm font-medium text-primary mb-2">Included free</div>
+              <div className="text-sm font-medium text-primary mb-2">Professional beta</div>
               <h3 className="font-semibold text-lg">{p.title}</h3>
               <p className="text-sm text-muted-foreground mt-2">{p.desc}</p>
             </div>
           ))}
         </div>
         <Link href="/signup" className="inline-block mt-8 bg-primary text-primary-foreground px-8 py-3 rounded-lg font-medium hover:opacity-90 transition">
-          Get started free
+          Start your audit
         </Link>
       </section>
 

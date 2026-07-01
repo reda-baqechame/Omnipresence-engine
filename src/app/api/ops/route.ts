@@ -5,10 +5,27 @@ import { OpsCreateSchema, OpsPatchSchema } from "@/lib/validation/schemas";
 import { verifyProjectAccess } from "@/lib/security/project-access";
 import { inngest } from "@/lib/inngest/client";
 
-export async function GET() {
+export async function GET(req: NextRequest) {
   const supabase = await createClient();
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) return apiUnauthorized();
+
+  const projectId = req.nextUrl.searchParams.get("projectId");
+  const statusFilter = req.nextUrl.searchParams.get("status");
+
+  if (projectId) {
+    const access = await verifyProjectAccess(supabase, projectId, user.id, "viewer");
+    if (!access) return apiForbidden();
+    let q = supabase
+      .from("ops_queue")
+      .select("id, project_id, organization_id, action_type, title, risk_level, status, created_at, sla_due_at")
+      .eq("project_id", projectId)
+      .order("created_at", { ascending: false })
+      .limit(50);
+    if (statusFilter) q = q.eq("status", statusFilter);
+    const { data: items } = await q;
+    return NextResponse.json({ items: items || [] });
+  }
 
   const { data: memberships } = await supabase
     .from("memberships")

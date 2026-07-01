@@ -18,6 +18,7 @@ import {
 } from "@/lib/engines/keyword-volume";
 import { scoreKeywordsKeyless, hasKeylessDifficulty } from "@/lib/engines/keyword-difficulty";
 import { loadProjectIntegration } from "@/lib/integrations/store";
+import { recordMeasurementEvidence } from "@/lib/engines/evidence";
 
 interface GoogleAdsIntegration extends Record<string, unknown> {
   developerToken?: string;
@@ -298,6 +299,27 @@ export async function persistKeywordOpportunities(
     })),
     { onConflict: "project_id,keyword" }
   );
+  if (!error) {
+    const bounded = rows.slice(0, 25);
+    await Promise.all(
+      bounded.map((r) =>
+        recordMeasurementEvidence(supabase, {
+          projectId,
+          capability: "keyword",
+          target: r.keyword,
+          provider: r.source,
+          dataSource: r.volume_confidence === "high" ? "measured" : "estimated",
+          confidence: confidenceFor(r.volume_confidence),
+          rawPayload: r,
+          excerpt: {
+            volume_range: r.volume_range,
+            difficulty: r.difficulty,
+            opportunity_score: r.opportunity_score,
+          },
+        })
+      )
+    );
+  }
   return error ? 0 : rows.length;
 }
 

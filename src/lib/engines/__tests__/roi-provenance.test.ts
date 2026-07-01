@@ -10,13 +10,23 @@ import { buildCommandCenter } from "../roi-command-center.ts";
 
 function mockSupabase(rows: Record<string, unknown>[]) {
   return {
-    from() {
+    from(table: string) {
       const builder: Record<string, unknown> = {
         select() { return builder; },
         eq() { return builder; },
         order() { return builder; },
         limit() { return builder; },
+        maybeSingle() {
+          if (table === "attribution_metrics") {
+            return Promise.resolve({ data: rows[0] ?? null, error: null });
+          }
+          return Promise.resolve({ data: null, error: null });
+        },
         then(resolve: (v: { data: Record<string, unknown>[]; error: null }) => void) {
+          if (table === "oauth_connections") {
+            resolve({ data: [], error: null });
+            return;
+          }
           resolve({ data: rows, error: null });
         },
       };

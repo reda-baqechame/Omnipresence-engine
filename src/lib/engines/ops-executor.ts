@@ -22,6 +22,8 @@ import { inngest } from "@/lib/inngest/client";
 import { estimateActionImpact } from "@/lib/engines/impact-estimate";
 import { sendEmail } from "@/lib/email/transport";
 import { buildLlmsTxt, buildReviewRequest, buildOutreachEmail } from "@/lib/engines/generators";
+import { patchWordPressPageMeta } from "@/lib/integrations/cms-patcher";
+import { verifyDeployment } from "@/lib/engines/deploy-rescan";
 
 interface LlmsKeyPage {
   title: string;
@@ -59,7 +61,7 @@ function asString(v: unknown): string | undefined {
 /** Route one ops item to its real runner. Pure dispatch — persistence is the caller's job. */
 export async function executeOpsItem(supabase: SupabaseClient, item: OpsItem): Promise<OpsExecutionResult> {
   const payload = item.payload || {};
-  const type = item.action_type;
+  const type = item.action_type === "schema_deployed" ? "schema_deploy" : item.action_type;
 
   try {
     switch (type) {
@@ -108,6 +110,64 @@ export async function executeOpsItem(supabase: SupabaseClient, item: OpsItem): P
           return res.success ? { ok: true, surface: "webflow" } : { ok: false, error: res.error || "schema deploy failed", surface: "webflow" };
         }
         return { ok: false, error: `Unsupported schema platform: ${platform}` };
+      }
+
+      case "on_page_title":
+      case "on_page_meta":
+      case "on_page_fix": {
+        const creds = await loadProjectIntegration<CmsCredentials>(supabase, item.project_id, "wordpress");
+        if (!creds?.apiKey) return { ok: false, error: "WordPress integration required", surface: "wordpress" };
+
+        const url = asString(payload.url);
+        let slug = asString(payload.slug);
+        if (!slug && url) {
+          try {
+            slug = new URL(url).pathname.split("/").filter(Boolean).pop();
+          } catch {
+            return { ok: false, error: "payload.url must be a valid URL", surface: "wordpress" };
+          }
+        }
+        const field = asString(payload.field) || (type === "on_page_title" ? "title" : type === "on_page_meta" ? "meta_description" : undefined);
+        const proposed = asString(payload.proposed);
+        if (!slug || !field || !proposed) {
+          return { ok: false, error: "payload.url/slug + field + proposed required", surface: "wordpress" };
+        }
+
+        if (field === "title") {
+          const res = await patchWordPressPageMeta(creds, { slug, title: proposed });
+          return res.ok
+            ? { ok: true, surface: "wordpress", result: { slug, field, postId: res.postId } }
+            : { ok: false, error: "WordPress title patch failed", surface: "wordpress" };
+        }
+        if (field === "meta_description") {
+          const res = await patchWordPressPageMeta(creds, { slug, metaDescription: proposed });
+          return res.ok
+            ? { ok: true, surface: "wordpress", result: { slug, field, postId: res.postId } }
+            : { ok: false, error: "WordPress meta patch failed", surface: "wordpress" };
+        }
+        return { ok: false, error: `Unsupported on-page field "${field}"`, surface: "wordpress" };
+      }
+
+      case "content_refresh": {
+        const findings = Array.isArray(payload.findings)
+          ? (payload.findings as unknown[]).filter((v): v is string => typeof v === "string" && v.trim().length > 0)
+          : [];
+        const rows = (findings.length ? findings : ["Refresh top stale pages"]).slice(0, 3).map((finding, i) => ({
+          project_id: item.project_id,
+          organization_id: item.organization_id,
+          title: `Content refresh: ${finding}`,
+          description: "Refresh stale page copy and republish updated facts/examples.",
+          source_module: "manual" as const,
+          source_id: `ops:${item.id}:refresh:${i}`,
+          category: "content",
+          priority: "medium" as const,
+          impact: 45,
+          effort: 3,
+          status: "todo" as const,
+          evidence: { finding },
+        }));
+        if (rows.length) await supabase.from("execution_tasks").upsert(rows, { onConflict: "project_id,source_module,source_id" });
+        return { ok: true, surface: "content", result: { tasksCreated: rows.length } };
       }
 
       case "indexnow":
@@ -317,6 +377,13 @@ export async function runQueuedOps(supabase: SupabaseClient, opsId: string): Pro
   // Deploy → rescan coupling (Q3): a live published URL triggers an
   // asset-scoped re-probe so the lift is attributed to THIS deployment.
   if (result.ok && result.publishedUrl) {
+    const domain = await projectDomain(supabase, item.project_id);
+    if (domain) {
+      const verification = await verifyDeployment(result.publishedUrl, domain).catch(() => null);
+      if (verification) {
+        result.result = { ...(result.result || {}), deploy_verification: verification };
+      }
+    }
     const payload = (item.payload || {}) as Record<string, unknown>;
     const keyword =
       (typeof payload.keyword === "string" && payload.keyword) ||

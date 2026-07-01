@@ -1,6 +1,7 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { AttributionMetric } from "@/types/database";
 import { calculateMoMDelta } from "@/lib/engines/attribution";
+import { getConnectorHealth } from "@/lib/engines/connector-health";
 
 /**
  * Phase 21: Attribution & ROI command center.
@@ -40,6 +41,9 @@ export interface CommandCenterSummary {
   /** Paid-ad equivalent is always a modeled CPC estimate, never measured spend. */
   paidAdsEquivalentEstimated?: boolean;
   confidence?: number;
+  revenueProvenance?: "first_party_measured" | "unavailable";
+  connectorHealthy?: boolean;
+  connectorReason?: string;
 }
 
 export async function buildCommandCenter(
@@ -90,11 +94,12 @@ export async function buildCommandCenter(
     .sort((a, b) => b.value - a.value);
 
   const sourceAvailability = (current.source_availability as Record<string, boolean> | null) || null;
+  const connector = await getConnectorHealth(supabase, projectId);
   // Revenue is trustworthy only when GA4 reported it this period. If GA4 wasn't a
   // working source, revenue is unavailable (shown as "—"), never a confident $0.
-  const revenueAvailable = sourceAvailability
-    ? sourceAvailability.revenue === true
-    : (current.data_source as string) === "measured" && (current.revenue || 0) > 0;
+  const revenueAvailable = connector.outcomeGuaranteeEligible && (
+    sourceAvailability ? sourceAvailability.revenue === true : (current.data_source as string) === "measured" && (current.revenue || 0) > 0
+  );
 
   // Per-channel availability so the UI can show "—" for a channel whose source
   // wasn't healthy this period, instead of a confident 0. When no availability
@@ -122,6 +127,9 @@ export async function buildCommandCenter(
     channelAvailability,
     paidAdsEquivalentEstimated: true,
     confidence: typeof current.confidence === "number" ? current.confidence : undefined,
+    revenueProvenance: revenueAvailable ? "first_party_measured" as const : "unavailable" as const,
+    connectorHealthy: connector.outcomeGuaranteeEligible,
+    connectorReason: connector.reason,
   };
 }
 

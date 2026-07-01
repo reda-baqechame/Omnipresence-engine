@@ -3,7 +3,7 @@ import { createClient } from "@/lib/supabase/server";
 import { getProject } from "@/lib/projects";
 import { getLedgerForProject } from "@/lib/engines/results-ledger";
 import { calculateVisibilityMetrics } from "@/lib/engines/visibility-scanner";
-import { buildTwoTierGuarantee } from "@/lib/engines/guarantee";
+import { buildTwoTierGuarantee, evaluateMarketingGate } from "@/lib/engines/guarantee";
 import type { AeoLever } from "@/lib/engines/aeo-readiness";
 import { GuaranteePanel } from "@/components/guarantee-panel";
 import { buildPresenceGateScore } from "@/lib/scoring/presence-gate-builder";
@@ -35,6 +35,11 @@ export default async function GuaranteePage({
 
   const gate = await buildPresenceGateScore(supabase, id);
   const gateLabel = getGateLabel(gate.score);
+  const marketingGate = evaluateMarketingGate({
+    presenceGateScore: gate.score,
+    presenceGateReady: gate.ready,
+    limitingGate: gate.limitingGate ?? undefined,
+  });
 
   return (
     <div className="space-y-6">
@@ -96,6 +101,7 @@ export default async function GuaranteePage({
           visibility_mention_rate: visibilityMetrics.mentionRate,
         }}
         twoTier={twoTier}
+        marketingGate={marketingGate}
       />
     </div>
   );

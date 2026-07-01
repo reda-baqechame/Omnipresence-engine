@@ -1,10 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { runDailyOnPageAutomation, syncOnPageQueueForProject } from "@/lib/engines/on-page-queue";
-import { loadProjectIntegration, type CmsCredentials } from "@/lib/integrations/store";
-import { patchWordPressPageMeta } from "@/lib/integrations/cms-patcher";
 import { verifyProjectAccess } from "@/lib/security/project-access";
 import { apiError, apiForbidden, apiUnauthorized, readJsonBody } from "@/lib/security/api-response";
+import { inngest } from "@/lib/inngest/client";
 
 export async function GET(request: NextRequest) {
   const supabase = await createClient();
@@ -72,18 +71,17 @@ export async function PATCH(request: NextRequest) {
   await supabase.from("ops_queue").update({ status: "approved" }).eq("id", queueId);
 
   if (apply) {
-    const creds = await loadProjectIntegration<CmsCredentials>(supabase, item.project_id, "wordpress");
-    const payload = item.payload as { url?: string; field?: string; proposed?: string };
-    if (creds && payload.url && payload.proposed) {
-      const slug = new URL(payload.url).pathname.split("/").filter(Boolean).pop();
-      if (payload.field === "title") {
-        await patchWordPressPageMeta(creds, { slug, title: payload.proposed });
-      } else if (payload.field === "meta_description") {
-        await patchWordPressPageMeta(creds, { slug, metaDescription: payload.proposed });
-      }
-      await supabase.from("ops_queue").update({ status: "completed" }).eq("id", queueId);
+    await supabase.from("ops_queue").update({ status: "executing" }).eq("id", queueId);
+    try {
+      await inngest.send({
+        name: "ops/execute.requested",
+        data: { opsId: queueId, projectId: item.project_id },
+      });
+    } catch {
+      await supabase.from("ops_queue").update({ status: "approved" }).eq("id", queueId);
+      return apiError("Failed to queue execution", 502);
     }
   }
 
-  return NextResponse.json({ ok: true });
+  return NextResponse.json({ ok: true, queued: Boolean(apply) });
 }

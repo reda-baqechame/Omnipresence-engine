@@ -18,6 +18,7 @@
 import { createServiceClient } from "@/lib/supabase/server";
 import { logProviderError } from "@/lib/observability/log";
 import { resolveDomainAuthority } from "@/lib/providers/domain-authority";
+import { recordMeasurementEvidence } from "@/lib/engines/evidence";
 import type { SupabaseClient } from "@supabase/supabase-js";
 
 type SourceType =
@@ -317,6 +318,22 @@ export async function buildSourceGraph(projectId: string): Promise<BuildResult> 
       if (m.citesBrand) pushEdge("domain_brand", "domain", `domain:${m.domain}`, "brand", "brand:self");
     }
     if (edges.length) await supabase.from("source_edges").insert(edges.slice(0, 4000));
+
+    await recordMeasurementEvidence(supabase, {
+      projectId,
+      capability: "source_graph",
+      target: projectId,
+      provider: "citation_graph",
+      dataSource: "measured",
+      confidence: 0.85,
+      rawPayload: {
+        domains: domainRows.length,
+        mentions: mentionRows.length,
+        opportunities: oppRows.length,
+        edges: Math.min(edges.length, 4000),
+      },
+      excerpt: { domains: domainRows.length, opportunities: oppRows.length },
+    });
 
     return {
       available: true,

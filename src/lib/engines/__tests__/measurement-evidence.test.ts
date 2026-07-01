@@ -109,3 +109,10 @@ test("responseHash is a stable sha256 of the input text", () => {
   assert.equal(responseHash("abc"), createHash("sha256").update("abc", "utf8").digest("hex"));
   assert.equal(responseHash(""), createHash("sha256").update("", "utf8").digest("hex"));
 });
+
+test("presence gate evidence rate drops when measurement_evidence is sparse", async () => {
+  const { gateFromRate } = await import("../../scoring/presence-gate.ts");
+  const strong = gateFromRate("evidence", 0.8, true, "8/10 evidenced").score;
+  const weak = gateFromRate("evidence", 0.1, true, "1/10 evidenced").score;
+  assert.ok(strong > weak, "missing evidence lowers evidence gate score");
+});

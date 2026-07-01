@@ -15,6 +15,7 @@ import { runBacklinkGraph, runLinkIntersection } from "../engines/backlink-graph
 import { estimateKeywordDifficulty } from "../engines/keyword-difficulty.js";
 import { runMapsLive } from "../engines/maps-serp.js";
 import { getDomainAuthority, getReferringDomainCount, isWebgraphReady } from "../engines/webgraph.js";
+import { collectAutocomplete } from "../engines/autocomplete.js";
 
 const presence = Router();
 
@@ -42,6 +43,7 @@ presence.get("/v1/presence/capabilities", async (_req, res) => {
         { name: "link_intersection", path: "/v1/presence/link-intersection", method: "POST" },
         { name: "keyword_difficulty", path: "/v1/presence/keyword-difficulty", method: "POST" },
         { name: "local_maps", path: "/v1/presence/local-maps", method: "POST" },
+        { name: "autocomplete", path: "/v1/presence/autocomplete", method: "POST" },
       ],
       webgraph_ready: webgraphReady,
     })
@@ -114,6 +116,13 @@ presence.post("/v1/presence/local-maps", async (req, res) => {
   if (!body.keyword) return res.status(400).json(bad("local_maps", "keyword required"));
   const result = await runMapsLive(body.keyword, body.location || "United States");
   res.json(ok("local_maps", result, result.source === "none" ? "unavailable" : "measured"));
+});
+
+presence.post("/v1/presence/autocomplete", async (req, res) => {
+  const body = (req.body as { query?: string; sources?: Array<"google" | "bing" | "youtube"> }) || {};
+  if (!body.query?.trim()) return res.status(400).json(bad("autocomplete", "query required"));
+  const suggestions = await collectAutocomplete(body.query, body.sources);
+  res.json(ok("autocomplete", { query: body.query, suggestions }, suggestions.length ? "measured" : "unavailable"));
 });
 
 export default presence;

@@ -4,7 +4,7 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { runTechnicalAudit } from "@/lib/engines/technical-audit";
 import { buildSourceGraph, enrichSourceDomainAuthority } from "@/lib/engines/source-graph";
-import { scoreSourceInfluenceV2 } from "@/lib/engines/source-influence";
+import { createTopInfluenceOutreachTasks, scoreSourceInfluenceV2 } from "@/lib/engines/source-influence";
 import { analyzePassageReadiness } from "@/lib/engines/passage-readiness";
 import { extractBrandProfile } from "@/lib/engines/brand-extraction";
 import { generatePromptUniverse, generateTemplatePrompts } from "@/lib/engines/prompt-generator";
@@ -20,7 +20,7 @@ import { getPageSpeed, pageSpeedToRetrievalScore } from "@/lib/providers/pagespe
 import { hasWikipediaPresence, hasWikidataEntity } from "@/lib/providers/wikimedia";
 import { conversionSignalFromRows } from "@/lib/engines/behavior-analytics";
 import { recordScanBaseline } from "@/lib/engines/results-ledger";
-import { attachEvidenceToResults } from "@/lib/engines/evidence";
+import { attachEvidenceToResults, recordMeasurementEvidence } from "@/lib/engines/evidence";
 import { lockGuaranteeBaseline } from "@/lib/engines/guarantee";
 import { syncTechnicalFindingsToOpsQueue } from "@/lib/engines/on-page-queue";
 import {
@@ -74,6 +74,19 @@ export async function stepTechnicalAudit(supabase: SupabaseClient, projectId: st
       project.organization_id,
       findings
     );
+  }
+
+  if (findings.length) {
+    await recordMeasurementEvidence(supabase, {
+      projectId,
+      capability: "tech",
+      target: domain,
+      provider: "site_crawl",
+      dataSource: "measured",
+      confidence: 0.9,
+      rawPayload: { findings: findings.slice(0, 50), count: findings.length },
+      excerpt: { finding_count: findings.length, categories: [...new Set(findings.map((f) => f.category))] },
+    });
   }
 
   return findings;
@@ -212,6 +225,7 @@ export async function stepVisibilityScan(supabase: SupabaseClient, project: Proj
     // Re-score opportunities with the full v2 signal set now that authority is
     // enriched, so "win these 3 sources" reflects real authority + intent (P2).
     await scoreSourceInfluenceV2(supabase, project.id).catch(() => undefined);
+    await createTopInfluenceOutreachTasks(supabase, project.id, 3).catch(() => undefined);
   }
 
   await supabase

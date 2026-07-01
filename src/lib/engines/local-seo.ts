@@ -2,6 +2,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import { searchPlaces, hasPlacesProvider, type PlaceResult } from "@/lib/providers/serper-places";
 import { geocode, findNearbyBusinesses, type NearbyBusiness } from "@/lib/providers/osm";
 import { haversineKm, buildGrid } from "@/lib/engines/geo-math";
+import { recordMeasurementEvidence } from "@/lib/engines/evidence";
 
 /**
  * Keyless map-grid ranking via OpenStreetMap proximity (sovereign fallback when
@@ -309,6 +310,19 @@ export async function captureReviewSnapshot(
   if (prev && typeof prev.review_count === "number" && typeof reviewCount === "number") {
     newReviews = reviewCount - prev.review_count;
     periodDays = Math.max(1, Math.round((Date.now() - new Date(prev.captured_at).getTime()) / 86400000));
+  }
+
+  if (audit.available) {
+    await recordMeasurementEvidence(supabase, {
+      projectId: input.projectId,
+      capability: "local",
+      target: input.name,
+      provider: "google_places",
+      dataSource: "measured",
+      confidence: 0.75,
+      rawPayload: { rating, reviewCount, newReviews },
+      excerpt: { rating, review_count: reviewCount },
+    });
   }
 
   return {

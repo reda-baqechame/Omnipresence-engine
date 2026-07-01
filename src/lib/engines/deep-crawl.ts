@@ -2,6 +2,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import { assertPublicDomain } from "@/lib/security/domain";
 import { isCrawlAllowed } from "@/lib/crawl/robots-guard";
 import { logProviderError } from "@/lib/observability/log";
+import { recordMeasurementEvidence } from "@/lib/engines/evidence";
 
 /**
  * Deep technical crawl (Screaming-Frog-class), Phase 4. A keyless, same-domain
@@ -426,4 +427,19 @@ export async function persistDeepCrawl(
   if (taskRows.length) {
     await supabase.from("execution_tasks").insert(taskRows);
   }
+
+  await recordMeasurementEvidence(supabase, {
+    projectId,
+    capability: "tech",
+    target: projectId,
+    provider: "deep_crawl",
+    dataSource: "measured",
+    confidence: 0.85,
+    rawPayload: {
+      pages: result.pages.length,
+      issues: result.issues.length,
+      sample_urls: result.pages.slice(0, 5).map((p) => p.url),
+    },
+    excerpt: { page_count: result.pages.length, issue_count: result.issues.length },
+  });
 }

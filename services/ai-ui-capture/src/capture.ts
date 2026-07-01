@@ -1,5 +1,6 @@
 import { createHash } from "node:crypto";
 import { chromium, type Browser, type BrowserContext, type Page } from "playwright";
+import { hasSessionStateForSurface, nextStorageStateForSurface } from "./session-pool.js";
 
 export type Surface =
   | "chatgpt"
@@ -79,8 +80,8 @@ function localeForGeo(geo?: string): string {
   return /^[A-Z]{2}$/.test(g) ? `en-${g}` : "en-US";
 }
 
-async function newContext(browser: Browser, opts: CaptureOptions): Promise<BrowserContext> {
-  const storageState = process.env.AI_UI_CAPTURE_STORAGE_STATE || undefined;
+async function newContext(browser: Browser, surface: Surface, opts: CaptureOptions): Promise<BrowserContext> {
+  const storageState = nextStorageStateForSurface(surface);
   const persona = opts.persona === "mobile" ? "mobile" : "desktop";
   const locale = opts.locale || localeForGeo(opts.geo);
   return browser.newContext({
@@ -256,7 +257,7 @@ async function captureAuthedChat(
   prompt: string,
   opts: CaptureOptions
 ): Promise<CaptureOutcome> {
-  if (!process.env.AI_UI_CAPTURE_STORAGE_STATE) {
+  if (!hasSessionStateForSurface(surface)) {
     // No logged-in session provided — do not fake a logged-out experience.
     return null;
   }
@@ -285,7 +286,7 @@ async function captureAuthedChat(
 
 export async function capture(surface: Surface, prompt: string, opts: CaptureOptions = {}): Promise<CaptureOutcome> {
   const browser = await getBrowser();
-  const ctx = await newContext(browser, opts);
+  const ctx = await newContext(browser, surface, opts);
   try {
     if (surface === "perplexity") return await capturePerplexity(ctx, prompt, opts);
     if (surface === "google_ai_overview") return await captureGoogleAiOverview(ctx, prompt, opts);

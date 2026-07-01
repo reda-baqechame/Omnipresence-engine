@@ -37,7 +37,10 @@ export interface FirstPartyTraffic {
 export interface PanelTraffic {
   provenance: TrafficProvenance;
   available: boolean;
-  reason: string;
+  reason?: string;
+  period?: { start: string; end: string };
+  visits?: number;
+  uniqueVisitors?: number;
 }
 
 export interface CompetitorTrafficEstimate {
@@ -117,15 +120,27 @@ async function buildFirstParty(supabase: SupabaseClient, projectId: string): Pro
   };
 }
 
-function buildPanel(): PanelTraffic {
-  // We run no clickstream panel. Honest by default — never fabricate panel data.
-  const configured = process.env.TRAFFIC_PANEL_PROVIDER && process.env.TRAFFIC_PANEL_PROVIDER.length > 0;
+function buildPanelFromObservations(
+  rows: Array<{ visits: number | null; unique_visitors: number | null; period_start: string; period_end: string }>
+): PanelTraffic {
+  if (!rows.length) {
+    const configured = Boolean(process.env.TRAFFIC_PANEL_INGEST_SECRET || process.env.TRAFFIC_PANEL_PROVIDER);
+    return {
+      provenance: configured ? "panel_observed" : "unavailable",
+      available: false,
+      reason: configured
+        ? "Panel ingest configured but no observations for this project yet. Install the WordPress plugin or pixel."
+        : "Opt-in clickstream panel not configured. Panel-observed traffic is unavailable (we never estimate it as measured).",
+    };
+  }
+  const latest = rows[0];
   return {
-    provenance: configured ? "panel_observed" : "unavailable",
-    available: false,
-    reason: configured
-      ? "Panel provider configured but no panel observations ingested for this domain yet."
-      : "Opt-in clickstream panel not configured. Panel-observed traffic is unavailable (we never estimate it as measured).",
+    provenance: "panel_observed",
+    available: true,
+    reason: undefined,
+    period: { start: latest.period_start, end: latest.period_end },
+    visits: latest.visits ?? undefined,
+    uniqueVisitors: latest.unique_visitors ?? undefined,
   };
 }
 
@@ -151,14 +166,21 @@ export async function buildTrafficIntelligence(
   brandDomain: string,
   competitors: string[]
 ): Promise<TrafficIntelligence> {
-  const [firstParty, competitorEstimates] = await Promise.all([
+  const [firstParty, panelRows, competitorEstimates] = await Promise.all([
     buildFirstParty(supabase, projectId),
+    supabase
+      .from("traffic_panel_observations")
+      .select("visits, unique_visitors, period_start, period_end")
+      .eq("project_id", projectId)
+      .order("period_end", { ascending: false })
+      .limit(1)
+      .then((r) => r.data || []),
     Promise.all([brandDomain, ...competitors.slice(0, 5)].filter(Boolean).map(estimateCompetitor)),
   ]);
 
   return {
     firstParty,
-    panel: buildPanel(),
+    panel: buildPanelFromObservations(panelRows),
     competitors: competitorEstimates,
     note: "First-party numbers are your REAL measured traffic. The competitor view is a RELATIVE popularity index (0-100) modeled from public signals — not visit counts. We never fabricate absolute competitor traffic.",
   };

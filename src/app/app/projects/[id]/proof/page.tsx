@@ -2,6 +2,7 @@ import { notFound } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { getProject } from "@/lib/projects";
 import { buildProjectProof } from "@/lib/engines/proof-kpis";
+import { ProofEvidenceLinks } from "@/components/proof-evidence-links";
 
 function pct(n: number): string {
   return `${Math.round(n * 100)}%`;
@@ -53,6 +54,9 @@ export default async function ProofPage({
         <p className="text-xs text-muted-foreground mt-2">
           Generated {new Date(proof.generatedAt).toLocaleString()}
         </p>
+        <div className="mt-3">
+          <ProofEvidenceLinks projectId={id} />
+        </div>
       </div>
 
       {/* AI visibility lift */}

@@ -1,145 +1,140 @@
 # PresenceOS — OmniPresence Engine
 
-The Organic Visibility Engine that helps businesses get discovered, cited, mentioned, and recommended across Google, AI chatbots, social platforms, directories, and communities.
+Evidence-backed organic visibility operating system: measure → diagnose → prioritize → execute → verify → prove → attribute across Google, AI surfaces, backlinks, technical SEO, and first-party attribution.
 
-## Features
+## What ships today (v24)
 
-### Phase 1 — Audit Engine (MVP)
-- **OmniPresence Score** — Weighted composite of 8 visibility sub-scores
-- **Technical Readiness Audit** — robots.txt, sitemap, schema, AI bot access, on-page SEO
-- **Brand Intelligence Extraction** — AI-powered brand profile from website
-- **Prompt Universe Generator** — 100+ buyer-intent prompts across 10 categories
-- **AI/Search Visibility Scanner** — ChatGPT, Perplexity, Gemini, Claude, Google AI Overview
-- **Platform Coverage Checker** — 15+ social, directory, review, and local platforms
-- **Authority Opportunity Finder** — Competitor backlink gaps, listicles, podcasts
-- **90-Day Execution Roadmap** — Prioritized by revenue impact
-- **White-Label PDF Reports** — Shareable audit reports
+| Capability | Status |
+|------------|--------|
+| **13-gate Presence Gate** | Minimum-gate readiness score; marketing superlatives gated on ≥60 all gates |
+| **Measurement evidence spine** | `measurement_evidence` + `ai_capture_evidence` — tamper-evident proof for measured metrics |
+| **Sovereign OmniData** | SERP, rank, backlinks, crawl — `/v1/presence/*` on Railway |
+| **AI UI capture** | Playwright capture service (screenshots, DOM, hash) on Railway |
+| **Refund-safe guarantee** | Two-tier: deterministic deliverables + measured lift with connector-gated ROI |
+| **47 project modules** | Keywords, ranks, SERP, backlinks, source graph, ops queue, proof ledger, ROI |
+| **Benchmark scorecard** | 88 golden entries — `npm run benchmark` |
 
-### Phase 2 — Tracking Engine
-- Monthly automated re-scans via Inngest cron
-- Competitor movement and citation tracking
-- Historical trend charts and MoM deltas
-- Weekly email + Slack summaries
+## Architecture
 
-### Phase 3 — Content Domination Engine
-- Brand-aware content generators (18 asset types)
-- Anti-spam guardrails and human-review workflow
-- Distribution status board
+```mermaid
+flowchart LR
+  discover[Discover] --> measure[Measure + Evidence]
+  measure --> diagnose[Diagnose + SourceGraph]
+  diagnose --> prioritize[Prioritize + Gate]
+  prioritize --> execute[Execute + Ops]
+  execute --> verify[Verify + Rescan]
+  verify --> prove[Proof Ledger]
+  prove --> attribute[Attribution + ROI]
+  attribute --> discover
+```
 
-### Phase 4 — Distribution Engine
-- CMS publishing integrations (WordPress, Webflow, Shopify)
-- Social scheduling (Ayrshare/Buffer) and IndexNow bulk indexing
-- Local listing drafts (GBP, Bing Places, Apple Business Connect)
+## Production target
 
-### Phase 5 — Authority & Outreach Engine
-- Backlink/listicle/podcast opportunity finders
-- Outreach CRM with AI-generated emails
+| Component | Host | Role |
+|-----------|------|------|
+| Next.js app | **Vercel** | UI, API routes, Inngest, auth |
+| OmniData | **Railway** | Sovereign SERP/rank/keyword/backlink/maps |
+| ai-ui-capture | **Railway** | Playwright AI surface capture |
 
-### Phase 6 — Attribution Engine
-- GSC / Bing / GA4 / Plausible connectors
-- AI-referral tracking and paid-ads-equivalent calculator
+Sign-off: `npm run production:ready` green locally **and** smoke against Vercel + Railway health checks.
 
-## Tech Stack
+## Tech stack
 
 - **Frontend:** Next.js 16, TypeScript, Tailwind CSS 4
 - **Database:** Supabase (Postgres + RLS + Auth + Storage)
-- **Jobs:** Inngest (durable background processing)
+- **Jobs:** Inngest
 - **Payments:** Stripe
-- **AI:** Vercel AI SDK + OpenAI / Gemini / Claude
-- **Data:** Serper / Brave Search (SERP), Perplexity, direct LLM APIs, Firecrawl. DataForSEO optional fallback.
-- **Analytics:** PostHog
-- **Deploy:** Vercel
+- **AI:** Vercel AI SDK + OpenAI / Gemini / Claude / Perplexity
+- **Data:** OmniData (sovereign), Serper/Brave/Bing (DIY fallback), Firecrawl
+- **Deploy:** Vercel (app) + Railway (data services)
 
-## Getting Started
+## Getting started
 
 ```bash
 npm install
 cp .env.example .env.local
-# Fill in your API keys (see .env.example)
+# Fill in env vars (see docs/WIRING_GUIDE.md)
 
+npm run db:migrate
 npm run dev
 ```
 
-## Database Migrations
+Validate stack: `npm run wire:diy` · Full gate: `npm run verify:all`
 
-Apply migrations in order in your Supabase SQL editor (or via Supabase CLI):
+## Database migrations
+
+Apply via `npm run db:migrate` (idempotent). Key migrations:
 
 | Migration | Purpose |
 |-----------|---------|
 | `0001_init.sql` | Core schema + RLS |
-| `0002_audit_leads.sql` | Public audit lead capture |
-| `0003_org_notifications.sql` | Slack webhook + notification prefs |
-| `0004_rls_hardening.sql` | Tighter audit leads + OAuth policies |
-| `0005_webhook_events.sql` | Stripe webhook idempotency |
-| `0006_storage_reports.sql` | Public `reports` storage bucket |
-| `0007_directory_submissions.sql` | Directory submission status tracking |
-| `0008_free_access.sql` | Remove API credit caps on organizations |
+| `0011_guarantee.sql` | Guarantee contracts + claims |
+| `0020_provenance.sql` | `data_source` / confidence on findings |
+| `0051_ai_capture_evidence.sql` | AI probe evidence artifacts |
+| `0054_ops_execution.sql` | Ops queue + execution loop |
+| `0055_proof_chain.sql` | Results ledger + proof chain |
+| `0057_backlink_graph.sql` | Backlink graph snapshots |
+| `0059_measurement_evidence.sql` | General measurement evidence spine |
+| `0060_keyword_corpus.sql` | Versioned keyword sets per project |
+| `0061_rank_schedules.sql` | Per-keyword rank cadence |
+| `0062_traffic_panel.sql` | Opt-in traffic panel observations |
 
-After migrations, enable **Email auth** in Supabase and configure redirect URLs for your app domain.
+See `supabase/migrations/` for the full chain (59+ files).
 
-## Environment Variables
+## Environment variables
 
-See `.env.example` for the full list. Production-critical vars:
+See `.env.example` and **[docs/WIRING_GUIDE.md](./docs/WIRING_GUIDE.md)**.
 
 | Variable | Required for |
 |----------|--------------|
 | `NEXT_PUBLIC_SUPABASE_*` | Auth + database |
 | `SUPABASE_SERVICE_ROLE_KEY` | Background jobs, webhooks |
-| `OAUTH_STATE_SECRET` | Google/Bing OAuth (32+ char random) |
-| `STRIPE_*` | Billing + webhooks |
-| `INNGEST_*` | Background scans + reports |
-| `RESEND_*` | Email reports + lead nurture |
-| `SERPER_API_KEY` or `BRAVE_SEARCH_API_KEY` | Google SERP + rankings (DIY stack) |
-| `PERPLEXITY_API_KEY` | AI citations with real URLs |
-| `OPENAI_API_KEY` / `ANTHROPIC_API_KEY` | Direct LLM visibility |
+| `OMNIDATA_BASE_URL` + keys | Sovereign SERP/rank/backlinks |
+| `AI_UI_CAPTURE_URL` | AI surface UI capture |
+| `INNGEST_*` | Scans, rescans, ops |
+| `SERPER_API_KEY` or `BRAVE_SEARCH_API_KEY` | DIY SERP fallback |
 
 Demo mode activates when no live providers are configured — technical audits still run against real domains.
 
-Validate your DIY stack: `npm run wire:diy`
+## Verification (CI + local)
 
-## Security
+```bash
+npm run verify:all
+npm run verify:accuracy
+npm run verify:stress
+npm run audit:zero-paid-keys
+npm run audit:superiority:strict
+npm run production:ready   # when live URLs configured
+```
 
-- Multi-tenant isolation via Supabase RLS
-- Project-scoped API access (`verifyProjectAccess`)
-- SSRF guards on public domain/URL inputs
-- Rate limiting on public audit + free tools
-- Signed OAuth state (HMAC + expiry)
-- Per-tenant API credit metering
-- Security headers (X-Frame-Options, nosniff, etc.)
-
-## Project Structure
+## Project structure
 
 ```
 src/
 ├── app/                    # Next.js App Router
 │   ├── app/                # Authenticated dashboard
 │   ├── api/                # API routes
-│   ├── tools/              # Free public tools
-│   └── report/             # Shareable reports
-├── components/             # UI components
+│   └── tools/              # Free public tools
+├── components/             # UI (EvidenceDrawer, ProvenanceBadge, …)
 ├── lib/
 │   ├── engines/            # Core business logic
-│   ├── providers/          # External API adapters
-│   ├── security/           # Auth guards, rate limits, SSRF
-│   ├── scoring/            # OmniPresence Score formulas
-│   ├── inngest/            # Background job functions
-│   └── supabase/           # Database clients
-└── types/                  # TypeScript types
-```
-
-## Production Deploy (Vercel)
-
-See **[DEPLOY.md](./DEPLOY.md)** for the full step-by-step guide.
-
-Quick verify after deploy:
-
-```bash
-npm run smoke -- https://your-domain.com
+│   ├── scoring/            # OmniPresence + Presence Gate
+│   └── inngest/            # Background jobs
+services/
+├── omnidata/               # Sovereign data engine
+└── ai-ui-capture/          # Playwright capture service
 ```
 
 ## Pricing
 
-**Currently free** — all features are unlocked for every account (unlimited projects, full scans, white-label, content, attribution). Set `FREE_ACCESS_MODE=false` in env to re-enable paid plans later.
+**Professional beta** — contact for agency plans. Set `FREE_ACCESS_MODE=false` to enable Stripe billing. No "unlimited forever" positioning; capabilities are gated by Presence Gate readiness and connector health.
+
+## Docs
+
+- [Wiring Guide](./docs/WIRING_GUIDE.md) — what automates vs manual setup
+- [Build Progress](./docs/BUILD_PROGRESS.md) — phase history
+- [Benchmarks](./docs/benchmarks/README.md) — provider superiority scorecard
+- [Case Studies](./docs/case-studies/) — evidence-backed client outcomes
 
 ## License
 

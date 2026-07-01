@@ -52,9 +52,12 @@ export default function OpsConsolePage() {
   return (
     <div className="p-8 max-w-6xl">
       <h1 className="text-2xl font-bold mb-2">DFY Ops Console</h1>
-      <p className="text-muted-foreground mb-8">
+      <p className="text-muted-foreground mb-4">
         Cross-client action queue — approve, reject, or bulk-execute fulfillment tasks
       </p>
+      <a href="/app/ops/ai-capture" className="text-sm text-primary hover:underline mb-8 inline-block">
+        AI capture surface health →
+      </a>
 
       <div className="space-y-3">
         {items.map((item) => (

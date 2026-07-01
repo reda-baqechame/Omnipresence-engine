@@ -1,5 +1,5 @@
--- PresenceOS combined migration (59 files)
--- Generated 2026-06-30T13:44:51.881Z
+-- PresenceOS combined migration (62 files)
+-- Generated 2026-07-01T13:25:48.339Z
 
 -- ========== 0001_init.sql ==========
 
@@ -2640,5 +2640,167 @@ CREATE POLICY measurement_evidence_org ON measurement_evidence FOR ALL USING (
     WHERE m.user_id = auth.uid()
   )
 );
+
+
+-- ========== 0060_keyword_corpus.sql ==========
+
+-- Phase 3: keyword corpus foundation.
+-- Stores normalized keyword candidates used by scanners, planners, and ranking schedules.
+
+CREATE TABLE IF NOT EXISTS keyword_corpus (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  project_id UUID NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+  organization_id UUID NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
+  keyword TEXT NOT NULL,
+  normalized_keyword TEXT GENERATED ALWAYS AS (lower(trim(keyword))) STORED,
+  locale TEXT NOT NULL DEFAULT 'en-US',
+  country_code TEXT,
+  intent TEXT,
+  source TEXT NOT NULL DEFAULT 'seed',
+  cluster_key TEXT,
+  volume_estimate INT,
+  difficulty_estimate INT,
+  cpc_estimate NUMERIC(10, 2),
+  trend JSONB DEFAULT '{}',
+  metadata JSONB DEFAULT '{}',
+  is_active BOOLEAN NOT NULL DEFAULT true,
+  last_measured_at TIMESTAMPTZ,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  UNIQUE (project_id, normalized_keyword, locale, country_code)
+);
+
+CREATE INDEX IF NOT EXISTS idx_keyword_corpus_project_active
+  ON keyword_corpus(project_id, is_active, updated_at DESC);
+CREATE INDEX IF NOT EXISTS idx_keyword_corpus_cluster
+  ON keyword_corpus(project_id, cluster_key);
+
+ALTER TABLE keyword_corpus ENABLE ROW LEVEL SECURITY;
+
+DROP POLICY IF EXISTS keyword_corpus_all ON keyword_corpus;
+CREATE POLICY keyword_corpus_all ON keyword_corpus FOR ALL
+  USING (project_id IN (SELECT id FROM projects WHERE organization_id IN (SELECT get_user_org_ids())));
+
+DROP TRIGGER IF EXISTS trg_keyword_corpus_updated ON keyword_corpus;
+CREATE TRIGGER trg_keyword_corpus_updated
+  BEFORE UPDATE ON keyword_corpus
+  FOR EACH ROW EXECUTE FUNCTION update_updated_at();
+
+
+-- ========== 0061_rank_schedules.sql ==========
+
+-- Phase 3: rank schedules for recurring rank checks and auditability.
+
+CREATE TABLE IF NOT EXISTS rank_schedules (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  project_id UUID NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+  organization_id UUID NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
+  name TEXT NOT NULL DEFAULT 'default',
+  cadence TEXT NOT NULL DEFAULT 'daily'
+    CHECK (cadence IN ('hourly', 'daily', 'weekly', 'monthly', 'manual')),
+  timezone TEXT NOT NULL DEFAULT 'UTC',
+  run_hour SMALLINT,
+  run_day_of_week SMALLINT,
+  run_day_of_month SMALLINT,
+  include_local_pack BOOLEAN NOT NULL DEFAULT true,
+  include_ai_surfaces BOOLEAN NOT NULL DEFAULT true,
+  config JSONB DEFAULT '{}',
+  is_active BOOLEAN NOT NULL DEFAULT true,
+  last_run_at TIMESTAMPTZ,
+  next_run_at TIMESTAMPTZ,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  UNIQUE (project_id, name)
+);
+
+CREATE TABLE IF NOT EXISTS rank_schedule_runs (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  schedule_id UUID NOT NULL REFERENCES rank_schedules(id) ON DELETE CASCADE,
+  project_id UUID NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+  status TEXT NOT NULL DEFAULT 'queued'
+    CHECK (status IN ('queued', 'running', 'completed', 'failed', 'partial')),
+  started_at TIMESTAMPTZ,
+  completed_at TIMESTAMPTZ,
+  result_summary JSONB DEFAULT '{}',
+  error_message TEXT,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE INDEX IF NOT EXISTS idx_rank_schedules_project_active
+  ON rank_schedules(project_id, is_active, next_run_at);
+CREATE INDEX IF NOT EXISTS idx_rank_schedule_runs_schedule
+  ON rank_schedule_runs(schedule_id, created_at DESC);
+
+ALTER TABLE rank_schedules ENABLE ROW LEVEL SECURITY;
+ALTER TABLE rank_schedule_runs ENABLE ROW LEVEL SECURITY;
+
+DROP POLICY IF EXISTS rank_schedules_all ON rank_schedules;
+CREATE POLICY rank_schedules_all ON rank_schedules FOR ALL
+  USING (project_id IN (SELECT id FROM projects WHERE organization_id IN (SELECT get_user_org_ids())));
+
+DROP POLICY IF EXISTS rank_schedule_runs_all ON rank_schedule_runs;
+CREATE POLICY rank_schedule_runs_all ON rank_schedule_runs FOR ALL
+  USING (project_id IN (SELECT id FROM projects WHERE organization_id IN (SELECT get_user_org_ids())));
+
+DROP TRIGGER IF EXISTS trg_rank_schedules_updated ON rank_schedules;
+CREATE TRIGGER trg_rank_schedules_updated
+  BEFORE UPDATE ON rank_schedules
+  FOR EACH ROW EXECUTE FUNCTION update_updated_at();
+
+
+-- ========== 0062_traffic_panel.sql ==========
+
+-- Phase 8: opt-in traffic panel observations (Layer 2 honest traffic intel).
+
+CREATE TABLE IF NOT EXISTS traffic_panel_observations (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  project_id UUID NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+  organization_id UUID NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
+  domain TEXT NOT NULL,
+  period_start DATE NOT NULL,
+  period_end DATE NOT NULL,
+  visits INT,
+  unique_visitors INT,
+  pageviews INT,
+  source TEXT NOT NULL DEFAULT 'pixel'
+    CHECK (source IN ('pixel', 'wordpress_plugin', 'agency_opt_in', 'manual')),
+  provenance TEXT NOT NULL DEFAULT 'panel_observed'
+    CHECK (provenance IN ('panel_observed', 'first_party_measured', 'unavailable')),
+  metadata JSONB DEFAULT '{}',
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE INDEX IF NOT EXISTS idx_traffic_panel_project_period
+  ON traffic_panel_observations(project_id, period_end DESC);
+
+ALTER TABLE traffic_panel_observations ENABLE ROW LEVEL SECURITY;
+
+DROP POLICY IF EXISTS traffic_panel_observations_all ON traffic_panel_observations;
+CREATE POLICY traffic_panel_observations_all ON traffic_panel_observations FOR ALL
+  USING (project_id IN (SELECT id FROM projects WHERE organization_id IN (SELECT get_user_org_ids())));
+
+-- Per-keyword rank schedule targets (extends 0061 project schedules).
+CREATE TABLE IF NOT EXISTS rank_schedule_keywords (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  schedule_id UUID NOT NULL REFERENCES rank_schedules(id) ON DELETE CASCADE,
+  project_id UUID NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+  keyword_id UUID REFERENCES rank_keywords(id) ON DELETE CASCADE,
+  keyword TEXT NOT NULL,
+  location TEXT NOT NULL DEFAULT 'United States',
+  device TEXT NOT NULL DEFAULT 'desktop' CHECK (device IN ('desktop', 'mobile')),
+  geo TEXT,
+  is_active BOOLEAN NOT NULL DEFAULT true,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  UNIQUE (schedule_id, keyword, location, device)
+);
+
+CREATE INDEX IF NOT EXISTS idx_rank_schedule_keywords_schedule
+  ON rank_schedule_keywords(schedule_id, is_active);
+
+ALTER TABLE rank_schedule_keywords ENABLE ROW LEVEL SECURITY;
+
+DROP POLICY IF EXISTS rank_schedule_keywords_all ON rank_schedule_keywords;
+CREATE POLICY rank_schedule_keywords_all ON rank_schedule_keywords FOR ALL
+  USING (project_id IN (SELECT id FROM projects WHERE organization_id IN (SELECT get_user_org_ids())));
 
 

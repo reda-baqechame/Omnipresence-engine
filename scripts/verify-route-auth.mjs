@@ -31,6 +31,7 @@ const ALLOWLIST = {
   "api/auth/setup-org/route.ts": "creates an org for the authenticated session user",
   "api/report/[token]/pdf/route.ts": "access gated by an unguessable report token",
   "api/public/audit/route.ts": "intentionally public anonymous audit (no tenant data read)",
+  "api/traffic-panel/ingest/route.ts": "opt-in pixel ingest gated by TRAFFIC_PANEL_INGEST_SECRET header",
 };
 
 function walk(dir) {

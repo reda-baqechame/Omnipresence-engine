@@ -17,6 +17,7 @@ const appUrl = (process.argv[2] || process.env.RAILWAY_APP_URL || process.env.NE
   .replace(/\/$/, "");
 const omnidataUrl = (process.argv[3] || process.env.OMNIDATA_PUBLIC_URL || process.env.OMNIDATA_BASE_URL || "")
   .replace(/\/$/, "");
+const aiCaptureUrl = (process.env.AI_UI_CAPTURE_URL || "").replace(/\/$/, "");
 
 let failures = 0;
 const ok = (m) => console.log(`  \u2713 ${m}`);
@@ -38,7 +39,8 @@ if (!appUrl) {
 
 console.log(`\nRailway stack verification`);
 console.log(`  app:      ${appUrl}`);
-console.log(`  omnidata: ${omnidataUrl || "(not provided)"}\n`);
+console.log(`  omnidata: ${omnidataUrl || "(not provided)"}`);
+console.log(`  ai-capture: ${aiCaptureUrl || "(not provided)"}\n`);
 
 // 1) App service health
 console.log("App service");
@@ -90,6 +92,22 @@ if (omnidataUrl && !/localhost|127\.0\.0\.1|0\.0\.0\.0/.test(omnidataUrl)) {
 } else if (omnidataUrl) {
   console.log("\nOmniData service");
   warn("OMNIDATA URL is localhost — skipping remote probe (set OMNIDATA_PUBLIC_URL for a real check)");
+}
+
+// 3) AI UI Capture service health
+if (aiCaptureUrl && !/localhost|127\.0\.0\.1|0\.0\.0\.0/.test(aiCaptureUrl)) {
+  console.log("\nAI UI Capture service");
+  try {
+    const { ok: healthy, status, json } = await fetchJson(`${aiCaptureUrl}/health`);
+    if (healthy && json?.ok) ok(`/health ${status} (${json.service})`);
+    else bad(`/health returned ${status}`);
+    if (json?.surfaceHealth) ok(`surface health stats present`);
+  } catch (e) {
+    bad(`ai-ui-capture health failed: ${e instanceof Error ? e.message : e}`);
+  }
+} else if (aiCaptureUrl) {
+  console.log("\nAI UI Capture service");
+  warn("AI_UI_CAPTURE_URL is localhost — skipping remote probe");
 }
 
 console.log("");

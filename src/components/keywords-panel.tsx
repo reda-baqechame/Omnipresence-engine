@@ -1,6 +1,8 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { EvidenceDrawer } from "@/components/evidence-drawer";
+import { ProvenanceBadge } from "@/components/provenance-badge";
 
 interface KeywordRow {
   id?: string;
@@ -290,7 +292,16 @@ export function KeywordsPanel({ projectId, industry = "" }: KeywordsPanelProps) 
             <tbody>
               {opportunities.slice(0, 25).map((row) => (
                 <tr key={row.keyword} className="border-t border-border/50">
-                  <td className="p-3">{row.keyword}</td>
+                  <td className="p-3">
+                    {row.keyword}
+                    <EvidenceDrawer projectId={projectId} capability="keyword" target={row.keyword} className="ml-1" />
+                    {row.volume_confidence && (
+                      <ProvenanceBadge
+                        quality={row.volume_confidence === "high" ? "measured" : "estimated"}
+                        className="ml-1"
+                      />
+                    )}
+                  </td>
                   <td className="p-3 text-right text-primary">{row.opportunity_score}</td>
                   <td className="p-3">
                     {row.volume_range && row.volume_range !== "n/a" ? (

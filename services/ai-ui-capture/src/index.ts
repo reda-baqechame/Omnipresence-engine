@@ -2,6 +2,9 @@ import express from "express";
 import { verifyAuth, assertProductionAuth } from "./auth.js";
 import { capture, isBlocked, type Surface, type CaptureOptions } from "./capture.js";
 import { analyzeCapture } from "./analyze.js";
+import { getSurfaceHealthSnapshot, markSurfaceBlocked, markSurfaceFailed, markSurfaceSuccess, markSurfaceUngrounded } from "./surface-health.js";
+import { retryWithExponentialBackoff } from "./retry-policy.js";
+import { writeCaptureEvidence } from "./evidence-writer.js";
 
 // Fail fast on insecure production config before binding the port.
 assertProductionAuth();
@@ -12,12 +15,20 @@ app.use(express.json({ limit: "1mb" }));
 
 // Public, unauthenticated health endpoint for container/orchestrator probes.
 app.get("/health", (_req, res) => {
-  res.json({ ok: true, service: "ai-ui-capture", version: "0.1.0" });
+  res.json({ ok: true, service: "ai-ui-capture", version: "0.2.0", surfaceHealth: getSurfaceHealthSnapshot() });
 });
 
 app.use(verifyAuth);
 
 const VALID_SURFACES: Surface[] = ["chatgpt", "gemini", "perplexity", "google_ai_overview", "bing_copilot"];
+const RETRY_ATTEMPTS = Number(process.env.AI_UI_CAPTURE_RETRY_ATTEMPTS || 3);
+
+function shouldRetryCapture(result: Awaited<ReturnType<typeof capture>>): boolean {
+  if (!result) return true;
+  if (!isBlocked(result)) return false;
+  const reason = (result.reason || "").toLowerCase();
+  return reason.includes("rate") || reason.includes("traffic") || reason.includes("timeout");
+}
 
 /**
  * POST /capture
@@ -53,17 +64,43 @@ app.post("/capture", async (req, res) => {
   }
 
   const options: CaptureOptions = { geo, locale, timezone, persona, withEvidence };
+  const selectedSurface = surface as Surface;
 
   try {
-    const raw = await capture(surface as Surface, prompt, options);
+    const raw = await retryWithExponentialBackoff(
+      () => capture(selectedSurface, prompt, options),
+      {
+        attempts: RETRY_ATTEMPTS,
+        shouldRetry: (_error, _attempt, result) => shouldRetryCapture(result ?? null),
+      }
+    );
+
     if (!raw) {
       // Not grounded (login required, selector miss). Never fabricate.
+      markSurfaceUngrounded(selectedSurface);
       return res.status(204).end();
     }
     if (isBlocked(raw)) {
       // Rate-limited / captcha / consent wall — honest "unavailable", not a fake answer.
+      markSurfaceBlocked(selectedSurface);
       return res.status(409).json({ blocked: true, reason: raw.reason });
     }
+
+    let evidencePaths: Awaited<ReturnType<typeof writeCaptureEvidence>> | null = null;
+    try {
+      evidencePaths = await writeCaptureEvidence({
+        surface: selectedSurface,
+        responseHash: raw.responseHash,
+        answer: raw.answer,
+        citedUrls: raw.citedUrls,
+        screenshotBase64: raw.screenshotBase64,
+        domHtml: raw.domHtml,
+      });
+    } catch {
+      // Evidence persistence is best-effort; capture response still succeeds.
+    }
+
+    markSurfaceSuccess(selectedSurface);
     const analysis = analyzeCapture(raw.answer, raw.citedUrls, brandName, brandDomain, competitors || []);
     // Pass evidence + provenance through so the app persists it (ai_capture_evidence).
     return res.json({
@@ -72,9 +109,11 @@ app.post("/capture", async (req, res) => {
       screenshotBase64: raw.screenshotBase64 ?? null,
       domHtml: raw.domHtml ?? null,
       captureContext: raw.context,
+      evidencePaths,
     });
   } catch (err) {
     console.error("capture failed", err);
+    markSurfaceFailed(selectedSurface);
     return res.status(502).json({ error: "capture failed" });
   }
 });

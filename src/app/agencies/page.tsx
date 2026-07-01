@@ -40,8 +40,8 @@ export default function AgenciesPage() {
           },
           {
             icon: Users,
-            title: "Unlimited Client Projects",
-            desc: "One free account covers all your clients. No per-seat or per-audit fees.",
+            title: "Multi-Client Projects",
+            desc: "One agency account manages all client projects. Agency plans scale with your portfolio.",
           },
           {
             icon: BarChart3,
