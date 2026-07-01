@@ -20,6 +20,8 @@ const appUrl = (process.argv[2] || process.env.RAILWAY_APP_URL || process.env.SM
 const omnidataUrl = (process.argv[3] || process.env.OMNIDATA_PUBLIC_URL || process.env.OMNIDATA_BASE_URL || "")
   .replace(/\/$/, "");
 const aiCaptureUrl = (process.env.AI_UI_CAPTURE_URL || "").replace(/\/$/, "");
+/** Health is at service root; Vercel env often stores the /capture route URL. */
+const aiCaptureBase = aiCaptureUrl.replace(/\/capture$/i, "");
 
 let failures = 0;
 const ok = (m) => console.log(`  \u2713 ${m}`);
@@ -69,7 +71,7 @@ if (!appUrl) {
 console.log(`\nRailway stack verification`);
 console.log(`  app:      ${appUrl}`);
 console.log(`  omnidata: ${omnidataUrl || "(not provided)"}`);
-console.log(`  ai-capture: ${aiCaptureUrl || "(not provided)"}\n`);
+console.log(`  ai-capture: ${aiCaptureBase || aiCaptureUrl || "(not provided)"}\n`);
 
 // 1) App service health
 console.log("App service");
@@ -124,10 +126,10 @@ if (omnidataUrl && !/localhost|127\.0\.0\.1|0\.0\.0\.0/.test(omnidataUrl)) {
 }
 
 // 3) AI UI Capture service health
-if (aiCaptureUrl && !/localhost|127\.0\.0\.1|0\.0\.0\.0/.test(aiCaptureUrl)) {
+if (aiCaptureBase && !/localhost|127\.0\.0\.1|0\.0\.0\.0/.test(aiCaptureBase)) {
   console.log("\nAI UI Capture service");
   try {
-    const { ok: healthy, status, json } = await fetchJson(`${aiCaptureUrl}/health`);
+    const { ok: healthy, status, json } = await fetchJson(`${aiCaptureBase}/health`);
     if (healthy && json?.ok) ok(`/health ${status} (${json.service})`);
     else bad(`/health returned ${status}`);
     if (json?.surfaceHealth) ok(`surface health stats present`);

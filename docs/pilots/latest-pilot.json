@@ -1,0 +1,236 @@
+{
+  "generatedAt": "2026-07-01T17:44:15.543Z",
+  "domain": "example.com",
+  "base": "https://omnipresence-engine.vercel.app",
+  "projectId": null,
+  "audit": {
+    "domain": "example.com",
+    "email": "pilot@presenceos.local",
+    "score": {
+      "omnipresence": 12.42,
+      "ai_visibility": 0,
+      "search_visibility": 0,
+      "technical_readiness": 35,
+      "critical_issues": 2,
+      "data_mode": "measured",
+      "measured_rate": 0.25,
+      "availability": {
+        "ai_visibility": false,
+        "search_visibility": false,
+        "technical_readiness": true
+      }
+    },
+    "criticalIssues": 2,
+    "topIssues": [
+      {
+        "category": "sitemap",
+        "severity": "high",
+        "title": "No sitemap found",
+        "description": "No sitemap.xml or sitemap_index.xml detected.",
+        "impact": "Search engines may miss pages during crawling.",
+        "fix_recommendation": "Create and submit a sitemap.xml with all important URLs.",
+        "affected_url": "https://example.com/sitemap.xml"
+      },
+      {
+        "category": "schema",
+        "severity": "high",
+        "title": "No structured data found",
+        "description": "No JSON-LD schema markup detected on this page.",
+        "impact": "AI systems and search engines have less structured context about your business.",
+        "fix_recommendation": "Add Organization and relevant schema types (FAQ, Product, LocalBusiness) using JSON-LD.",
+        "affected_url": "https://example.com"
+      }
+    ],
+    "visibility": {
+      "mentionRate": 0,
+      "citationRate": 0,
+      "measuredRate": 0.25,
+      "sample": [
+        {
+          "engine": "google_organic",
+          "prompt_text": "example reviews",
+          "brand_mentioned": false,
+          "brand_cited": false,
+          "source_domains": []
+        },
+        {
+          "engine": "google_ai_overview",
+          "prompt_text": "example reviews",
+          "brand_mentioned": false,
+          "brand_cited": false,
+          "source_domains": []
+        },
+        {
+          "engine": "chatgpt",
+          "prompt_text": "example reviews",
+          "brand_mentioned": false,
+          "brand_cited": false,
+          "source_domains": []
+        },
+        {
+          "engine": "claude",
+          "prompt_text": "example reviews",
+          "brand_mentioned": false,
+          "brand_cited": false,
+          "source_domains": []
+        },
+        {
+          "engine": "google_organic",
+          "prompt_text": "business reviews",
+          "brand_mentioned": false,
+          "brand_cited": false,
+          "source_domains": []
+        }
+      ]
+    },
+    "authorityOpportunities": [
+      {
+        "type": "reddit_mention",
+        "target_site": "reddit.com",
+        "pitch_angle": "Educational answer opportunity for: \"example reviews\". Draft for human review before posting.",
+        "estimated_impact": 70
+      },
+      {
+        "type": "quora_mention",
+        "target_site": "quora.com",
+        "pitch_angle": "Quora answer opportunity for: \"example reviews\". Draft for human review.",
+        "estimated_impact": 65
+      }
+    ],
+    "coverageGaps": [
+      "LinkedIn",
+      "X (Twitter)",
+      "Facebook",
+      "Instagram",
+      "TikTok",
+      "YouTube",
+      "Reddit",
+      "Quora"
+    ],
+    "coverageItems": [
+      {
+        "platform_name": "LinkedIn",
+        "is_present": false,
+        "is_optimized": false,
+        "competitor_present": false,
+        "surface": "linkedin",
+        "data_quality": "measured"
+      },
+      {
+        "platform_name": "X (Twitter)",
+        "is_present": false,
+        "is_optimized": false,
+        "competitor_present": false,
+        "surface": "x_twitter",
+        "data_quality": "measured"
+      },
+      {
+        "platform_name": "Facebook",
+        "is_present": false,
+        "is_optimized": false,
+        "competitor_present": false,
+        "surface": "facebook",
+        "data_quality": "measured"
+      },
+      {
+        "platform_name": "Instagram",
+        "is_present": false,
+        "is_optimized": false,
+        "competitor_present": false,
+        "surface": "instagram",
+        "data_quality": "measured"
+      },
+      {
+        "platform_name": "TikTok",
+        "is_present": false,
+        "is_optimized": false,
+        "competitor_present": false,
+        "surface": "tiktok",
+        "data_quality": "measured"
+      },
+      {
+        "platform_name": "YouTube",
+        "is_present": false,
+        "is_optimized": false,
+        "competitor_present": false,
+        "surface": "youtube",
+        "data_quality": "measured"
+      },
+      {
+        "platform_name": "Reddit",
+        "is_present": false,
+        "is_optimized": false,
+        "competitor_present": false,
+        "surface": "reddit",
+        "data_quality": "measured"
+      },
+      {
+        "platform_name": "Quora",
+        "is_present": false,
+        "is_optimized": false,
+        "competitor_present": false,
+        "surface": "quora",
+        "data_quality": "measured"
+      },
+      {
+        "platform_name": "G2",
+        "is_present": false,
+        "is_optimized": false,
+        "competitor_present": false,
+        "surface": "g2",
+        "data_quality": "measured"
+      },
+      {
+        "platform_name": "Capterra",
+        "is_present": false,
+        "is_optimized": false,
+        "competitor_present": false,
+        "surface": "capterra",
+        "data_quality": "measured"
+      },
+      {
+        "platform_name": "Trustpilot",
+        "is_present": false,
+        "is_optimized": false,
+        "competitor_present": false,
+        "surface": "trustpilot",
+        "data_quality": "measured"
+      },
+      {
+        "platform_name": "Yelp",
+        "is_present": false,
+        "is_optimized": false,
+        "competitor_present": false,
+        "surface": "yelp",
+        "data_quality": "measured"
+      },
+      {
+        "platform_name": "Google Business Profile",
+        "is_present": false,
+        "is_optimized": false,
+        "competitor_present": false,
+        "surface": "google_business",
+        "data_quality": "measured"
+      }
+    ],
+    "competitorGaps": 0,
+    "backlinkCount": null,
+    "backlinksAvailable": false,
+    "serpPresence": false,
+    "authority": {
+      "rating": 74,
+      "referringDomains": 0,
+      "domainAgeYears": 30.9,
+      "sources": [
+        "tranco",
+        "domain_age"
+      ]
+    },
+    "liveData": true,
+    "dataMode": "measured",
+    "providersConfigured": 8,
+    "message": "Live audit with real SERP/AI visibility data. Sign up for full competitor tracking and 90-day execution roadmap."
+  },
+  "evidenceCount": 0,
+  "evidenceHashes": []
+}

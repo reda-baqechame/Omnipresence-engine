@@ -220,3 +220,114 @@
   }
 }
 ```
+
+## ship-10-10 2026-07-01T17:39:32.718Z
+```json
+{
+  "at": "2026-07-01T17:39:32.718Z",
+  "gate": "NOT_READY",
+  "steps": {
+    "verify:all": true,
+    "ship-infra": true,
+    "railway:verify": false,
+    "production:ready": true,
+    "check-claims-backed": false,
+    "generate-case-studies": true
+  }
+}
+```
+
+## Vercel + Railway production stack 2026-07-01T17:55:00.000Z
+```json
+{
+  "at": "2026-07-01T17:55:00.000Z",
+  "railway": {
+    "volume": "omnipresence-engine-volume @ /data (5GB hobby — Live Resize to 20GB+ recommended for full DuckDB index)",
+    "services": {
+      "omnipresence-engine": "https://omnipresence-engine-production.up.railway.app",
+      "omnidata-worker": "deployed (node dist/worker.js, Redis + shared secrets)",
+      "ai-ui-capture": "https://ai-ui-capture-production.up.railway.app (Supabase evidence upload wired)"
+    },
+    "webgraph": {
+      "release": "cc-main-2024-aug-sep-oct",
+      "ingest": "streaming in progress (vertices → edges → ranks, no gzip staging)",
+      "status_endpoint": "/v3/backlinks/webgraph/status"
+    }
+  },
+  "vercel": {
+    "url": "https://omnipresence-engine.vercel.app",
+    "COMMONCRAWL_WEBGRAPH_RELEASE": "cc-main-2024-aug-sep-oct",
+    "redeployed": true
+  },
+  "github_secrets": ["SMOKE_BASE_URL", "OMNIDATA_BASE_URL", "OMNIDATA_API_KEY", "AI_UI_CAPTURE_URL"],
+  "gates": {
+    "railway:verify": true,
+    "production:ready": true,
+    "check-claims-backed_strict": "11/12 (attribution_proof needs GOOGLE_CLIENT_ID/SECRET)",
+    "ship:pilot": true,
+    "ship:case-studies_strict": true
+  },
+  "blockers": [
+    "Google Cloud OAuth app for GSC/GA4 (attribution_proof claim 12/12)",
+    "Webgraph ingest runtime ~30–90 min; confirm webgraph_ready:true when complete"
+  ]
+}
+```
+
+## Production hardening 2026-07-01T21:05:00.000Z
+```json
+{
+  "at": "2026-07-01T21:05:00.000Z",
+  "fixes": [
+    "Auth: /auth/callback + signup emailRedirectTo + login callback errors (useSyncExternalStore)",
+    "Webgraph: isWebgraphReady requires meta counts > 0 + not in-flight; test seeds meta",
+    "Webgraph: client getWebgraphStatus rejects ready when counts=0 or ingest running",
+    "Lint: login page no setState-in-effect",
+    "ensure-prod-env: skip false OMNIDATA missing when live /api/health shows ok"
+  ],
+  "gates": {
+    "verify:all": true,
+    "production:ready": true,
+    "railway:verify": true,
+    "check-claims-backed_strict": "11/12 (attribution_proof needs Google OAuth)",
+    "webgraph_ingest": "~810M+ edges streamed; deploy OmniData fix after edges complete"
+  },
+  "user_action": [
+    "Supabase → Auth → URL config: Site URL + redirect https://omnipresence-engine.vercel.app/auth/callback",
+    "Optional: GOOGLE_CLIENT_ID/SECRET for attribution_proof 12/12",
+    "Optional: Railway volume Live Resize to 20GB+ if ENOSPC during ingest"
+  ]
+}
+```
+
+## ship-10-10 2026-07-01T21:22:16.692Z
+```json
+{
+  "at": "2026-07-01T21:22:16.692Z",
+  "gate": "NOT_READY",
+  "steps": {
+    "verify:all": true,
+    "ship-infra": "skipped",
+    "railway:verify": true,
+    "production:ready": false,
+    "check-claims-backed": false,
+    "generate-case-studies": true
+  }
+}
+```
+
+## ship-10-10 2026-07-01T21:44:03.509Z
+```json
+{
+  "at": "2026-07-01T21:44:03.509Z",
+  "gate": "NOT_READY",
+  "steps": {
+    "verify:all": true,
+    "ship-infra": "skipped",
+    "railway:verify": true,
+    "production:ready": true,
+    "check-claims-backed": false,
+    "generate-case-studies": true
+  }
+}
+```

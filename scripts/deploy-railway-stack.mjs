@@ -6,7 +6,7 @@
  * Usage: node scripts/deploy-railway-stack.mjs [--deploy-vercel]
  */
 import { spawnSync } from "child_process";
-import { readFileSync, existsSync, unlinkSync } from "fs";
+import { readFileSync, existsSync, unlinkSync, copyFileSync, renameSync } from "fs";
 import { join, dirname } from "path";
 import { fileURLToPath } from "url";
 import { randomBytes } from "crypto";
@@ -49,12 +49,92 @@ if (!existsSync(join(root, ".railway"))) {
 
 const omnidataDir = join(root, "services", "omnidata");
 const captureDir = join(root, "services", "ai-ui-capture");
+const forceOmnidata = process.argv.includes("--force-omnidata");
 
-console.log("\nDeploying OmniData API…");
-railwayCmd(["up", "--detach"], { cwd: omnidataDir });
+async function isWebgraphIngestRunning(baseUrl, apiKey) {
+  if (!baseUrl || !apiKey) return false;
+  try {
+    const res = await fetch(`${baseUrl.replace(/\/$/, "")}/v3/backlinks/webgraph/status`, {
+      headers: { "x-api-key": apiKey },
+      signal: AbortSignal.timeout(15_000),
+    });
+    if (!res.ok) return false;
+    const body = await res.json();
+    const row = body?.tasks?.[0]?.result?.[0];
+    return Boolean(row?.ingest_in_progress);
+  } catch {
+    return false;
+  }
+}
+
+const omnidataPublic =
+  process.env.OMNIDATA_PUBLIC_URL ||
+  process.env.OMNIDATA_BASE_URL ||
+  "https://omnipresence-engine-production.up.railway.app";
+const omnidataApiKey = process.env.OMNIDATA_API_KEY || "";
+const ingestRunning = await isWebgraphIngestRunning(omnidataPublic, omnidataApiKey);
+
+if (ingestRunning && !forceOmnidata) {
+  console.log("\n⚠ Webgraph ingest in progress — skipping OmniData API redeploy (would abort ingest).");
+  console.log("  Redeploy after ingest: node scripts/deploy-railway-stack.mjs --force-omnidata\n");
+} else {
+  console.log("\nDeploying OmniData API…");
+  railwayCmd(["up", "--detach"], { cwd: omnidataDir });
+}
 
 console.log("\nDeploying ai-ui-capture…");
 railwayCmd(["up", "--detach"], { cwd: captureDir });
+
+// --- Volume + worker (Railway hardening) ---
+console.log("\nEnsuring /data volume on omnipresence-engine…");
+railwayCmd(["service", "link", "omnipresence-engine"], { cwd: omnidataDir, capture: true });
+const volList = railwayCmd(["volume", "list"], { cwd: omnidataDir, capture: true });
+if (!volList.out.includes("omnipresence-engine")) {
+  const volAdd = railwayCmd(["volume", "add", "--mount-path", "/data", "--json"], {
+    cwd: omnidataDir,
+    capture: true,
+  });
+  if (volAdd.ok) console.log("  ✓ Created omnipresence-engine-volume at /data");
+  else console.warn("  ⚠ Volume add failed — attach /data in Railway UI if missing");
+} else {
+  console.log("  ✓ Volume already attached to omnipresence-engine");
+}
+console.log(
+  "  ℹ Common Crawl domain webgraph needs 20GB+ volume (Live Resize in Railway UI). Hobby caps at 5GB."
+);
+
+console.log("\nEnsuring omnidata-worker service…");
+const svcList = railwayCmd(["service", "list", "--json"], { cwd: omnidataDir, capture: true });
+const hasWorker = svcList.out.includes("omnidata-worker");
+if (!hasWorker) {
+  railwayCmd(["add", "--service", "omnidata-worker", "--json"], { cwd: omnidataDir, capture: true });
+  console.log("  ✓ Created omnidata-worker");
+}
+
+function deployWorker(omnidataKey, signingSecret, redisUrl) {
+  const workerVars = {
+    REDIS_URL: redisUrl || "${{Redis.REDIS_URL}}",
+    OMNIDATA_API_KEY: omnidataKey,
+    OMNIDATA_SIGNING_SECRET: signingSecret,
+    WEBGRAPH_DB_PATH: "/data/webgraph.duckdb",
+  };
+  for (const [k, v] of Object.entries(workerVars)) {
+    railwayCmd(["variable", "set", `${k}=${v}`, "--service", "omnidata-worker"], {
+      cwd: omnidataDir,
+      capture: true,
+    });
+  }
+  // Railway allows one volume per service; webgraph ingest runs on the API
+  // service where /data is mounted. Worker handles BullMQ queue jobs only.
+  const apiCfg = join(omnidataDir, "railway.json");
+  const workerCfg = join(omnidataDir, "railway.worker.json");
+  const bakCfg = join(omnidataDir, "railway.api.json.bak");
+  copyFileSync(apiCfg, bakCfg);
+  copyFileSync(workerCfg, apiCfg);
+  railwayCmd(["up", "--detach", "-s", "omnidata-worker"], { cwd: omnidataDir });
+  renameSync(bakCfg, apiCfg);
+  console.log("  ✓ Deployed omnidata-worker (node dist/worker.js)");
+}
 
 console.log("\nFetching public domains (may take ~60s after first deploy)…");
 const omnidataDomain = railwayCmd(["domain", "list", "--service", "omnipresence-engine", "--json"], { capture: true });
@@ -119,6 +199,8 @@ for (const [service, vars] of [
       OMNIDATA_API_KEY: omnidataKey,
       OMNIDATA_SIGNING_SECRET: signingSecret,
       OMNIDATA_ENABLE_WORKER: "false",
+      WEBGRAPH_INGEST_MODE: "ranks-only",
+      WEBGRAPH_DB_PATH: "/data/webgraph.duckdb",
       ...serpVars,
     },
   ],
@@ -129,6 +211,19 @@ for (const [service, vars] of [
     console.log(`  ✓ Railway ${service}.${k}`);
   }
 }
+
+const redisVar = railwayCmd(["variable", "list", "--service", "omnipresence-engine", "--json"], {
+  cwd: omnidataDir,
+  capture: true,
+});
+let redisUrl = "";
+try {
+  const parsed = JSON.parse(redisVar.out.trim());
+  redisUrl = parsed.REDIS_URL || "";
+} catch {
+  /* use template fallback */
+}
+deployWorker(omnidataKey, signingSecret, redisUrl);
 
 const wireArgs = [
   "scripts/wire-railway-prod.mjs",

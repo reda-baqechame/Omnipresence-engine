@@ -14,7 +14,7 @@ import { findContentGaps } from "../engines/content-gaps.js";
 import { findBacklinkGaps } from "../engines/backlink-gaps.js";
 import { runMapsLive } from "../engines/maps-serp.js";
 import { getRankHistoryHydrated } from "../store.js";
-import { isWebgraphReady, getWebgraphMeta, triggerIngestAsync, isIngestInFlight, getDomainAuthority, getReferringDomainCount } from "../engines/webgraph.js";
+import { isWebgraphReady, getWebgraphMeta, triggerIngestAsync, isIngestInFlight, isWebgraphEdgesReady, getDomainAuthority, getReferringDomainCount } from "../engines/webgraph.js";
 import { getKeywordMetrics, hasKeywordPlanner, type GoogleAdsCreds } from "../engines/keyword-planner.js";
 import { getTrends } from "../engines/trends.js";
 import { detectTechStack } from "../engines/techstack.js";
@@ -350,6 +350,7 @@ router.post("/v3/clustering/topics/live", async (req, res) => {
 
 router.get("/v3/backlinks/webgraph/status", async (_req, res) => {
   const ready = await isWebgraphReady();
+  const edgesReady = await isWebgraphEdgesReady();
   const meta = await getWebgraphMeta();
   res.json(
     dfsResponse([
@@ -357,7 +358,9 @@ router.get("/v3/backlinks/webgraph/status", async (_req, res) => {
         result: [
           {
             webgraph_ready: ready,
+            edges_ready: edgesReady,
             ingest_in_progress: isIngestInFlight(),
+            ingest_mode: process.env.WEBGRAPH_INGEST_MODE || "full",
             release: meta?.release ?? null,
             ingested_at: meta?.ingested_at ?? null,
             vertex_count: meta?.vertex_count ?? 0,

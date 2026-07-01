@@ -45,14 +45,22 @@ export async function getWebgraphStatus(): Promise<WebgraphStatus> {
     edge_count?: number;
   }>>("/backlinks/webgraph/status");
   const r = firstResult(env);
+  const vertexCount = Number(r?.vertex_count ?? 0);
+  const edgeCount = Number(r?.edge_count ?? 0);
+  const ingestInProgress = Boolean(r?.ingest_in_progress);
+  const ready =
+    Boolean(r?.webgraph_ready) &&
+    !ingestInProgress &&
+    vertexCount > 0 &&
+    edgeCount > 0;
   return {
     available: true,
-    ready: Boolean(r?.webgraph_ready),
-    ingestInProgress: Boolean(r?.ingest_in_progress),
+    ready,
+    ingestInProgress,
     release: r?.release ?? null,
     ingestedAt: r?.ingested_at ?? null,
-    vertexCount: Number(r?.vertex_count ?? 0),
-    edgeCount: Number(r?.edge_count ?? 0),
+    vertexCount,
+    edgeCount,
   };
 }
 

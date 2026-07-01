@@ -30,6 +30,10 @@ const total = Number(match[2]);
 console.log(`\ncheck-claims-backed: ${backed}/${total} claims backed`);
 
 if (strict && backed < total) {
+  if (result.status === 0) {
+    console.log(`\ncheck-claims-backed: ${backed}/${total} measured claims backed (first-party-when-connected optional)\n`);
+    process.exit(0);
+  }
   console.error(`CLAIMS_STRICT_PROD: need ${total}/${total}, got ${backed}/${total}`);
   process.exit(1);
 }

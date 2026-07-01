@@ -48,7 +48,17 @@ if (!skipLive) {
   results.push([
     "check-claims-backed",
     run("check-claims-backed", "node", ["scripts/check-claims-backed.mjs"], {
-      env: { CLAIMS_STRICT_PROD: process.env.CLAIMS_STRICT_PROD || "1" },
+      env: {
+        CLAIMS_STRICT_PROD: process.env.CLAIMS_STRICT_PROD || "1",
+        ENABLE_AI_UI_CAPTURE: process.env.ENABLE_AI_UI_CAPTURE || "true",
+        AI_UI_CAPTURE_URL:
+          process.env.AI_UI_CAPTURE_URL ||
+          "https://ai-ui-capture-production.up.railway.app/capture",
+        OMNIDATA_BASE_URL:
+          process.env.OMNIDATA_BASE_URL ||
+          "https://omnipresence-engine-production.up.railway.app",
+        OMNIDATA_API_KEY: process.env.OMNIDATA_API_KEY || "",
+      },
     }),
   ]);
 }

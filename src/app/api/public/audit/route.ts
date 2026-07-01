@@ -11,6 +11,8 @@ import { apiError, readJsonBody } from "@/lib/security/api-response";
 import { runPublicAuditIntelligence } from "@/lib/engines/public-audit-scan";
 import { preferLiveData } from "@/lib/config/capabilities";
 
+export const maxDuration = 120;
+
 export async function POST(request: NextRequest) {
   const limited = await guardPublicEndpoint(request, "public-audit", 5, 60 * 60 * 1000);
   if (limited) return limited;

@@ -45,6 +45,12 @@ test("webgraph query layer returns real referring domains + authority", async (t
         (15, 2.2e7, 31, 0.001, 'org.wikipedia'),
         (5,  2.7e7, 7,  0.005, 'com.example');`
     );
+    await conn.run(
+      "CREATE OR REPLACE TABLE meta(release VARCHAR, ingested_at VARCHAR, vertex_count BIGINT, edge_count BIGINT);"
+    );
+    await conn.run(
+      "INSERT INTO meta VALUES ('test-release', '2024-01-01T00:00:00Z', 4, 5);"
+    );
 
     // 1) Real referring domains (inbound links), self excluded.
     const inbound = await wg.getInboundLinks("example.com", 100);

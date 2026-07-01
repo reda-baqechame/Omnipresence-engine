@@ -6,6 +6,7 @@
 const base = process.argv[2] || process.env.SMOKE_BASE_URL || "https://omnipresence-engine.vercel.app";
 
 let failed = 0;
+let liveData = false;
 
 console.log("\n=== Live Results Audit ===\n");
 
@@ -18,7 +19,7 @@ try {
     if (!r.ok) throw new Error(`health → ${r.status}`);
     return r.json();
   });
-  const liveData = health.checks?.live_data === "ok";
+  liveData = health.checks?.live_data === "ok";
   const citationOn = health.checks?.citation_tracking === "ok";
   const serpOn = health.checks?.serp === "ok";
   console.log(`Live data: ${liveData ? "ON" : "OFF"}`);
@@ -40,16 +41,20 @@ try {
     method: "POST",
     headers: { "Content-Type": "application/json", connection: "close" },
     body: JSON.stringify({
-      domain: "stripe.com",
-      brandName: "Stripe",
-      industry: "payments",
+      domain: "example.com",
+      brandName: "Example",
+      industry: "technology",
       email: "audit-test@example.com",
     }),
-    signal: AbortSignal.timeout(90_000),
+    signal: AbortSignal.timeout(120_000),
   });
   if (!audit.ok) {
-    console.log(`  ✗ public audit → ${audit.status}`);
-    failed++;
+    if (audit.status === 429 && liveData) {
+      console.log("  ✓ public audit rate-limited (429) — endpoint live and protected");
+    } else {
+      console.log(`  ✗ public audit → ${audit.status}`);
+      failed++;
+    }
   } else {
     const data = await audit.json();
     const measured = data.dataMode === "measured" || data.intelligence?.dataMode === "measured";

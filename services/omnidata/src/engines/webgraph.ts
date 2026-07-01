@@ -16,6 +16,12 @@
  *     <release>-domain-ranks.txt.gz      (harmonicc_pos harmonicc_val pr_pos pr_val host)
  */
 
+import { unlinkSync } from "node:fs";
+import { createInterface } from "node:readline";
+import { dirname, join } from "node:path";
+import { Readable } from "node:stream";
+import { createGunzip } from "node:zlib";
+
 const DB_PATH = process.env.WEBGRAPH_DB_PATH || "./data/webgraph.duckdb";
 const CC_BASE = "https://data.commoncrawl.org/projects/hyperlinkgraph";
 
@@ -35,6 +41,26 @@ interface DuckDBModule {
 
 let cachedConn: DuckDBConnection | null = null;
 let duckUnavailable = false;
+
+async function resetWebgraphDb(): Promise<void> {
+  cachedConn = null;
+  const dataDir = dirname(DB_PATH);
+  try {
+    const { readdir, rm } = await import("node:fs/promises");
+    for (const f of await readdir(dataDir)) {
+      if (f.startsWith("webgraph") || f.endsWith(".part")) {
+        await rm(join(dataDir, f), { force: true, recursive: true });
+      }
+    }
+  } catch {
+    try {
+      unlinkSync(DB_PATH);
+      unlinkSync(`${DB_PATH}.wal`);
+    } catch {
+      /* fresh ingest */
+    }
+  }
+}
 
 async function loadDuckDB(): Promise<DuckDBModule | null> {
   if (duckUnavailable) return null;
@@ -114,55 +140,131 @@ export interface InboundLink {
   link_count: number;
 }
 
+function sqlStr(s: string): string {
+  return `'${s.replace(/'/g, "''")}'`;
+}
+
+async function openGzipLineStream(url: string): Promise<AsyncIterable<string>> {
+  const res = await fetch(url);
+  if (!res.ok || !res.body) throw new Error(`HTTP ${res.status} for ${url}`);
+  const webBody = res.body as import("stream/web").ReadableStream<Uint8Array>;
+  const input = Readable.fromWeb(webBody).pipe(createGunzip());
+  return createInterface({ input, crlfDelay: Infinity });
+}
+
+/** Stream vertex file into DuckDB without staging gzip on disk. */
+async function streamVerticesFromGzipUrl(conn: DuckDBConnection, url: string): Promise<void> {
+  console.log("[webgraph] streaming vertices…");
+  await conn.run("CREATE OR REPLACE TABLE vertices(id BIGINT, rev_host VARCHAR);");
+  const rl = await openGzipLineStream(url);
+  let batch: string[] = [];
+  let lines = 0;
+  for await (const line of rl) {
+    const tab = line.indexOf("\t");
+    if (tab <= 0) continue;
+    const id = line.slice(0, tab);
+    const rest = line.slice(tab + 1);
+    const tab2 = rest.indexOf("\t");
+    const rev = tab2 >= 0 ? rest.slice(0, tab2) : rest;
+    if (!id || !rev) continue;
+    batch.push(`(${id},${sqlStr(rev)})`);
+    lines++;
+    if (batch.length >= 50_000) {
+      await conn.run(`INSERT INTO vertices VALUES ${batch.join(",")};`);
+      batch = [];
+    }
+  }
+  if (batch.length) await conn.run(`INSERT INTO vertices VALUES ${batch.join(",")};`);
+  console.log(`[webgraph] vertices complete: ${lines.toLocaleString()} lines`);
+}
+
+/** Stream multi-GB edge files into DuckDB without staging the full gzip on disk. */
+async function streamEdgesFromGzipUrl(conn: DuckDBConnection, url: string): Promise<void> {
+  console.log("[webgraph] streaming edges…");
+  await conn.run("CREATE OR REPLACE TABLE edges(from_id BIGINT, to_id BIGINT);");
+  const rl = await openGzipLineStream(url);
+  let batch: string[] = [];
+  let lines = 0;
+  for await (const line of rl) {
+    const tab = line.indexOf("\t");
+    if (tab <= 0) continue;
+    const from = line.slice(0, tab);
+    const to = line.slice(tab + 1);
+    if (!from || !to) continue;
+    batch.push(`(${from},${to})`);
+    lines++;
+    if (batch.length >= 50_000) {
+      await conn.run(`INSERT INTO edges VALUES ${batch.join(",")};`);
+      batch = [];
+      if (lines % 5_000_000 === 0) console.log(`[webgraph] edges streamed: ${lines.toLocaleString()} lines`);
+    }
+  }
+  if (batch.length) await conn.run(`INSERT INTO edges VALUES ${batch.join(",")};`);
+  console.log(`[webgraph] edges complete: ${lines.toLocaleString()} lines`);
+}
+
+/** Stream ranks (best-effort authority index). */
+async function streamRanksFromGzipUrl(conn: DuckDBConnection, url: string): Promise<void> {
+  console.log("[webgraph] streaming ranks…");
+  await conn.run(
+    "CREATE OR REPLACE TABLE ranks(harmonic_pos BIGINT, harmonic_val DOUBLE, pr_pos BIGINT, pr_val DOUBLE, rev_host VARCHAR);"
+  );
+  const rl = await openGzipLineStream(url);
+  let batch: string[] = [];
+  let lines = 0;
+  for await (const line of rl) {
+    if (!line || line.startsWith("#")) continue;
+    const parts = line.split("\t");
+    if (parts.length < 5) continue;
+    const [hPos, hVal, prPos, prVal, rev] = parts;
+    if (!rev || !hPos) continue;
+    batch.push(`(${hPos},${hVal},${prPos},${prVal},${sqlStr(rev)})`);
+    lines++;
+    if (batch.length >= 50_000) {
+      await conn.run(`INSERT INTO ranks VALUES ${batch.join(",")};`);
+      batch = [];
+    }
+  }
+  if (batch.length) await conn.run(`INSERT INTO ranks VALUES ${batch.join(",")};`);
+  console.log(`[webgraph] ranks complete: ${lines.toLocaleString()} lines`);
+}
+
 /** Build the DuckDB index from a Common Crawl domain webgraph release (heavy, one-time). */
 export async function ingestWebgraph(release: string): Promise<{ ok: boolean; message: string }> {
+  await resetWebgraphDb();
   const conn = await getConnection();
   if (!conn) return { ok: false, message: "DuckDB unavailable (install @duckdb/node-api)" };
 
   const rel = sanitizeRelease(release);
   const base = `${CC_BASE}/${rel}/domain/${rel}-domain`;
+  const mode = (process.env.WEBGRAPH_INGEST_MODE || "full").toLowerCase();
 
   try {
-    await conn.run("INSTALL httpfs; LOAD httpfs;");
-    // Domain vertices are TAB-separated ⟨id, rev_domain, num_hosts⟩ (3 cols on
-    // recent releases, 2 on older ones — null_padding handles both). Headerless.
-    await conn.run(
-      `CREATE OR REPLACE TABLE vertices AS
-         SELECT TRY_CAST(column0 AS BIGINT) AS id, column1 AS rev_host
-         FROM read_csv('${base}-vertices.txt.gz', delim='\t', header=false,
-                       ignore_errors=true, null_padding=true,
-                       columns={'column0':'VARCHAR','column1':'VARCHAR','column2':'VARCHAR'})
-        WHERE column0 IS NOT NULL AND column1 IS NOT NULL;`
-    );
-    // Edges are TAB-separated ⟨from_id, to_id⟩, headerless.
-    await conn.run(
-      `CREATE OR REPLACE TABLE edges AS
-         SELECT TRY_CAST(column0 AS BIGINT) AS from_id, TRY_CAST(column1 AS BIGINT) AS to_id
-         FROM read_csv('${base}-edges.txt.gz', delim='\t', header=false,
-                       ignore_errors=true, null_padding=true,
-                       columns={'column0':'VARCHAR','column1':'VARCHAR'})
-        WHERE column0 IS NOT NULL AND column1 IS NOT NULL;`
-    );
-    await conn.run("CREATE INDEX IF NOT EXISTS idx_edges_to ON edges(to_id);");
-    // Authority ranks (harmonic centrality + pagerank) — the part that lets us
-    // attach a real, free authority score to every referring domain. The real
-    // Common Crawl file is TAB-separated with a '#'-prefixed header row and SIX
-    // columns: harmonicc_pos, harmonicc_val, pr_pos, pr_val, host_rev, n_hosts.
-    // comment='#' drops the header; TRY_CAST tolerates the long-tail rows.
-    // Best-effort: a missing/changed ranks file must not fail the core ingest.
-    try {
+    if (mode === "ranks-only") {
+      console.log("[webgraph] ranks-only mode (fits 5GB Railway volume — authority index, no backlink edges)");
+      await streamRanksFromGzipUrl(conn, `${base}-ranks.txt.gz`);
+      await conn.run("CREATE INDEX IF NOT EXISTS idx_ranks_host ON ranks(rev_host);");
+      const r = await conn.runAndReadAll("SELECT COUNT(*) AS c FROM ranks");
+      const rankCount = Number(r.getRowObjects()[0]?.c ?? 0);
+      if (rankCount === 0) {
+        return { ok: false, message: `Ranks ingest empty for release "${rel}"` };
+      }
       await conn.run(
-        `CREATE OR REPLACE TABLE ranks AS
-           SELECT TRY_CAST(column0 AS BIGINT) AS harmonic_pos,
-                  TRY_CAST(column1 AS DOUBLE) AS harmonic_val,
-                  TRY_CAST(column2 AS BIGINT) AS pr_pos,
-                  TRY_CAST(column3 AS DOUBLE) AS pr_val,
-                  column4 AS rev_host
-           FROM read_csv('${base}-ranks.txt.gz', delim='\t', header=false, comment='#',
-                         ignore_errors=true, null_padding=true,
-                         columns={'column0':'VARCHAR','column1':'VARCHAR','column2':'VARCHAR','column3':'VARCHAR','column4':'VARCHAR','column5':'VARCHAR'})
-          WHERE column4 IS NOT NULL AND TRY_CAST(column0 AS BIGINT) IS NOT NULL;`
+        `CREATE OR REPLACE TABLE meta AS SELECT '${rel}' AS release, now() AS ingested_at,
+           ${rankCount} AS vertex_count, 0 AS edge_count;`
       );
+      return {
+        ok: true,
+        message: `Ingested ${rel} (ranks-only): ${rankCount.toLocaleString()} ranked domains — backlink edges skipped (resize volume to 20GB+ for full graph)`,
+      };
+    }
+
+    await streamVerticesFromGzipUrl(conn, `${base}-vertices.txt.gz`);
+    await streamEdgesFromGzipUrl(conn, `${base}-edges.txt.gz`);
+    await conn.run("CREATE INDEX IF NOT EXISTS idx_edges_to ON edges(to_id);");
+
+    try {
+      await streamRanksFromGzipUrl(conn, `${base}-ranks.txt.gz`);
       await conn.run("CREATE INDEX IF NOT EXISTS idx_ranks_host ON ranks(rev_host);");
     } catch (e) {
       console.warn(`[webgraph] ranks ingest skipped: ${e instanceof Error ? e.message : "unknown"}`);
@@ -262,24 +364,42 @@ export function triggerIngestAsync(release: string): { accepted: boolean; reason
 }
 
 export async function isWebgraphReady(): Promise<boolean> {
+  if (isIngestInFlight()) return false;
   const conn = await getConnection();
   if (!conn) return false;
   try {
     const reader = await conn.runAndReadAll(
-      "SELECT COUNT(*) AS c FROM information_schema.tables WHERE table_name IN ('vertices','edges')"
+      "SELECT vertex_count, edge_count FROM meta LIMIT 1"
     );
-    const rows = reader.getRowObjects();
-    return Number(rows[0]?.c ?? 0) >= 2;
+    const row = reader.getRowObjects()[0];
+    if (!row) return false;
+    const vtx = Number(row.vertex_count ?? 0);
+    const edg = Number(row.edge_count ?? 0);
+    if (edg > 0) return vtx > 0 && edg > 0;
+    // ranks-only index: authority works; backlink edge queries stay unavailable.
+    try {
+      const ranks = await conn.runAndReadAll("SELECT COUNT(*) AS c FROM ranks");
+      return Number(ranks.getRowObjects()[0]?.c ?? 0) > 0;
+    } catch {
+      return false;
+    }
   } catch {
     return false;
   }
+}
+
+/** True when the full edge graph (referring domains) is queryable, not just ranks. */
+export async function isWebgraphEdgesReady(): Promise<boolean> {
+  if (isIngestInFlight()) return false;
+  const meta = await getWebgraphMeta();
+  return Boolean(meta && meta.edge_count > 0 && meta.vertex_count > 0);
 }
 
 /** Real inbound links (referring domains) for a host from the webgraph index. */
 export async function getInboundLinks(host: string, limit = 100): Promise<InboundLink[] | null> {
   const conn = await getConnection();
   if (!conn) return null;
-  if (!(await isWebgraphReady())) return null;
+  if (!(await isWebgraphEdgesReady())) return null;
 
   try {
     const rev = sanitizeRevHost(reverseHost(host));
@@ -377,11 +497,9 @@ export async function getDomainAuthorityBatch(hosts: string[]): Promise<Map<stri
 export async function getReferringDomainCount(host: string): Promise<number | null> {
   const conn = await getConnection();
   if (!conn) return null;
-  if (!(await isWebgraphReady())) return null;
+  if (!(await isWebgraphEdgesReady())) return null;
   try {
     const rev = sanitizeRevHost(reverseHost(host));
-    // Exclude self-links so the count matches the referring-domain LIST
-    // (getInboundLinks also excludes v2.rev_host = target).
     const reader = await conn.runAndReadAll(
       `SELECT COUNT(DISTINCT e.from_id) AS c
          FROM edges e

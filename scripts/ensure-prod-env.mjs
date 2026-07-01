@@ -98,6 +98,9 @@ function needs(key) {
 if (needs("NEXT_PUBLIC_APP_URL")) {
   fixes.push(["NEXT_PUBLIC_APP_URL", DEFAULT_APP_URL]);
 }
+if (needs("OAUTH_STATE_SECRET")) {
+  fixes.push(["OAUTH_STATE_SECRET", randomBytes(32).toString("hex")]);
+}
 if (needs("TRAFFIC_PANEL_INGEST_SECRET")) {
   fixes.push(["TRAFFIC_PANEL_INGEST_SECRET", randomBytes(24).toString("base64url")]);
 }
@@ -124,7 +127,36 @@ const manual = [
   "GOOGLE_CLIENT_ID",
   "GOOGLE_CLIENT_SECRET",
 ];
-const missingManual = manual.filter(needs);
+
+async function probeLiveHealth(url) {
+  try {
+    const res = await fetch(`${url.replace(/\/$/, "")}/api/health`, { signal: AbortSignal.timeout(20_000) });
+    if (!res.ok) return null;
+    return await res.json();
+  } catch {
+    return null;
+  }
+}
+
+const health = await probeLiveHealth(DEFAULT_APP_URL);
+const omnidataLive =
+  health?.checks?.omnidata === "ok" ||
+  health?.production?.checks?.some?.((c) => c.id === "omnidata" && c.ok);
+
+const missingManual = manual.filter((key) => {
+  if (needs(key)) {
+    if (omnidataLive && key.startsWith("OMNIDATA_")) return false;
+    if (
+      omnidataLive &&
+      (key === "ENABLE_AI_UI_CAPTURE" || key === "AI_UI_CAPTURE_URL") &&
+      health?.checks?.aiUiCapture === "ok"
+    ) {
+      return false;
+    }
+    return true;
+  }
+  return false;
+});
 if (missingManual.length) {
   console.log("Still need (Railway / OAuth — add to .env.providers then npm run env:push):");
   for (const k of missingManual) console.log(`  ○ ${k}`);

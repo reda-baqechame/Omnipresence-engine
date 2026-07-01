@@ -30,10 +30,18 @@ export default function SignupPage() {
     setInfo("");
 
     const supabase = createClient();
+    const appUrl =
+      process.env.NEXT_PUBLIC_APP_URL ||
+      (typeof window !== "undefined" ? window.location.origin : "");
+    const organizationName = orgName.trim() || `${fullName}'s Agency`;
+
     const { data, error: signUpError } = await supabase.auth.signUp({
       email,
       password,
-      options: { data: { full_name: fullName } },
+      options: {
+        data: { full_name: fullName, pending_org_name: organizationName },
+        emailRedirectTo: `${appUrl}/auth/callback?next=/app`,
+      },
     });
 
     if (signUpError) {
@@ -41,8 +49,6 @@ export default function SignupPage() {
       setLoading(false);
       return;
     }
-
-    const organizationName = orgName.trim() || `${fullName}'s Agency`;
 
     if (data.session) {
       const ok = await setupOrganization(organizationName);

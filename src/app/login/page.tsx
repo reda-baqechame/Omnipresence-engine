@@ -1,26 +1,44 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useSyncExternalStore } from "react";
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/client";
 import { Globe } from "lucide-react";
 
+const CALLBACK_ERROR_MSG =
+  "Email confirmation link expired or invalid. Sign in after confirming your email.";
+
+function subscribeToUrl() {
+  return () => {};
+}
+
+function readAuthCallbackError(): string {
+  const err = new URLSearchParams(window.location.search).get("error");
+  return err === "auth_callback" ? CALLBACK_ERROR_MSG : "";
+}
+
 export default function LoginPage() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
-  const [error, setError] = useState("");
+  const [formError, setFormError] = useState("");
   const [loading, setLoading] = useState(false);
+  const callbackError = useSyncExternalStore(subscribeToUrl, readAuthCallbackError, () => "");
+  const error = formError || callbackError;
 
   async function handleLogin(e: React.FormEvent) {
     e.preventDefault();
     setLoading(true);
-    setError("");
+    setFormError("");
 
     const supabase = createClient();
     const { error } = await supabase.auth.signInWithPassword({ email, password });
 
     if (error) {
-      setError(error.message);
+      const msg =
+        error.message.toLowerCase().includes("email not confirmed")
+          ? "Confirm your email first (check inbox/spam), then sign in."
+          : error.message;
+      setFormError(msg);
       setLoading(false);
     } else {
       const pendingOrg = sessionStorage.getItem("pending_org_name");
