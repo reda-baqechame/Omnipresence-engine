@@ -57,8 +57,8 @@ console.log("\nDeploying ai-ui-capture…");
 railwayCmd(["up", "--detach"], { cwd: captureDir });
 
 console.log("\nFetching public domains (may take ~60s after first deploy)…");
-const omnidataDomain = railwayCmd(["domain", "--service", "omnidata-api"], { capture: true });
-const captureDomain = railwayCmd(["domain", "--service", "ai-ui-capture"], { capture: true });
+const omnidataDomain = railwayCmd(["domain", "list", "--service", "omnipresence-engine", "--json"], { capture: true });
+const captureDomain = railwayCmd(["domain", "list", "--service", "ai-ui-capture", "--json"], { capture: true });
 
 function parseDomain(out) {
   const m = out.match(/https?:\/\/[^\s]+/);
@@ -114,7 +114,7 @@ console.log(`Capture URL: ${captureUrl}\n`);
 // Push secrets to Railway services
 for (const [service, vars] of [
   [
-    "omnidata-api",
+    "omnipresence-engine",
     {
       OMNIDATA_API_KEY: omnidataKey,
       OMNIDATA_SIGNING_SECRET: signingSecret,

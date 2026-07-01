@@ -29,9 +29,9 @@ RUN if [ "$INSTALL_CHROMIUM" = "true" ]; then \
     fi
 
 # Persistent data dir for the Common Crawl webgraph DuckDB index.
+# Attach a Railway volume mounted at /data in production.
 RUN mkdir -p /data
 ENV WEBGRAPH_DB_PATH=/data/webgraph.duckdb
-VOLUME ["/data"]
 
 ENV PORT=8787
 EXPOSE 8787
