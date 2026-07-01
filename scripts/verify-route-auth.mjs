@@ -32,6 +32,8 @@ const ALLOWLIST = {
   "api/report/[token]/pdf/route.ts": "access gated by an unguessable report token",
   "api/public/audit/route.ts": "intentionally public anonymous audit (no tenant data read)",
   "api/traffic-panel/ingest/route.ts": "opt-in pixel ingest gated by TRAFFIC_PANEL_INGEST_SECRET header",
+  "api/traffic-panel/beacon/route.ts": "public 1x1 beacon — domain+projectId validated, no PII, best-effort insert",
+  "api/traffic-panel/pixel.js/route.ts": "public embed script — no tenant data, points to beacon",
 };
 
 function walk(dir) {

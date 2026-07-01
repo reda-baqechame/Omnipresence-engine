@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { Loader2, GitBranch, TrendingUp, TrendingDown, ShieldAlert } from "lucide-react";
+import { CapabilityEvidenceBar } from "@/components/capability-evidence-bar";
 
 interface TopLink {
   source_url?: string;
@@ -74,7 +75,7 @@ export function BacklinkGraphPanel({ projectId }: { projectId: string }) {
   return (
     <div className="space-y-6">
       <div className="bg-card border border-border rounded-xl p-4 flex items-center justify-between gap-4">
-        <div>
+        <div className="space-y-2">
           <h3 className="font-semibold flex items-center gap-2">
             <GitBranch className="h-4 w-4" /> Presence Backlink Graph
           </h3>
@@ -82,6 +83,13 @@ export function BacklinkGraphPanel({ projectId }: { projectId: string }) {
             URL-level referring graph with new/lost velocity, anchor distribution, dofollow/nofollow split, and
             competitor link intersection. Sovereign OmniData + Common Crawl webgraph.
           </p>
+          <CapabilityEvidenceBar
+            projectId={projectId}
+            capability="backlink_graph"
+            target="snapshot"
+            label="Graph proof"
+            quality={l?.dataSource === "measured" ? "measured" : l ? "estimated" : "unavailable"}
+          />
         </div>
         <button
           type="button"

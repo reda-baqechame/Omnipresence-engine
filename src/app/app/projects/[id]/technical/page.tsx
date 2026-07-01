@@ -5,6 +5,7 @@ import { OnPagePanel } from "@/components/on-page-panel";
 import { DeepCrawlPanel } from "@/components/deep-crawl-panel";
 import { CwvHistoryPanel } from "@/components/cwv-history-panel";
 import { ExportButtons } from "@/components/export-buttons";
+import { CapabilityEvidenceBar } from "@/components/capability-evidence-bar";
 import { getProject } from "@/lib/projects";
 import { AI_BOTS } from "@/lib/providers/ai-gateway";
 
@@ -55,7 +56,16 @@ export default async function TechnicalPage({
             Crawlability, indexability, schema, on-page SEO, and AI bot access for {project.domain}
           </p>
         </div>
-        <ExportButtons projectId={id} types={["findings"]} />
+        <div className="flex flex-col gap-2">
+          <CapabilityEvidenceBar
+            projectId={id}
+            capability="technical"
+            target={project.domain}
+            label="Technical proof"
+            quality="measured"
+          />
+          <ExportButtons projectId={id} types={["findings"]} />
+        </div>
       </div>
 
       <div className="grid md:grid-cols-4 gap-4">

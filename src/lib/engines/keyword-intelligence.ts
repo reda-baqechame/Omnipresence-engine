@@ -319,7 +319,41 @@ export async function persistKeywordOpportunities(
         })
       )
     );
+    const { data: project } = await supabase.from("projects").select("organization_id").eq("id", projectId).single();
+    if (project?.organization_id) {
+      await persistKeywordCorpus(supabase, projectId, project.organization_id, rows).catch(() => undefined);
+    }
   }
+  return error ? 0 : rows.length;
+}
+
+export async function persistKeywordCorpus(
+  supabase: SupabaseClient,
+  projectId: string,
+  organizationId: string,
+  rows: KeywordOpportunityRow[]
+): Promise<number> {
+  if (!rows.length) return 0;
+  const { error } = await supabase.from("keyword_corpus").upsert(
+    rows.slice(0, 100).map((r) => ({
+      project_id: projectId,
+      organization_id: organizationId,
+      keyword: r.keyword,
+      locale: "en-US",
+      intent: r.intent || null,
+      source: r.source || "research",
+      volume_estimate: r.volume_estimate ?? null,
+      difficulty_estimate: r.difficulty ?? null,
+      is_active: true,
+      last_measured_at: new Date().toISOString(),
+      metadata: {
+        volume_confidence: r.volume_confidence,
+        volume_range: r.volume_range,
+        opportunity_score: r.opportunity_score,
+      },
+    })),
+    { onConflict: "project_id,normalized_keyword,locale,country_code", ignoreDuplicates: false }
+  );
   return error ? 0 : rows.length;
 }
 

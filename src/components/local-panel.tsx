@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { CapabilityEvidenceBar } from "@/components/capability-evidence-bar";
 
 interface GbpCheck {
   label: string;
@@ -108,6 +109,14 @@ export function LocalPanel({ projectId }: { projectId: string }) {
 
   return (
     <div className="space-y-6">
+      <CapabilityEvidenceBar
+        projectId={projectId}
+        capability="local"
+        target=""
+        label="Local SEO proof"
+        quality={audit?.available ? "measured" : "unavailable"}
+      />
+
       {/* GBP audit */}
       <div className="bg-card border border-border rounded-xl p-4">
         <div className="flex items-center justify-between mb-2">

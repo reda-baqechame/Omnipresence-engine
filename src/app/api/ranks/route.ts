@@ -6,6 +6,7 @@ import {
   runAllRankChecks,
   importKeywordsFromPrompts,
 } from "@/lib/engines/rank-tracker-service";
+import { ensureDefaultRankSchedule } from "@/lib/engines/rank-schedule-service";
 import { verifyProjectAccess } from "@/lib/security/project-access";
 import { apiError, apiForbidden, apiUnauthorized, readJsonBody } from "@/lib/security/api-response";
 
@@ -97,6 +98,8 @@ export async function POST(request: NextRequest) {
   const dev = device === "mobile" ? "mobile" : "desktop";
   const tracked = await trackKeyword(supabase, projectId, keyword, location || "United States", dev);
   if (!tracked) return apiError("Failed to track keyword");
+
+  await ensureDefaultRankSchedule(supabase, projectId, access.organizationId).catch(() => undefined);
 
   const result = await runRankCheckForProject(
     supabase,

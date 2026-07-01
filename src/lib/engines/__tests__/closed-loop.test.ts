@@ -164,6 +164,28 @@ test("a failed controllable deliverable is the ONLY refund trigger (refund-safe)
   assert.equal(report.guaranteeEligible, false, "a failed deliverable means the guarantee is not met");
 });
 
+test("ops deploy_verification outcome is persisted on the ledger for proof", async () => {
+  const sb = memSupabase() as never;
+  const projectId = "proj-deploy";
+  const rec = await recordLedgerAction(sb, {
+    project_id: projectId,
+    action_type: "content_publish",
+    action_surface: "cms",
+    description: "published with deploy verification",
+    baseline_snapshot: {},
+    outcome_snapshot: {
+      url: "https://example.com/page",
+      deploy_verification: { ok: true, httpStatus: 200, hasSchema: true, indexNowSubmitted: 1 },
+    },
+    status: "completed",
+  });
+  assert.ok(rec?.id);
+  const ledger = await getLedgerForProject(sb, projectId);
+  const entry = ledger.find((l) => l.id === rec?.id);
+  const outcome = entry?.outcome_snapshot as { deploy_verification?: { ok: boolean } };
+  assert.equal(outcome?.deploy_verification?.ok, true, "deploy verification must be stored on the ledger row");
+});
+
 test("per-project isolation: one project's ledger never leaks into another's proof", async () => {
   const sb = memSupabase() as never;
   await recordLedgerAction(sb, {

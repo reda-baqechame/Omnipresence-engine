@@ -24,6 +24,7 @@ export interface ProofReport {
   periodEnd?: string;
   deltas: ProofDelta[];
   findings: { resolved: number; total: number };
+  evidenceCount?: number;
   available: boolean;
   note: string;
 }
@@ -43,7 +44,7 @@ export async function buildProofReport(
   supabase: SupabaseClient,
   projectId: string
 ): Promise<ProofReport> {
-  const [{ data: scores }, { data: baselines }, { data: visibility }] = await Promise.all([
+  const [{ data: scores }, { data: baselines }, { data: visibility }, evidenceCount] = await Promise.all([
     supabase
       .from("scores")
       .select("omnipresence_score, ai_visibility, created_at")
@@ -60,6 +61,17 @@ export async function buildProofReport(
       .select("brand_cited, run_id, created_at")
       .eq("project_id", projectId)
       .order("created_at", { ascending: false }),
+    (async () => {
+      try {
+        const { count: c } = await supabase
+          .from("measurement_evidence")
+          .select("*", { count: "exact", head: true })
+          .eq("project_id", projectId);
+        return c || 0;
+      } catch {
+        return 0;
+      }
+    })(),
   ]);
 
   const first = scores?.[0];
@@ -74,7 +86,7 @@ export async function buildProofReport(
     (baselines?.[0]?.baseline_snapshot as { citation_count?: number } | null)?.citation_count ?? null;
   const latestRunId = visibility?.[0]?.run_id;
   const currentCitations = (visibility || []).filter(
-    (v) => v.run_id === latestRunId && v.brand_cited
+    (v: { run_id?: string; brand_cited?: boolean }) => v.run_id === latestRunId && v.brand_cited
   ).length;
 
   // Average rank: compare oldest vs newest snapshot per tracked keyword.
@@ -103,6 +115,7 @@ export async function buildProofReport(
     periodEnd: last?.created_at,
     deltas,
     findings: { resolved, total },
+    evidenceCount,
     available,
     note:
       "All figures are computed from measured, persisted scans. Where a baseline is not yet available, the value is shown as n/a rather than fabricated.",
@@ -189,5 +202,13 @@ export function renderProofHTML(proof: ProofReport, color = "#6366f1"): string {
       </tbody>
     </table>
     <p style="font-size:11px;color:#999;margin-top:8px">${escapeHtml(proof.note)}</p>
+    ${typeof proof.evidenceCount === "number" ? `
+    <div style="margin-top:16px;padding:12px;border:1px solid #eee;border-radius:8px;background:#fafafa">
+      <strong style="font-size:13px">Measurement evidence appendix</strong>
+      <p style="font-size:12px;color:#666;margin:8px 0 0">
+        ${proof.evidenceCount} auditable measurement_evidence rows persisted for this project.
+        Open the in-app Evidence drawer on any capability panel for per-metric proof artifacts.
+      </p>
+    </div>` : ""}
   </div>`;
 }

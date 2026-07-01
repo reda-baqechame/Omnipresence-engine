@@ -8,6 +8,7 @@ import {
 import { getConnectorHealth } from "@/lib/engines/connector-health";
 import { getProductionReadiness } from "@/lib/config/production";
 import { getBackedClaims, isClaimBacked, CLAIMS } from "@/lib/config/claims";
+import { MIN_PANEL_SAMPLE } from "@/lib/engines/prompt-panel-runner";
 
 async function count(
   supabase: SupabaseClient,
@@ -59,6 +60,7 @@ export async function buildPresenceGateScore(
     sourceDomainCount,
     ledgerDoneCount,
     backlinkSnapCount,
+    panelRuns,
   ] = await Promise.all([
     count(supabase, "ai_capture_evidence", projectId),
     count(supabase, "measurement_evidence", projectId),
@@ -67,7 +69,24 @@ export async function buildPresenceGateScore(
     count(supabase, "source_domains", projectId),
     count(supabase, "results_ledger", projectId, ["completed", "verified"]),
     count(supabase, "backlink_graph_snapshots", projectId),
+    (async () => {
+      try {
+        const { data } = await supabase
+          .from("ai_panel_runs")
+          .select("sample_size, sufficient_sample")
+          .eq("project_id", projectId)
+          .order("created_at", { ascending: false })
+          .limit(1)
+          .maybeSingle();
+        return data;
+      } catch {
+        return null;
+      }
+    })(),
   ]);
+
+  const panelSampleOk = Boolean(panelRuns?.sufficient_sample) && Number(panelRuns?.sample_size || 0) >= MIN_PANEL_SAMPLE;
+  const aiMeasuredInputs = panelSampleOk ? measuredInputs : 0;
 
   const totalEvidence = evidenceCount + measurementEvidenceCount;
   const evidenceTarget = Math.max(1, measuredInputs || 5, rankCount + keywordCount);
@@ -109,8 +128,15 @@ export async function buildPresenceGateScore(
       Boolean(latestScore),
       `Dimension coverage ${Math.round(dimCoverage * 100)}% · evidence ${Math.round(evidenceRate * 100)}%`
     ),
-    // AI capture: measured AI-engine probes present.
-    gateFromRate("ai_capture", rate(measuredInputs, 6), true, `${measuredInputs} measured AI/search probes`),
+    // AI capture: measured AI-engine probes present (panel sample must meet MIN_PANEL_SAMPLE).
+    gateFromRate(
+      "ai_capture",
+      rate(aiMeasuredInputs, 6),
+      true,
+      panelSampleOk
+        ? `${aiMeasuredInputs} measured AI/search probes`
+        : `Panel sample below ${MIN_PANEL_SAMPLE} — AI scores not counted as measured`
+    ),
     gateFromRate("keyword", rate(keywordCount, 20), true, `${keywordCount} keyword opportunities`),
     gateFromRate("rank", rate(rankCount, 10), true, `${rankCount} rank snapshots`),
     gateFromRate("backlink", rate(backlinkSnapCount, 1), true, `${backlinkSnapCount} backlink-graph snapshots`),

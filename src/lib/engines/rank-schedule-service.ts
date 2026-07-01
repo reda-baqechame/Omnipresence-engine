@@ -73,3 +73,30 @@ function nextRunAt(cadence: string): string {
   else d.setDate(d.getDate() + 1);
   return d.toISOString();
 }
+
+/** Create a weekly default schedule when the first keyword is tracked. */
+export async function ensureDefaultRankSchedule(
+  supabase: SupabaseClient,
+  projectId: string,
+  organizationId: string
+): Promise<void> {
+  const { count } = await supabase
+    .from("rank_schedules")
+    .select("*", { count: "exact", head: true })
+    .eq("project_id", projectId);
+  if (count && count > 0) return;
+
+  const next = nextRunAt("weekly");
+  await supabase.from("rank_schedules").upsert(
+    {
+      project_id: projectId,
+      organization_id: organizationId,
+      name: "default",
+      cadence: "weekly",
+      is_active: true,
+      next_run_at: next,
+      updated_at: new Date().toISOString(),
+    },
+    { onConflict: "project_id,name" }
+  );
+}

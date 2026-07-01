@@ -1,6 +1,7 @@
 import { notFound } from "next/navigation";
 import { getProject } from "@/lib/projects";
 import { RankPanel } from "@/components/rank-panel";
+import { RankSchedulePanel } from "@/components/rank-schedule-panel";
 import { ExportButtons } from "@/components/export-buttons";
 import { AnnotationsBar } from "@/components/annotations-bar";
 
@@ -20,6 +21,7 @@ export default async function RanksPage({ params }: { params: Promise<{ id: stri
         </div>
         <ExportButtons projectId={id} types={["ranks"]} />
       </div>
+      <RankSchedulePanel projectId={id} />
       <RankPanel projectId={id} />
       <AnnotationsBar projectId={id} />
     </div>

@@ -23,6 +23,9 @@ interface Summary {
   revenueAvailable?: boolean;
   paidAdsEquivalentEstimated?: boolean;
   confidence?: number;
+  revenueProvenance?: "first_party_measured" | "unavailable";
+  connectorHealthy?: boolean;
+  connectorReason?: string;
 }
 interface UxEmbed {
   tool: string;
@@ -134,6 +137,18 @@ export function RoiCommandPanel({ projectId }: { projectId: string }) {
 
   return (
     <div className="space-y-6">
+      {summary.connectorHealthy === false && (
+        <div className="rounded-lg border border-yellow-500/40 bg-yellow-500/10 px-4 py-3 text-sm text-yellow-200">
+          Revenue connector not healthy — revenue shown as unavailable until GA4 is connected and syncing.
+          {summary.connectorReason ? ` (${summary.connectorReason})` : ""}
+        </div>
+      )}
+      {summary.revenueProvenance === "first_party_measured" && summary.connectorHealthy && (
+        <div className="rounded-lg border border-green-500/30 bg-green-500/10 px-4 py-3 text-sm text-green-300">
+          Revenue is first-party measured via GA4 this period.
+        </div>
+      )}
+
       {summary.period && (
         <p className="text-xs text-muted-foreground">
           Period {summary.period.start} → {summary.period.end}
