@@ -25,6 +25,7 @@ jobs:
       NEXT_PUBLIC_SUPABASE_URL: https://placeholder.supabase.co
       NEXT_PUBLIC_SUPABASE_ANON_KEY: placeholder
       SUPABASE_SERVICE_ROLE_KEY: placeholder
+      RAILWAY_APP_URL: https://omnipresence-engine.vercel.app
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4

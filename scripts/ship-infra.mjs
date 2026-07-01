@@ -93,11 +93,16 @@ if (!args.has("--skip-migrate")) {
   }
 }
 
+console.log("\nEnsuring auto-fixable Vercel production env…");
+run("node", ["scripts/ensure-prod-env.mjs"]);
+
 if (!args.has("--skip-railway")) {
-  const whoami = runCapture("railway", ["whoami"]);
+  const railwayCmd = process.platform === "win32" ? "npx" : "railway";
+  const railwayArgs = process.platform === "win32" ? ["@railway/cli", "whoami"] : ["whoami"];
+  const whoami = runCapture(railwayCmd, railwayArgs);
   if (!whoami.ok) {
     console.log("\n⚠ Railway CLI not authenticated.");
-    console.log("  1. Run: railway login");
+    console.log("  1. Run: npx @railway/cli login");
     console.log("  2. Open Railway in your browser to complete auth");
     console.log("  3. Re-run: npm run ship:infra\n");
     process.exit(1);
@@ -106,12 +111,14 @@ if (!args.has("--skip-railway")) {
   console.log("\nRailway deploy (OmniData + ai-ui-capture)…");
   const omnidataDir = join(root, "services", "omnidata");
   const captureDir = join(root, "services", "ai-ui-capture");
+  const upCmd = process.platform === "win32" ? "npx" : "railway";
+  const upPrefix = process.platform === "win32" ? ["@railway/cli"] : [];
 
   if (existsSync(omnidataDir)) {
-    run("railway", ["up", "--detach"], { cwd: omnidataDir });
+    run(upCmd, [...upPrefix, "up", "--detach"], { cwd: omnidataDir });
   }
   if (existsSync(captureDir)) {
-    run("railway", ["up", "--detach"], { cwd: captureDir });
+    run(upCmd, [...upPrefix, "up", "--detach"], { cwd: captureDir });
   }
 }
 

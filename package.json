@@ -30,6 +30,7 @@
     "railway:verify": "node scripts/railway-verify.mjs",
     "prod:keygen": "node scripts/generate-integration-key.mjs",
     "prod:setup": "node scripts/prod-setup.mjs",
+    "prod:ensure-env": "node scripts/ensure-prod-env.mjs",
     "prod:deploy": "node scripts/prod-setup.mjs --deploy",
     "wire:diy": "node scripts/wire-diy-stack.mjs",
     "audit:phase8": "node scripts/audit-phase8.mjs",

@@ -12,8 +12,10 @@
  *
  * Exit code is non-zero if a required service is unhealthy or production is not ready.
  */
+import { get as httpsGet } from "node:https";
+import { get as httpGet } from "node:http";
 
-const appUrl = (process.argv[2] || process.env.RAILWAY_APP_URL || process.env.NEXT_PUBLIC_APP_URL || "")
+const appUrl = (process.argv[2] || process.env.RAILWAY_APP_URL || process.env.SMOKE_BASE_URL || process.env.NEXT_PUBLIC_APP_URL || "https://omnipresence-engine.vercel.app")
   .replace(/\/$/, "");
 const omnidataUrl = (process.argv[3] || process.env.OMNIDATA_PUBLIC_URL || process.env.OMNIDATA_BASE_URL || "")
   .replace(/\/$/, "");
@@ -24,12 +26,26 @@ const ok = (m) => console.log(`  \u2713 ${m}`);
 const warn = (m) => console.log(`  \u25cb ${m}`);
 const bad = (m) => { console.log(`  \u2717 ${m}`); failures++; };
 
-async function fetchJson(url, opts = {}) {
-  const res = await fetch(url, { signal: AbortSignal.timeout(30_000), ...opts });
-  const text = await res.text();
-  let json;
-  try { json = JSON.parse(text); } catch { json = null; }
-  return { ok: res.ok, status: res.status, json };
+function fetchJson(url, opts = {}) {
+  return new Promise((resolve, reject) => {
+    const lib = url.startsWith("https:") ? httpsGet : httpGet;
+    const req = lib(url, { method: opts.method || "GET", headers: opts.headers, timeout: 30_000 }, (res) => {
+      let text = "";
+      res.on("data", (c) => { text += c; });
+      res.on("end", () => {
+        let json = null;
+        try { json = JSON.parse(text); } catch { /* ignore */ }
+        resolve({ ok: res.statusCode >= 200 && res.statusCode < 300, status: res.statusCode, json });
+      });
+    });
+    req.on("error", reject);
+    req.on("timeout", () => {
+      req.destroy();
+      reject(new Error("timeout"));
+    });
+    if (opts.body) req.write(opts.body);
+    req.end();
+  });
 }
 
 if (!appUrl) {
