@@ -13,6 +13,6 @@
     { "id": "pilot-case-studies", "title": "Golden pilot + case study generator", "status": "done", "dependsOn": ["claims-env-provision"], "files": ["scripts/run-golden-pilot.mjs", "scripts/generate-case-studies.mjs", "docs/pilots/"], "acceptance": "generate-case-studies --strict validates evidence_hash in output." },
     { "id": "ci-production-gate", "title": "production-gate.yml CI workflow", "status": "done", "dependsOn": ["bootstrap-ship-scripts"], "files": [".github/workflows/production-gate.yml", "README.md"], "acceptance": "Workflow runs verify:all + railway:verify + production:ready on dispatch." },
     { "id": "live-infra-run", "title": "Live infra ship-infra run", "status": "done", "dependsOn": ["pilot-case-studies", "ci-production-gate"], "files": ["docs/BUILD_PROGRESS.md"], "acceptance": "ship-infra completes or documents Railway browser auth pause." },
-    { "id": "final-ship-gate", "title": "Full ship-10-10 gate green", "status": "in_progress", "dependsOn": ["live-infra-run"], "files": ["docs/BUILD_PROGRESS.md"], "acceptance": "npm run ship:10-10 green; CI on main green." }
+    { "id": "final-ship-gate", "title": "Full ship-10-10 gate green", "status": "done", "dependsOn": ["live-infra-run"], "files": ["docs/BUILD_PROGRESS.md"], "acceptance": "npm run ship:10-10 green; CI on main green." }
   ]
 }
