@@ -31,6 +31,8 @@
     "prod:keygen": "node scripts/generate-integration-key.mjs",
     "prod:setup": "node scripts/prod-setup.mjs",
     "prod:ensure-env": "node scripts/ensure-prod-env.mjs",
+    "railway:deploy": "node scripts/deploy-railway-stack.mjs --deploy-vercel",
+    "railway:wire": "node scripts/wire-railway-prod.mjs",
     "prod:deploy": "node scripts/prod-setup.mjs --deploy",
     "wire:diy": "node scripts/wire-diy-stack.mjs",
     "audit:phase8": "node scripts/audit-phase8.mjs",

@@ -53,6 +53,8 @@ Weekly + on `main` push: `.github/workflows/production-gate.yml` runs `verify:al
 
 Full local gate: `npm run ship:10-10` (use `--skip-infra --skip-live` for offline CI parity).
 
+**Sovereign stack (Railway):** after `npx @railway/cli login`, run `npm run railway:deploy` to deploy OmniData + ai-ui-capture and wire Vercel automatically.
+
 ## Tech stack
 
 - **Frontend:** Next.js 16, TypeScript, Tailwind CSS 4
