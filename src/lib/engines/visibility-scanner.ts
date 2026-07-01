@@ -169,6 +169,7 @@ async function scanSinglePrompt(
           screenshot_base64: captured.screenshotBase64 ?? undefined,
           dom_html: captured.domHtml ?? undefined,
           capture_context: captured.captureContext,
+          external_evidence_url: captured.evidenceUrl ?? undefined,
         },
         data_source: "measured",
       };

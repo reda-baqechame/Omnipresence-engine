@@ -1,6 +1,7 @@
 import { mkdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import type { Surface } from "./capture.js";
+import { uploadCaptureToSupabase } from "./supabase-storage.js";
 
 export interface CaptureEvidencePayload {
   surface: Surface;
@@ -16,6 +17,7 @@ export interface CaptureEvidencePaths {
   answerPath: string;
   screenshotPath?: string;
   domPath?: string;
+  evidencePublicUrl?: string | null;
 }
 
 function safeSegment(value: string): string {
@@ -61,5 +63,23 @@ export async function writeCaptureEvidence(payload: CaptureEvidencePayload): Pro
     await writeFile(domPath, payload.domHtml, "utf8");
   }
 
-  return { rootPath, answerPath, screenshotPath, domPath };
+  const remote = await uploadCaptureToSupabase(payload.surface, payload.responseHash, {
+    answerJson: JSON.stringify({
+      surface: payload.surface,
+      responseHash: payload.responseHash,
+      answer: payload.answer,
+      citedUrls: payload.citedUrls,
+      capturedAt: new Date().toISOString(),
+    }),
+    screenshotBase64: payload.screenshotBase64,
+    domHtml: payload.domHtml,
+  }).catch(() => null);
+
+  return {
+    rootPath,
+    answerPath,
+    screenshotPath,
+    domPath,
+    evidencePublicUrl: remote?.evidencePublicUrl ?? null,
+  };
 }

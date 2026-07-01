@@ -37,6 +37,7 @@ export interface AiUiCaptureResult {
   domHtml?: string | null;
   /** Effective geo/locale/persona the capture ran under (provenance). */
   captureContext?: { geo?: string; locale?: string; timezone?: string; persona?: string };
+  evidenceUrl?: string | null;
 }
 
 /** Geo/persona/locale controls for a capture (all optional). */
@@ -108,6 +109,7 @@ export async function captureAiUiSurface(
       screenshotBase64: data.screenshotBase64 ?? null,
       domHtml: data.domHtml ?? null,
       captureContext: data.captureContext,
+      evidenceUrl: (data as { evidenceUrl?: string }).evidenceUrl ?? null,
     };
   } catch {
     return null;

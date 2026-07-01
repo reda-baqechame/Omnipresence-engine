@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { CapabilityEvidenceBar } from "@/components/capability-evidence-bar";
 
 interface TermTarget {
   term: string;
@@ -65,6 +66,13 @@ export function ContentOptimizerPanel({ projectId }: { projectId: string }) {
 
   return (
     <div className="bg-card border border-border rounded-xl p-4 space-y-3">
+      <CapabilityEvidenceBar
+        projectId={projectId}
+        capability="content"
+        target=""
+        label="Content proof"
+        quality={result?.available ? "measured" : "unavailable"}
+      />
       <div>
         <h3 className="font-semibold">Content Optimizer</h3>
         <p className="text-sm text-muted-foreground">

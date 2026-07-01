@@ -23,6 +23,7 @@ interface RunRow {
 export function RankSchedulePanel({ projectId }: { projectId: string }) {
   const [schedules, setSchedules] = useState<Schedule[]>([]);
   const [runs, setRuns] = useState<RunRow[]>([]);
+  const [keywordCount, setKeywordCount] = useState(0);
   const [cadence, setCadence] = useState<"daily" | "weekly">("weekly");
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState("");
@@ -32,6 +33,7 @@ export function RankSchedulePanel({ projectId }: { projectId: string }) {
     const data = await res.json();
     setSchedules(data.schedules || []);
     setRuns(data.runs || []);
+    setKeywordCount(data.keywordCount || 0);
   }, [projectId]);
 
   useEffect(() => {
@@ -42,6 +44,7 @@ export function RankSchedulePanel({ projectId }: { projectId: string }) {
         if (!active) return;
         setSchedules(d.schedules || []);
         setRuns(d.runs || []);
+        setKeywordCount(d.keywordCount || 0);
       })
       .catch(() => {});
     return () => {
@@ -84,6 +87,7 @@ export function RankSchedulePanel({ projectId }: { projectId: string }) {
       </div>
       <p className="text-xs text-muted-foreground">
         Automated rank checks via Inngest daily cron. Create a schedule to track all keywords on a cadence.
+        {keywordCount > 0 ? ` · ${keywordCount} keywords on schedule` : ""}
       </p>
       <div className="flex flex-wrap items-center gap-2">
         <select

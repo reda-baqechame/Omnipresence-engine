@@ -21,6 +21,7 @@ import { hasWikipediaPresence, hasWikidataEntity } from "@/lib/providers/wikimed
 import { conversionSignalFromRows } from "@/lib/engines/behavior-analytics";
 import { recordScanBaseline } from "@/lib/engines/results-ledger";
 import { attachEvidenceToResults, recordMeasurementEvidence } from "@/lib/engines/evidence";
+import { MIN_PANEL_SAMPLE } from "@/lib/engines/prompt-panel-runner";
 import { lockGuaranteeBaseline } from "@/lib/engines/guarantee";
 import { syncTechnicalFindingsToOpsQueue } from "@/lib/engines/on-page-queue";
 import {
@@ -350,6 +351,7 @@ export async function stepScoreAndRoadmap(
     domainAuthority,
     pageSpeedScore,
     behaviorSignal,
+    panelSampleSufficient: await isPanelSampleSufficient(supabase, project.id),
   });
 
   await supabase.from("scores").insert({ project_id: project.id, ...score });
@@ -439,4 +441,23 @@ export async function stepScoreAndRoadmap(
   }
 
   return { score, coverageItems, authorityOpportunities };
+}
+
+export async function isPanelSampleSufficient(
+  supabase: SupabaseClient,
+  projectId: string
+): Promise<boolean> {
+  try {
+    const { data } = await supabase
+      .from("ai_panel_runs")
+      .select("sample_size, sufficient_sample")
+      .eq("project_id", projectId)
+      .order("created_at", { ascending: false })
+      .limit(1)
+      .maybeSingle();
+    if (!data) return true;
+    return Boolean(data.sufficient_sample) && Number(data.sample_size || 0) >= MIN_PANEL_SAMPLE;
+  } catch {
+    return true;
+  }
 }

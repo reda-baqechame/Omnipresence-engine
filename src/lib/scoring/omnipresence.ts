@@ -7,9 +7,22 @@ import type {
 } from "@/types/database";
 import { resultDataQuality, isCountableVisibility } from "@/lib/engines/provenance";
 
+const AI_ENGINES = new Set([
+  "chatgpt",
+  "perplexity",
+  "gemini",
+  "claude",
+  "google_ai_overview",
+  "bing_copilot",
+]);
+
 /** Measured-only pool — never mix simulated/unavailable into a real score. */
-function scorePool(results: VisibilityResult[]): VisibilityResult[] {
-  const measured = results.filter((r) => isCountableVisibility(resultDataQuality(r)));
+function scorePool(results: VisibilityResult[], panelSampleSufficient = true): VisibilityResult[] {
+  let filtered = results;
+  if (!panelSampleSufficient) {
+    filtered = results.filter((r) => !AI_ENGINES.has(r.engine));
+  }
+  const measured = filtered.filter((r) => isCountableVisibility(resultDataQuality(r)));
   if (measured.length) return measured;
   // No measured data: fall back to demo rows only when the WHOLE set is demo
   // (preview mode). Real-but-unmeasured rows score as no-data, never inflated.
@@ -36,6 +49,8 @@ export interface ScoreInputs {
   pageSpeedScore?: number;
   /** 0-100 behavioral conversion-readiness signal from Clarity (optional) */
   behaviorSignal?: number;
+  /** When false, AI engine probes are excluded from measured_inputs (panel sample too small). */
+  panelSampleSufficient?: boolean;
 }
 
 const WEIGHTS = {
@@ -50,7 +65,8 @@ const WEIGHTS = {
 };
 
 export function calculateOmniPresenceScore(inputs: ScoreInputs): Omit<OmniPresenceScore, "id" | "project_id" | "created_at"> {
-  const pool = scorePool(inputs.visibilityResults);
+  const panelOk = inputs.panelSampleSufficient !== false;
+  const pool = scorePool(inputs.visibilityResults, panelOk);
   const coverage = verifiedCoverage(inputs.coverageItems);
 
   // Which surfaces did we actually measure? A dimension we couldn't measure must
@@ -114,9 +130,10 @@ export function calculateOmniPresenceScore(inputs: ScoreInputs): Omit<OmniPresen
   const omnipresenceScore = availableWeight > 0 ? weightedSum / availableWeight : 0;
   const dimensionCoverage = Math.round((availableWeight / 1) * 100) / 100; // weights sum to 1
 
-  const measuredInputs = inputs.visibilityResults.filter(
-    (r) => isCountableVisibility(resultDataQuality(r))
-  ).length;
+  const measuredInputs = inputs.visibilityResults.filter((r) => {
+    if (!panelOk && AI_ENGINES.has(r.engine)) return false;
+    return isCountableVisibility(resultDataQuality(r));
+  }).length;
   const groundedInputs = inputs.visibilityResults.filter(
     (r) => resultDataQuality(r) === "measured"
   ).length;

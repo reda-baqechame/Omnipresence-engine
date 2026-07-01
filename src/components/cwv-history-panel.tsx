@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend } from "recharts";
+import { CapabilityEvidenceBar } from "@/components/capability-evidence-bar";
 
 interface CwvRow {
   collected_on: string;
@@ -45,6 +46,13 @@ export function CwvHistoryPanel({ projectId }: { projectId: string }) {
 
   return (
     <div className="bg-card border border-border rounded-xl p-6 space-y-3">
+      <CapabilityEvidenceBar
+        projectId={projectId}
+        capability="performance"
+        target="cwv"
+        label="CWV proof"
+        quality={history.length > 0 ? "measured" : "unavailable"}
+      />
       <div className="flex items-center justify-between">
         <div>
           <h2 className="text-lg font-semibold">Core Web Vitals history</h2>

@@ -110,6 +110,7 @@ app.post("/capture", async (req, res) => {
       domHtml: raw.domHtml ?? null,
       captureContext: raw.context,
       evidencePaths,
+      evidenceUrl: evidencePaths?.evidencePublicUrl ?? null,
     });
   } catch (err) {
     console.error("capture failed", err);

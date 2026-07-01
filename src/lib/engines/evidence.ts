@@ -45,6 +45,8 @@ export interface EvidenceInput {
   /** Optional heavy artifacts (only present from UI capture). */
   screenshotBase64?: string | null;
   domHtml?: string | null;
+  /** Pre-uploaded URL from ai-ui-capture service (Supabase Storage). */
+  externalEvidenceUrl?: string | null;
 }
 
 export interface EvidenceRecord {
@@ -72,7 +74,7 @@ export async function recordEvidence(
   const sourceDomains = [...new Set((input.sourceDomains || []).filter(Boolean))];
 
   const base = `${input.projectId}/${input.runId || "adhoc"}/${safePathSegment(input.engine)}-${hash.slice(0, 16)}`;
-  let evidenceUrl: string | null = null;
+  let evidenceUrl: string | null = input.externalEvidenceUrl || null;
   let screenshotPath: string | null = null;
   let domPath: string | null = null;
 
@@ -297,6 +299,7 @@ export async function attachEvidenceToResults(
       sourceDomains: r.source_domains,
       screenshotBase64: (r.raw_response?.screenshot_base64 as string) || null,
       domHtml: (r.raw_response?.dom_html as string) || null,
+      externalEvidenceUrl: (r.raw_response?.external_evidence_url as string) || null,
     });
     if (rec) {
       // Prefer the storage artifact path; fall back to a stable DB reference.

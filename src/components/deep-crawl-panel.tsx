@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { CapabilityEvidenceBar } from "@/components/capability-evidence-bar";
 
 interface CrawlIssue {
   type: string;
@@ -51,7 +52,14 @@ export function DeepCrawlPanel({ projectId }: { projectId: string }) {
 
   return (
     <div className="bg-card border border-border rounded-xl p-4">
-      <div className="flex items-center justify-between mb-3">
+      <CapabilityEvidenceBar
+        projectId={projectId}
+        capability="technical"
+        target="deep-crawl"
+        label="Crawl proof"
+        quality={issues.length > 0 || meta?.pagesCrawled ? "measured" : "unavailable"}
+      />
+      <div className="flex items-center justify-between mb-3 mt-2">
         <div>
           <h3 className="font-semibold">Site-wide crawl</h3>
           <p className="text-xs text-muted-foreground">Keyless deep crawl: redirects, duplicate/missing titles &amp; H1s, thin content, broken links, orphans, depth.</p>

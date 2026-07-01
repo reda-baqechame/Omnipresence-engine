@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { Loader2, Megaphone, Calculator, ShieldCheck } from "lucide-react";
+import { CapabilityEvidenceBar } from "@/components/capability-evidence-bar";
 
 interface CompetitorAd {
   advertiserDomain: string;
@@ -83,6 +84,13 @@ export function PpcIntelPanel({
 
   return (
     <div className="space-y-6">
+      <CapabilityEvidenceBar
+        projectId={projectId}
+        capability="ppc"
+        target=""
+        label="PPC proof"
+        quality={ads?.available ? "measured" : "unavailable"}
+      />
       {/* Competitor ad snapshots */}
       <div className="rounded-xl border border-border p-4">
         <div className="flex items-center justify-between gap-4">

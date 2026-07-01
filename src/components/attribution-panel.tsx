@@ -7,6 +7,7 @@ import { Ga4PropertyPicker } from "@/components/ga4-property-picker";
 import { AdsEquivalentPanel } from "@/components/ads-equivalent";
 import { LlmReferralChart } from "@/components/llm-referral-chart";
 import { VisitorIdentityPanel } from "@/components/visitor-identity-panel";
+import { CapabilityEvidenceBar } from "@/components/capability-evidence-bar";
 
 interface VisitorSession {
   id: string;
@@ -99,6 +100,13 @@ export function AttributionPanel({
 
   return (
     <div className="space-y-8">
+      <CapabilityEvidenceBar
+        projectId={projectId}
+        capability="attribution"
+        target=""
+        label="Attribution proof"
+        quality={hasGa4Connection || hasGscConnection ? "measured" : "unavailable"}
+      />
       <div className="flex items-center justify-between">
         <div>
           <h2 className="text-xl font-semibold">Traffic Attribution</h2>

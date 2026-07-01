@@ -51,7 +51,19 @@ Or use Cursor `/loop 30m` with prompt:
 
 ## Completion
 
-When all tasks are `done`, run `npm run production:ready` (or `verify:all` + `audit:full` + `verify:prod`) and report summary.
+When all v25 manifest tasks are `done`, run:
+
+```bash
+npm run ship:10-10
+```
+
+If Railway auth is required, pause and tell the user to open Railway in the browser, then re-run `npm run ship:infra`.
+
+For local-only verification during development:
+
+```bash
+npm run ship:10-10 -- --skip-infra --skip-live
+```
 
 ## Phase priority
 
@@ -71,7 +83,8 @@ Calibration) plan, `docs/OMNIPRESENCE_PHASE11_SPEC.md` for the Free Data Moat,
 | **Phase 11 The Free Data Moat** | **v11.0.0** | **done — keyless Trends/tech/popularity/authority/HN/entity** |
 | **Phase 12 Index Expansion & Calibration** | **v12.0.0** | **done — keyword-volume calibration, rank.to popularity, competitive matrix + CrUX field** |
 | **OmniPresence Expert Machine (Phases 1–22)** | **v22.0.0** | **done — rank depth, scale, frontier levers, alerts/API, local SEO, backlinks, reputation, topical, pSEO, indexation, distribution, SERP capture, demand, ROI command center, onboarding + continuous loop** |
-| **Sovereign 200x Machine** | **v24.0.0** | **done — Source Graph, merchant AI visibility, grounded AI UI capture, War Room/Proof Ledger/agency cockpit, snapshots + data-quality, claims/benchmark harness, provider router, sovereign data/AI/comms, Zero-Paid-Keys mode** |
+| **Sovereign 200x Machine** | **v24.0.0** | **done** |
+| **Autonomous 10/10 Ship** | **v25.0.0** | **in progress — see BUILD_MANIFEST.json** |
 
 ## Expert Machine focus order (v22.0.0)
 

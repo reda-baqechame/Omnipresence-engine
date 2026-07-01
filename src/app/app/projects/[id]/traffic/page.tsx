@@ -2,6 +2,7 @@ import { notFound } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { getProject } from "@/lib/projects";
 import { buildTrafficIntelligence, type TrafficProvenance } from "@/lib/engines/traffic-intelligence";
+import { TrafficEvidenceBar } from "@/components/traffic-evidence-bar";
 
 export const dynamic = "force-dynamic";
 
@@ -31,6 +32,9 @@ export default async function TrafficPage({ params }: { params: Promise<{ id: st
       <div>
         <h2 className="text-xl font-semibold">Traffic Intelligence</h2>
         <p className="text-sm text-muted-foreground mt-1">{intel.note}</p>
+        <div className="mt-2">
+          <TrafficEvidenceBar projectId={id} />
+        </div>
       </div>
 
       {/* Layer 1 — first-party measured */}

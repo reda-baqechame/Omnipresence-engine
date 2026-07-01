@@ -65,3 +65,28 @@ if (deploy) {
   console.log(dep.out || dep.err);
   process.exit(dep.ok ? 0 : 1);
 }
+
+const full1010 = process.argv.includes("--full-10-10");
+if (full1010) {
+  console.log("\n=== Full 10/10 env checklist (Vercel production) ===\n");
+  const required = [
+    "ENABLE_AI_UI_CAPTURE",
+    "AI_UI_CAPTURE_URL",
+    "OMNIDATA_BASE_URL",
+    "OMNIDATA_API_KEY",
+    "NEXT_PUBLIC_APP_URL",
+    "TRAFFIC_PANEL_INGEST_SECRET",
+    "INTEGRATION_ENCRYPTION_KEY",
+    "GOOGLE_CLIENT_ID",
+    "GOOGLE_CLIENT_SECRET",
+  ];
+  const missing = required.filter((k) => !ls.out.includes(k));
+  for (const k of required) {
+    console.log(`  ${ls.out.includes(k) ? "✓" : "✗"} ${k}`);
+  }
+  if (missing.length) {
+    console.log("\nSet missing keys via: npm run env:push (from .env.providers)\n");
+    process.exit(1);
+  }
+  console.log("\nAll 10/10 keys present on Vercel. Run: npm run check:claims-backed\n");
+}

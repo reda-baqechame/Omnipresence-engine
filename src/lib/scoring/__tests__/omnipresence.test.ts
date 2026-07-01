@@ -139,6 +139,23 @@ test("grounded measured data reports data_source=measured", () => {
   assert.ok(score.omnipresence_score > 0);
 });
 
+test("insufficient panel sample excludes AI from measured dimensions", () => {
+  const score = calculateOmniPresenceScore({
+    visibilityResults: [
+      vis({ engine: "chatgpt", brand_mentioned: true, data_source: "measured" }),
+      vis({ engine: "perplexity", brand_mentioned: true, data_source: "measured" }),
+    ],
+    technicalFindings: [],
+    coverageItems: [],
+    authorityOpportunities: [],
+    hasConversionTracking: false,
+    hasGbp: false,
+    panelSampleSufficient: false,
+  });
+  assert.equal(score.breakdown.dimension_availability.ai_visibility, false);
+  assert.equal(score.measured_inputs, 0);
+});
+
 test("score labels follow documented thresholds", () => {
   assert.equal(getScoreLabel(85).label, "Dominant");
   assert.equal(getScoreLabel(65).label, "Strong");

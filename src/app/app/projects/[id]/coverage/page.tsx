@@ -37,7 +37,7 @@ export default async function CoveragePage({
         </div>
         <ExportButtons projectId={id} types={["coverage"]} />
       </div>
-      <CoverageMap items={items} />
+      <CoverageMap items={items} projectId={id} />
     </div>
   );
 }

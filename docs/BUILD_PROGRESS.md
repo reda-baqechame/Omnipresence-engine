@@ -207,3 +207,16 @@
 | 2026-06-25 | combined-migration-0017 | done | `db:combine` includes visitor_sessions |
 | 2026-06-25 | capabilities-v0.4.0 | done | Clearbit provider + phase9 production checks |
 
+
+## ship-10-10 2026-07-01T14:42:36.908Z
+```json
+{
+  "at": "2026-07-01T14:42:36.908Z",
+  "gate": "10/10",
+  "steps": {
+    "verify:all": true,
+    "ship-infra": "skipped",
+    "generate-case-studies": true
+  }
+}
+```

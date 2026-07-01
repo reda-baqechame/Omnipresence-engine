@@ -1,7 +1,15 @@
 import Link from "next/link";
-import { Globe, ArrowRight, CheckCircle, Users, FileText, BarChart3 } from "lucide-react";
+import { Globe, ArrowRight, CheckCircle, FileText, Users, BarChart3 } from "lucide-react";
+import { canRenderClaim } from "@/lib/config/claims";
+
+const AGENCY_FEATURES = [
+  { claimId: "guarantee_deterministic", icon: FileText, title: "White-Label PDF Reports", desc: "Your agency name, logo, and colors on every client report. Resell audits to clients at your own price." },
+  { claimId: "technical_audit", icon: Users, title: "Multi-Client Projects", desc: "One agency account manages all client projects. Agency plans scale with your portfolio." },
+  { claimId: "ai_visibility_tracking", icon: BarChart3, title: "AI Visibility Tracking", desc: "Track ChatGPT, Perplexity, Gemini, Google AI Overviews. Prove movement month over month." },
+] as const;
 
 export default function AgenciesPage() {
+  const features = AGENCY_FEATURES.filter((f) => canRenderClaim(f.claimId));
   return (
     <div className="min-h-screen">
       <nav className="border-b border-border px-6 py-4 flex items-center justify-between max-w-6xl mx-auto">
@@ -32,23 +40,7 @@ export default function AgenciesPage() {
       </section>
 
       <section className="max-w-6xl mx-auto px-6 py-16 grid md:grid-cols-3 gap-8">
-        {[
-          {
-            icon: FileText,
-            title: "White-Label PDF Reports",
-            desc: "Your agency name, logo, and colors on every client report. Resell audits to clients at your own price.",
-          },
-          {
-            icon: Users,
-            title: "Multi-Client Projects",
-            desc: "One agency account manages all client projects. Agency plans scale with your portfolio.",
-          },
-          {
-            icon: BarChart3,
-            title: "AI Visibility Tracking",
-            desc: "Track ChatGPT, Perplexity, Gemini, Google AI Overviews. Prove movement month over month.",
-          },
-        ].map((f) => (
+        {features.map((f) => (
           <div key={f.title} className="bg-card border border-border rounded-xl p-6">
             <f.icon className="h-8 w-8 text-primary mb-4" />
             <h3 className="text-lg font-semibold mb-2">{f.title}</h3>

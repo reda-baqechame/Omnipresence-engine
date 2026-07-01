@@ -1,7 +1,9 @@
 import Link from "next/link";
-import { ArrowRight, Search, BarChart3, Zap, Globe, Shield } from "lucide-react";
+import { ArrowRight, Globe } from "lucide-react";
+import { getBackedMarketingFeatures } from "@/lib/marketing-features";
 
 export default function LandingPage() {
+  const features = getBackedMarketingFeatures();
   return (
     <div className="min-h-screen">
       <nav className="border-b border-border px-6 py-4 flex items-center justify-between max-w-7xl mx-auto">
@@ -42,14 +44,7 @@ export default function LandingPage() {
       </section>
 
       <section className="max-w-7xl mx-auto px-6 py-16 grid md:grid-cols-3 gap-8">
-        {[
-          { icon: Search, title: "OmniPresence Audit", desc: "Scan your brand across 15+ platforms. See exactly where you're invisible and why." },
-          { icon: BarChart3, title: "AI Visibility Tracking", desc: "Track brand mentions and citations across ChatGPT, Perplexity, Gemini, Google AI, and more." },
-          { icon: Zap, title: "90-Day Execution Plan", desc: "Get a prioritized roadmap ranked by revenue impact. Not just data — actionable steps." },
-          { icon: Globe, title: "Multi-Platform Coverage", desc: "Directories, social, review sites, communities, podcasts, and authority sources." },
-          { icon: Shield, title: "White-Label for Agencies", desc: "Sell branded OmniPresence reports to every client worried about AI search visibility." },
-          { icon: BarChart3, title: "Traffic Attribution", desc: "Prove ROI with organic traffic, AI referrals, leads, and paid-ads-equivalent value." },
-        ].map((feature) => (
+        {features.map((feature) => (
           <div key={feature.title} className="bg-card border border-border rounded-xl p-6">
             <feature.icon className="h-8 w-8 text-primary mb-4" />
             <h3 className="text-lg font-semibold mb-2">{feature.title}</h3>

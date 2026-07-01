@@ -38,6 +38,21 @@ flowchart LR
 
 Sign-off: `npm run production:ready` green locally **and** smoke against Vercel + Railway health checks.
 
+### GitHub Actions production gate
+
+Weekly + on `main` push: `.github/workflows/production-gate.yml` runs `verify:all`, and when secrets are set also `railway:verify` and `production:ready`.
+
+| Secret | Purpose |
+|--------|---------|
+| `SMOKE_BASE_URL` | Production app URL for smoke tests |
+| `OMNIDATA_BASE_URL` | Railway OmniData health |
+| `OMNIDATA_API_KEY` | OmniData auth |
+| `AI_UI_CAPTURE_URL` | Railway ai-ui-capture health |
+| `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET` | Attribution claim backing (optional) |
+| `CLAIMS_STRICT_PROD` | Set to `1` to fail CI when claims &lt; 12/12 backed |
+
+Full local gate: `npm run ship:10-10` (use `--skip-infra --skip-live` for offline CI parity).
+
 ## Tech stack
 
 - **Frontend:** Next.js 16, TypeScript, Tailwind CSS 4

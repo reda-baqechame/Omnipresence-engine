@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { verifyProjectAccess } from "@/lib/security/project-access";
 import { apiError, apiForbidden, apiUnauthorized, readJsonBody } from "@/lib/security/api-response";
-import { runDueRankSchedules } from "@/lib/engines/rank-schedule-service";
+import { runDueRankSchedules, ensureDefaultRankSchedule, syncScheduleKeywords } from "@/lib/engines/rank-schedule-service";
 import { runAllRankChecks } from "@/lib/engines/rank-tracker-service";
 
 export async function GET(req: NextRequest) {
@@ -16,7 +16,7 @@ export async function GET(req: NextRequest) {
   const access = await verifyProjectAccess(supabase, projectId, user.id, "viewer");
   if (!access) return apiForbidden();
 
-  const [{ data: schedules }, { data: runs }] = await Promise.all([
+  const [{ data: schedules }, { data: runs }, { data: keywordRows }] = await Promise.all([
     supabase.from("rank_schedules").select("*").eq("project_id", projectId).order("created_at", { ascending: false }),
     supabase
       .from("rank_schedule_runs")
@@ -24,9 +24,18 @@ export async function GET(req: NextRequest) {
       .eq("project_id", projectId)
       .order("created_at", { ascending: false })
       .limit(5),
+    supabase
+      .from("rank_schedule_keywords")
+      .select("id, keyword, is_active")
+      .eq("project_id", projectId)
+      .eq("is_active", true),
   ]);
 
-  return NextResponse.json({ schedules: schedules || [], runs: runs || [] });
+  return NextResponse.json({
+    schedules: schedules || [],
+    runs: runs || [],
+    keywordCount: keywordRows?.length || 0,
+  });
 }
 
 export async function POST(req: NextRequest) {
@@ -69,6 +78,14 @@ export async function POST(req: NextRequest) {
     { onConflict: "project_id,name" }
   );
   if (error) return apiError(error.message, 500);
+
+  const { data: sched } = await supabase
+    .from("rank_schedules")
+    .select("id")
+    .eq("project_id", projectId)
+    .eq("name", "default")
+    .maybeSingle();
+  if (sched?.id) await syncScheduleKeywords(supabase, sched.id, projectId);
 
   await runDueRankSchedules(supabase).catch(() => 0);
 

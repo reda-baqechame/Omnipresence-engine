@@ -2,13 +2,25 @@
 
 import type { CoverageItem } from "@/types/database";
 import { ProvenanceBadge } from "@/components/provenance-badge";
+import { CapabilityEvidenceBar } from "@/components/capability-evidence-bar";
 
 interface CoverageMapProps {
   items: CoverageItem[];
+  projectId?: string;
 }
 
-export function CoverageMap({ items }: CoverageMapProps) {
+export function CoverageMap({ items, projectId }: CoverageMapProps) {
   return (
+    <div className="space-y-3">
+      {projectId && (
+        <CapabilityEvidenceBar
+          projectId={projectId}
+          capability="coverage"
+          target=""
+          label="Coverage proof"
+          quality={items.length > 0 ? "measured" : "unavailable"}
+        />
+      )}
     <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3">
       {items.map((item) => {
         const unverified = item.data_quality === "unavailable";
@@ -43,6 +55,7 @@ export function CoverageMap({ items }: CoverageMapProps) {
           </div>
         );
       })}
+    </div>
     </div>
   );
 }

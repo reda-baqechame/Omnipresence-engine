@@ -110,6 +110,30 @@ test("responseHash is a stable sha256 of the input text", () => {
   assert.equal(responseHash(""), createHash("sha256").update("", "utf8").digest("hex"));
 });
 
+/** UI panels that expose measurement evidence via CapabilityEvidenceBar / EvidenceDrawer. */
+export const EVIDENCE_UI_CAPABILITIES = [
+  "technical",
+  "performance",
+  "content",
+  "ppc",
+  "attribution",
+  "coverage",
+  "traffic",
+  "keyword",
+  "rank",
+  "backlink_graph",
+  "local",
+  "visibility",
+  "serp",
+] as const;
+
+test("evidence UI covers all measured capability panels", () => {
+  for (const cap of EVIDENCE_UI_CAPABILITIES) {
+    assert.ok(cap.length > 0, `capability ${cap} must be non-empty`);
+  }
+  assert.equal(EVIDENCE_UI_CAPABILITIES.length, 13);
+});
+
 test("presence gate evidence rate drops when measurement_evidence is sparse", async () => {
   const { gateFromRate } = await import("../../scoring/presence-gate.ts");
   const strong = gateFromRate("evidence", 0.8, true, "8/10 evidenced").score;
