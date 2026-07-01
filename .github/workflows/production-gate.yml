@@ -22,13 +22,27 @@ jobs:
       GOOGLE_CLIENT_ID: ${{ secrets.GOOGLE_CLIENT_ID }}
       GOOGLE_CLIENT_SECRET: ${{ secrets.GOOGLE_CLIENT_SECRET }}
       ENABLE_AI_UI_CAPTURE: "true"
+      NEXT_PUBLIC_SUPABASE_URL: https://placeholder.supabase.co
+      NEXT_PUBLIC_SUPABASE_ANON_KEY: placeholder
+      SUPABASE_SERVICE_ROLE_KEY: placeholder
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
           node-version: 22
           cache: npm
-      - run: npm install --no-audit --no-fund
+      - name: Install dependencies (Linux optional native bindings)
+        run: |
+          rm -rf node_modules
+          npm install --no-audit --no-fund --include=optional
+          npm install --no-save \
+            @tailwindcss/oxide-linux-x64-gnu@4.3.1 \
+            lightningcss-linux-x64-gnu@1.32.0 \
+            @next/swc-linux-x64-gnu@16.2.9
+      - name: Install OmniData deps (for verify:all parity/tests)
+        run: npm install --no-audit --no-fund --prefix services/omnidata
+      - name: Install AI UI Capture deps (for verify:all tests)
+        run: npm install --no-audit --no-fund --prefix services/ai-ui-capture
       - name: verify:all
         run: npm run verify:all
       - name: railway:verify
