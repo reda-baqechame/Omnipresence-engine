@@ -44,11 +44,20 @@ let duckUnavailable = false;
 
 async function resetWebgraphDb(): Promise<void> {
   cachedConn = null;
+  duckUnavailable = false;
   const dataDir = dirname(DB_PATH);
+  const base = DB_PATH.split(/[/\\]/).pop() || "webgraph.duckdb";
   try {
     const { readdir, rm } = await import("node:fs/promises");
     for (const f of await readdir(dataDir)) {
-      if (f.startsWith("webgraph") || f.endsWith(".part")) {
+      if (
+        f.startsWith("webgraph") ||
+        f.startsWith(base) ||
+        f.endsWith(".part") ||
+        f.endsWith(".duckdb") ||
+        f.endsWith(".wal") ||
+        f.endsWith(".tmp")
+      ) {
         await rm(join(dataDir, f), { force: true, recursive: true });
       }
     }
@@ -60,6 +69,11 @@ async function resetWebgraphDb(): Promise<void> {
       /* fresh ingest */
     }
   }
+}
+
+/** Wipe persisted webgraph files (used on startup when volume is corrupted/full). */
+export async function wipeWebgraphStorage(): Promise<void> {
+  await resetWebgraphDb();
 }
 
 async function loadDuckDB(): Promise<DuckDBModule | null> {
