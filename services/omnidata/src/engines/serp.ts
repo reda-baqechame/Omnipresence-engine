@@ -14,6 +14,16 @@ function domainFromUrl(url: string): string {
   }
 }
 
+function decodeHtmlEntities(text: string): string {
+  return text
+    .replace(/&amp;/g, "&")
+    .replace(/&lt;/g, "<")
+    .replace(/&gt;/g, ">")
+    .replace(/&quot;/g, '"')
+    .replace(/&#39;/g, "'")
+    .replace(/&#x27;/g, "'");
+}
+
 /**
  * Pure SERP decomposition: a provider-agnostic SerpResult → DataForSEO-shaped
  * item list (featured snippet, AI Overview + sources, ranked organic, PAA, local
@@ -98,6 +108,7 @@ async function searchBing(keyword: string): Promise<SerpResult | null> {
     webPages?: { value?: Array<{ name: string; url: string; snippet: string }> };
   };
   const pages = data.webPages?.value || [];
+  if (!pages.length) return null;
   return {
     keyword,
     location: "United States",
@@ -164,6 +175,7 @@ async function searchSerper(keyword: string): Promise<SerpResult | null> {
       description: p.address,
     }));
   }
+  if (!result.items.length && !result.featured_snippet && !result.local_pack?.length) return null;
   return result;
 }
 
@@ -215,7 +227,7 @@ async function searchDuckDuckGo(keyword: string): Promise<SerpResult | null> {
     const html = await res.text();
     const items: SerpItem[] = [];
     const blockRe = /class="result\s[^"]*"[\s\S]*?(?=class="result\s|class="nav-link")/g;
-    const blocks = html.match(blockRe) || [];
+    const blocks = html.match(blockRe) || [html];
     let rank = 1;
     for (const block of blocks) {
       const link = block.match(/class="result__a"[^>]*href="([^"]+)"[^>]*>([\s\S]*?)<\/a>/);
@@ -231,7 +243,7 @@ async function searchDuckDuckGo(keyword: string): Promise<SerpResult | null> {
       } catch {
         /* keep raw */
       }
-      const title = link[2].replace(/<[^>]+>/g, "").replace(/&amp;/g, "&").replace(/&lt;/g, "<").replace(/&gt;/g, ">").trim();
+      const title = decodeHtmlEntities(link[2].replace(/<[^>]+>/g, "").trim());
       if (!url.startsWith("http") || !title) continue;
       const snippet = block.match(/class="result__snippet"[^>]*>([\s\S]*?)<\/a>/);
       items.push({
@@ -239,7 +251,7 @@ async function searchDuckDuckGo(keyword: string): Promise<SerpResult | null> {
         rank_absolute: rank,
         title,
         url,
-        description: snippet ? snippet[1].replace(/<[^>]+>/g, "").trim() : "",
+        description: snippet ? decodeHtmlEntities(snippet[1].replace(/<[^>]+>/g, "").trim()) : "",
         domain: domainFromUrl(url),
         pixel_rank: rank,
       });
@@ -264,6 +276,7 @@ async function searchBrave(keyword: string): Promise<SerpResult | null> {
     web?: { results?: Array<{ title: string; url: string; description: string }> };
   };
   const pages = data.web?.results || [];
+  if (!pages.length) return null;
   return {
     keyword,
     location: "United States",
@@ -295,14 +308,18 @@ async function fetchAutocomplete(keyword: string): Promise<string[]> {
 export async function runSerpLive(keyword: string, location = "United States"): Promise<{
   tasks: Array<{ result: Array<{ items: SerpItem[]; keyword: string; location_name: string }> }>;
 }> {
-  let result =
-    (await searchSerper(keyword)) ||
-    (await searchBing(keyword)) ||
-    (await searchBrave(keyword)) ||
-    (await searchFirecrawl(keyword)) ||
-    (await searchDuckDuckGo(keyword)) ||
+  let result: SerpResult | null = null;
+  for (const search of [searchSerper, searchBing, searchBrave, searchDuckDuckGo, searchFirecrawl]) {
+    const candidate = await search(keyword);
+    if (candidate?.items?.length) {
+      result = candidate;
+      break;
+    }
+  }
+  if (!result) {
     // Keyless fallback (env-gated): real results with no API key/spend.
-    (await scrapeGoogleSerp(keyword, location));
+    result = await scrapeGoogleSerp(keyword, location);
+  }
 
   if (!result) {
     return {
