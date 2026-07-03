@@ -42,6 +42,12 @@ try {
   console.log(`Citation tracking: ${citationTracking ? "ON" : "OFF"}`);
   console.log(`SERP providers: ${serpOn ? "ON" : "OFF"}`);
   console.log(`OmniData:    ${health.checks?.omnidata || "not configured"}`);
+  if (health.googleCloud) {
+    const g = health.googleCloud;
+    const on = (v) => (v ? "ON" : "OFF");
+    console.log(`Google Cloud key: ${g.keyConfigured ? "SET" : "missing"}`);
+    console.log(`  PageSpeed/CrUX: ${on(g.pagespeed)} · History: ${on(g.cruxHistory)} · YouTube: ${on(g.youtube)} · KG: ${on(g.knowledgeGraph)} · NLP: ${on(g.naturalLanguage)}`);
+  }
   console.log(`Integration encryption: ${health.checks?.integration_encryption || "unknown"}`);
   console.log(`Intelligence schema: ${health.checks?.intelligence_schema || "unknown"}`);
   console.log(`Phase 8 schema:    ${health.checks?.phase8_schema || "unknown"}`);

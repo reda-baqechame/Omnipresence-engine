@@ -3,6 +3,11 @@
   "buildCommand": "npm run build",
   "installCommand": "npm install",
   "regions": ["iad1"],
+  "functions": {
+    "app/api/public/audit/route.ts": {
+      "maxDuration": 120
+    }
+  },
   "headers": [
     {
       "source": "/api/(.*)",

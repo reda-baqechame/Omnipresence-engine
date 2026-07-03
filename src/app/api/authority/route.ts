@@ -15,6 +15,27 @@ const VALID_STATUSES = new Set([
   "rejected",
 ]);
 
+export async function GET(request: NextRequest) {
+  const supabase = await createClient();
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) return apiUnauthorized();
+
+  const projectId = request.nextUrl.searchParams.get("projectId");
+  if (!projectId) return apiError("projectId required");
+
+  const access = await verifyProjectAccess(supabase, projectId, user.id, "viewer");
+  if (!access) return apiForbidden();
+
+  const { data: opportunities, error } = await supabase
+    .from("authority_opportunities")
+    .select("*")
+    .eq("project_id", projectId)
+    .order("estimated_impact", { ascending: false });
+
+  if (error) return apiServerError("authority list failed", error);
+  return NextResponse.json({ opportunities: opportunities || [] });
+}
+
 export async function POST(request: NextRequest) {
   const supabase = await createClient();
   const { data: { user } } = await supabase.auth.getUser();

@@ -14,7 +14,7 @@ import { findContentGaps } from "../engines/content-gaps.js";
 import { findBacklinkGaps } from "../engines/backlink-gaps.js";
 import { runMapsLive } from "../engines/maps-serp.js";
 import { getRankHistoryHydrated } from "../store.js";
-import { isWebgraphReady, getWebgraphMeta, triggerIngestAsync, isIngestInFlight, isWebgraphEdgesReady, getDomainAuthority, getReferringDomainCount } from "../engines/webgraph.js";
+import { isWebgraphReady, getWebgraphMeta, triggerIngestAsync, isIngestInFlight, isWebgraphEdgesReady, getDomainAuthority, getReferringDomainCount, getLastIngestError, isDuckDbAvailable, getLiveWebgraphCounts } from "../engines/webgraph.js";
 import { getKeywordMetrics, hasKeywordPlanner, type GoogleAdsCreds } from "../engines/keyword-planner.js";
 import { getTrends } from "../engines/trends.js";
 import { detectTechStack } from "../engines/techstack.js";
@@ -352,6 +352,7 @@ router.get("/v3/backlinks/webgraph/status", async (_req, res) => {
   const ready = await isWebgraphReady();
   const edgesReady = await isWebgraphEdgesReady();
   const meta = await getWebgraphMeta();
+  const live = await getLiveWebgraphCounts();
   res.json(
     dfsResponse([
       {
@@ -365,6 +366,11 @@ router.get("/v3/backlinks/webgraph/status", async (_req, res) => {
             ingested_at: meta?.ingested_at ?? null,
             vertex_count: meta?.vertex_count ?? 0,
             edge_count: meta?.edge_count ?? 0,
+            live_vertex_count: live?.vertices ?? null,
+            live_edge_count: live?.edges ?? null,
+            duckdb_available: isDuckDbAvailable(),
+            last_ingest_error: getLastIngestError(),
+            db_path: process.env.WEBGRAPH_DB_PATH || null,
           },
         ],
       },

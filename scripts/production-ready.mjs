@@ -10,13 +10,13 @@ import { fileURLToPath } from "url";
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 const base = process.argv[2] || process.env.SMOKE_BASE_URL || "https://omnipresence-engine.vercel.app";
 
-function run(label, cmd, args, cwd = root) {
+function run(label, cmd, args, opts = {}) {
   console.log(`\n>>> ${label}\n`);
   const useShell = process.platform === "win32" && (cmd === "npm" || cmd.endsWith("npm.cmd"));
   const result = spawnSync(cmd, args, {
-    cwd,
+    cwd: opts.cwd || root,
     encoding: "utf8",
-    env: { ...process.env, SMOKE_BASE_URL: base },
+    env: { ...process.env, SMOKE_BASE_URL: base, ...opts.env },
     shell: useShell,
   });
   if (result.stdout) process.stdout.write(result.stdout);
@@ -47,6 +47,14 @@ const results = [
   ["audit:full (live)", run("audit:full", "npm", ["run", "audit:full"])],
   ["audit:live (measured)", run("audit:live", "npm", ["run", "audit:live"])],
   ["wire:diy (live caps)", run("wire:diy", "npm", ["run", "wire:diy"])],
+  ["webgraph:verify", run("webgraph:verify", "npm", ["run", "webgraph:verify"], {
+    env: {
+      OMNIDATA_API_KEY: process.env.OMNIDATA_API_KEY || "e8275a5a3ff590e3f66ef1577551397f5e51d834d23567d7da530356abc5aefb",
+      OMNIDATA_BASE_URL: process.env.OMNIDATA_BASE_URL || "https://omnipresence-engine-production.up.railway.app",
+      WEBGRAPH_REQUIRE_FULL: process.env.WEBGRAPH_REQUIRE_FULL || "1",
+    },
+  })],
+  ["email:verify (audit lead)", run("email:verify", "npm", ["run", "email:verify"])],
 ];
 
 console.log("\n========================================");

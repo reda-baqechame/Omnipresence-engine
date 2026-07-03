@@ -1,6 +1,14 @@
 import pg from "pg";
+import { loadEnvFile } from "./load-vercel-env.mjs";
+import { join, dirname } from "path";
+import { fileURLToPath } from "url";
+loadEnvFile(join(dirname(fileURLToPath(import.meta.url)), "..", ".env.migrate.tmp"), true);
 
 const conn = process.env.POSTGRES_URL_NON_POOLING;
+if (!conn) {
+  console.error("POSTGRES_URL_NON_POOLING not set — run vercel env pull .env.migrate.tmp first");
+  process.exit(1);
+}
 const normalized = conn.replace(/sslmode=[^&]+/, "sslmode=no-verify").includes("sslmode=")
   ? conn.replace(/sslmode=[^&]+/, "sslmode=no-verify")
   : `${conn}?sslmode=no-verify`;

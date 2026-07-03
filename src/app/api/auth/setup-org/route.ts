@@ -2,8 +2,12 @@ import { NextRequest, NextResponse } from "next/server";
 import { createClient, createServiceClient } from "@/lib/supabase/server";
 import { slugify } from "@/lib/utils";
 import { apiError, apiServerError, apiUnauthorized, readJsonBody } from "@/lib/security/api-response";
+import { guardPublicEndpoint } from "@/lib/security/public-guard";
 
 export async function POST(request: NextRequest) {
+  const limited = await guardPublicEndpoint(request, "auth-setup-org", 20, 60 * 60_000);
+  if (limited) return limited;
+
   const supabase = await createClient();
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) return apiUnauthorized();
@@ -44,7 +48,14 @@ export async function POST(request: NextRequest) {
     .from("memberships")
     .insert({ organization_id: org.id, user_id: user.id, role: "owner" });
 
-  if (memberError) return apiServerError("setup-org membership failed", memberError);
+  if (memberError) {
+    try {
+      await service.from("organizations").delete().eq("id", org.id);
+    } catch {
+      /* best-effort cleanup */
+    }
+    return apiServerError("setup-org membership failed", memberError);
+  }
 
   return NextResponse.json({ organization: org });
 }

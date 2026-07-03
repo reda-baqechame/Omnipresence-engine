@@ -31,7 +31,7 @@ export default function LoginPage() {
     setFormError("");
 
     const supabase = createClient();
-    const { error } = await supabase.auth.signInWithPassword({ email, password });
+    const { data, error } = await supabase.auth.signInWithPassword({ email, password });
 
     if (error) {
       const msg =
@@ -41,14 +41,28 @@ export default function LoginPage() {
       setFormError(msg);
       setLoading(false);
     } else {
-      const pendingOrg = sessionStorage.getItem("pending_org_name");
+      const meta = data.user?.user_metadata as { pending_org_name?: string; full_name?: string } | undefined;
+      const pendingOrg =
+        sessionStorage.getItem("pending_org_name") ||
+        meta?.pending_org_name?.trim() ||
+        (meta?.full_name ? `${meta.full_name}'s Agency` : "");
+
       if (pendingOrg) {
-        await fetch("/api/auth/setup-org", {
+        const res = await fetch("/api/auth/setup-org", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ orgName: pendingOrg }),
         });
         sessionStorage.removeItem("pending_org_name");
+        if (!res.ok) {
+          const body = await res.json().catch(() => ({}));
+          if (body.error !== "Organization already exists for this user") {
+            setFormError(body.error || "Signed in but organization setup failed. Use the banner on the dashboard.");
+            setLoading(false);
+            window.location.href = "/app?setup=failed";
+            return;
+          }
+        }
       }
       window.location.href = "/app";
     }

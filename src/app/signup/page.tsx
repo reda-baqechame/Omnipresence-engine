@@ -14,13 +14,16 @@ export default function SignupPage() {
   const [info, setInfo] = useState("");
   const [loading, setLoading] = useState(false);
 
-  async function setupOrganization(name: string) {
+  async function setupOrganization(name: string): Promise<{ ok: boolean; error?: string }> {
     const res = await fetch("/api/auth/setup-org", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ orgName: name }),
     });
-    return res.ok;
+    if (res.ok) return { ok: true };
+    const body = await res.json().catch(() => ({}));
+    if (body.error === "Organization already exists for this user") return { ok: true };
+    return { ok: false, error: body.error || `Setup failed (${res.status})` };
   }
 
   async function handleSignup(e: React.FormEvent) {
@@ -35,6 +38,42 @@ export default function SignupPage() {
       (typeof window !== "undefined" ? window.location.origin : "");
     const organizationName = orgName.trim() || `${fullName}'s Agency`;
 
+    const regRes = await fetch("/api/auth/register", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        email,
+        password,
+        fullName,
+        orgName: organizationName,
+      }),
+    });
+    const regJson = await regRes.json().catch(() => ({}));
+
+    if (regRes.ok && regJson.ok) {
+      if (regJson.needsLogin) {
+        setInfo(regJson.message || "Account created. Please sign in.");
+        setLoading(false);
+        return;
+      }
+      setInfo("Account ready — redirecting to your dashboard…");
+      window.location.href = "/app";
+      return;
+    }
+
+    if (regRes.status === 429) {
+      setError(regJson.error || "Too many signup attempts. Please wait an hour and try again.");
+      setLoading(false);
+      return;
+    }
+
+    if (regRes.status !== 404 && regRes.status !== 501) {
+      setError(regJson.error || "Registration failed. Try again or sign in if you already have an account.");
+      setLoading(false);
+      return;
+    }
+
+    // Fallback: client-side signUp if register route unavailable
     const { data, error: signUpError } = await supabase.auth.signUp({
       email,
       password,
@@ -51,19 +90,21 @@ export default function SignupPage() {
     }
 
     if (data.session) {
-      const ok = await setupOrganization(organizationName);
-      if (!ok) {
-        setError("Account created but organization setup failed. Try again from the dashboard.");
+      const setup = await setupOrganization(organizationName);
+      if (!setup.ok) {
+        setError(setup.error || "Account created but organization setup failed. Try again from the dashboard.");
         setLoading(false);
+        window.location.href = "/app?setup=failed";
         return;
       }
+      setInfo("Account ready — redirecting to your dashboard…");
       window.location.href = "/app";
       return;
     }
 
     if (data.user) {
       setInfo(
-        "Check your email to confirm your account. After confirming, sign in — your organization will be set up automatically."
+        "Check your email to confirm your account. After confirming, sign in — your organization will be set up automatically. If you don't receive an email within a few minutes, try signing in directly (instant signup may already be enabled)."
       );
       sessionStorage.setItem("pending_org_name", organizationName);
     }

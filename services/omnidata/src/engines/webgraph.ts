@@ -345,10 +345,36 @@ export async function getWebgraphMeta(): Promise<WebgraphMeta | null> {
 
 // In-process guard so a re-ingest trigger can't stack multiple multi-GB jobs.
 let ingestInFlight = false;
+let lastIngestError: string | null = null;
 
 /** Whether an ingest is currently running in this process. */
 export function isIngestInFlight(): boolean {
   return ingestInFlight;
+}
+
+export function getLastIngestError(): string | null {
+  return lastIngestError;
+}
+
+/** True when @duckdb/node-api loaded successfully in this process. */
+export function isDuckDbAvailable(): boolean {
+  return !duckUnavailable;
+}
+
+/** Live table row counts (even before meta is written). */
+export async function getLiveWebgraphCounts(): Promise<{ vertices: number; edges: number } | null> {
+  const conn = await getConnection();
+  if (!conn) return null;
+  try {
+    const v = await conn.runAndReadAll("SELECT COUNT(*) AS c FROM vertices");
+    const e = await conn.runAndReadAll("SELECT COUNT(*) AS c FROM edges");
+    return {
+      vertices: Number(v.getRowObjects()[0]?.c ?? 0),
+      edges: Number(e.getRowObjects()[0]?.c ?? 0),
+    };
+  } catch {
+    return null;
+  }
 }
 
 /**
@@ -365,12 +391,20 @@ export function triggerIngestAsync(release: string): { accepted: boolean; reason
     return { accepted: false, reason: e instanceof Error ? e.message : "invalid release" };
   }
   ingestInFlight = true;
+  lastIngestError = null;
   void ingestWebgraph(rel)
     .then((r) => {
-      if (!r.ok) console.warn(`[webgraph] re-ingest failed: ${r.message}`);
-      else console.log(`[webgraph] re-ingest complete: ${r.message}`);
+      if (!r.ok) {
+        lastIngestError = r.message;
+        console.warn(`[webgraph] re-ingest failed: ${r.message}`);
+      } else {
+        console.log(`[webgraph] re-ingest complete: ${r.message}`);
+      }
     })
-    .catch((e) => console.warn("[webgraph] re-ingest error", e))
+    .catch((e) => {
+      lastIngestError = e instanceof Error ? e.message : String(e);
+      console.warn("[webgraph] re-ingest error", e);
+    })
     .finally(() => {
       ingestInFlight = false;
     });

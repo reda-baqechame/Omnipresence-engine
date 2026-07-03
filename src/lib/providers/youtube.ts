@@ -1,4 +1,5 @@
 import { fetchWithTimeout } from "./http";
+import { getGoogleCloudApiKey, hasGoogleCloudApiKey } from "./google-cloud-key";
 import { logProviderError } from "@/lib/observability/log";
 
 /**
@@ -20,23 +21,23 @@ export interface YouTubeVideo {
 }
 
 export function hasYouTubeCapability(): boolean {
-  const k = process.env.YOUTUBE_API_KEY;
-  return Boolean(k && k.trim() && !k.startsWith("your-"));
+  return hasGoogleCloudApiKey();
 }
 
 export async function searchYouTube(
   query: string,
   maxResults = 10
 ): Promise<{ available: boolean; reason?: string; videos: YouTubeVideo[] }> {
-  if (!hasYouTubeCapability()) {
-    return { available: false, reason: "YOUTUBE_API_KEY not set (free key).", videos: [] };
+  const key = getGoogleCloudApiKey();
+  if (!key) {
+    return { available: false, reason: "Google Cloud API key not set (enable YouTube Data API on your key).", videos: [] };
   }
   const params = new URLSearchParams({
     part: "snippet",
     q: query,
     type: "video",
     maxResults: String(Math.min(25, maxResults)),
-    key: process.env.YOUTUBE_API_KEY!,
+    key,
   });
   try {
     const res = await fetchWithTimeout(`${YT_BASE}/search?${params}`, { timeoutMs: 15_000 });

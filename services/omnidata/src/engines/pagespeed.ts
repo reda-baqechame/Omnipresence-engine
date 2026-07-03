@@ -125,7 +125,10 @@ export async function getPageSpeed(
   strategy: "mobile" | "desktop" = "mobile"
 ): Promise<PageSpeedResult> {
   const fullUrl = url.startsWith("http") ? url : `https://${url}`;
-  const key = process.env.PAGESPEED_API_KEY;
+  const key =
+    process.env.PAGESPEED_API_KEY ||
+    process.env.GOOGLE_CLOUD_API_KEY ||
+    process.env.CRUX_API_KEY;
   const params = new URLSearchParams({ url: fullUrl, category: "performance", strategy });
   if (key && !key.startsWith("your-")) params.set("key", key);
 

@@ -7,6 +7,7 @@ import {
 } from "@/lib/config/capabilities";
 import { hasIntelligenceApi } from "@/lib/providers/intelligence-api";
 import { hasIntegrationEncryptionKey } from "@/lib/security/credential-vault";
+import { hasResendCapability, hasSmtpCapability } from "@/lib/email/transport";
 
 export type ProductionCheckStatus = "ok" | "warning" | "error" | "skipped";
 
@@ -202,8 +203,12 @@ export function getProductionReadiness(): {
   checks.push({
     id: "email",
     label: "Transactional email",
-    status: hasEnv("RESEND_API_KEY") ? "ok" : "skipped",
-    message: "Audit leads and weekly reports",
+    status: hasResendCapability() || hasSmtpCapability() ? "ok" : "skipped",
+    message: hasResendCapability()
+      ? "Resend — audit leads and weekly reports (custom domain unlocks delivery to any inbox)"
+      : hasSmtpCapability()
+        ? "SMTP — audit leads and weekly reports"
+        : "Set RESEND_API_KEY or SMTP_HOST for audit lead emails",
   });
 
   const blockers = checks.filter((c) => c.status === "error").map((c) => c.id);

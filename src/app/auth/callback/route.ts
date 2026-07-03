@@ -20,12 +20,15 @@ export async function GET(request: Request) {
   const supabase = await createClient();
   const { error } = await supabase.auth.exchangeCodeForSession(code);
   if (error) {
+    console.error("[auth/callback] exchangeCodeForSession:", error.message);
     return NextResponse.redirect(new URL("/login?error=auth_callback", origin));
   }
 
   const {
     data: { user },
   } = await supabase.auth.getUser();
+
+  let setupFailed = false;
 
   if (user) {
     const meta = user.user_metadata as { pending_org_name?: string; full_name?: string };
@@ -49,16 +52,24 @@ export async function GET(request: Request) {
           .select()
           .single();
 
-        if (!orgError && org) {
-          await service.from("memberships").insert({
+        if (orgError || !org) {
+          console.error("[auth/callback] org insert:", orgError?.message);
+          setupFailed = true;
+        } else {
+          const { error: memberError } = await service.from("memberships").insert({
             organization_id: org.id,
             user_id: user.id,
             role: "owner",
           });
+          if (memberError) {
+            console.error("[auth/callback] membership insert:", memberError.message);
+            setupFailed = true;
+          }
         }
       }
     }
   }
 
-  return NextResponse.redirect(new URL(next, origin));
+  const dest = new URL(setupFailed ? "/app?setup=failed" : next, origin);
+  return NextResponse.redirect(dest);
 }

@@ -1,4 +1,5 @@
 import { fetchWithTimeout } from "./http";
+import { getGoogleCloudApiKey } from "./google-cloud-key";
 import { logProviderError } from "@/lib/observability/log";
 
 /**
@@ -18,8 +19,7 @@ export interface CwvPoint {
 }
 
 export function getCruxKey(): string | null {
-  const k = process.env.CRUX_API_KEY || process.env.PAGESPEED_API_KEY;
-  return k && k.trim() && !k.startsWith("your-") ? k.trim() : null;
+  return getGoogleCloudApiKey();
 }
 
 export function hasCruxHistoryCapability(): boolean {

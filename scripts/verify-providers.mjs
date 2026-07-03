@@ -56,6 +56,13 @@ function has(key) {
 function val(key) {
   return (process.env[key] || "").trim();
 }
+function googleCloudKey() {
+  for (const k of ["PAGESPEED_API_KEY", "GOOGLE_CLOUD_API_KEY", "YOUTUBE_API_KEY", "GOOGLE_KG_API_KEY", "CRUX_API_KEY"]) {
+    const v = val(k);
+    if (v && !v.startsWith("your-")) return v;
+  }
+  return "";
+}
 function trimSlash(u) {
   return u.replace(/\/+$/, "");
 }
@@ -203,10 +210,13 @@ const PROVIDERS = [
   {
     name: "PageSpeed / CrUX (Core Web Vitals)",
     tier: "Performance",
-    keys: ["PAGESPEED_API_KEY"],
+    keys: ["PAGESPEED_API_KEY", "GOOGLE_CLOUD_API_KEY", "CRUX_API_KEY"],
+    keysMode: "any",
     probe: async () => {
+      const key = googleCloudKey();
+      if (!key) throw new Error("no Google Cloud API key");
       const r = await fetchWithTimeout(
-        `https://chromeuxreport.googleapis.com/v1/records:queryRecord?key=${encodeURIComponent(val("PAGESPEED_API_KEY"))}`,
+        `https://chromeuxreport.googleapis.com/v1/records:queryRecord?key=${encodeURIComponent(key)}`,
         { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ origin: "https://web.dev" }) }
       );
       // 200 = data, 404 = no CrUX data for origin but key is valid. 400/403 = key/API problem.
@@ -217,38 +227,78 @@ const PROVIDERS = [
   {
     name: "CrUX History API",
     tier: "Performance",
-    keys: ["CRUX_API_KEY"],
+    keys: ["PAGESPEED_API_KEY", "GOOGLE_CLOUD_API_KEY", "CRUX_API_KEY"],
+    keysMode: "any",
     probe: async () => {
+      const key = googleCloudKey();
+      if (!key) throw new Error("no Google Cloud API key");
       const r = await fetchWithTimeout(
-        `https://chromeuxreport.googleapis.com/v1/records:queryRecord?key=${encodeURIComponent(val("CRUX_API_KEY"))}`,
-        { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ origin: "https://web.dev" }) }
+        `https://chromeuxreport.googleapis.com/v1/records:queryHistoryRecord?key=${encodeURIComponent(key)}`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            origin: "https://web.dev",
+            metrics: ["largest_contentful_paint"],
+          }),
+        }
       );
-      if (r.status === 400 || r.status === 403) throw new Error(`HTTP ${r.status}`);
-      return "key valid";
+      // 404 = origin not in dataset but key works; 400/403 = key/API problem.
+      if (r.status === 400 || r.status === 403) throw new Error(`HTTP ${r.status} (enable CrUX API on this key)`);
+      return "history ok";
     },
   },
   {
     name: "YouTube Data API (video SEO)",
     tier: "Data",
-    keys: ["YOUTUBE_API_KEY"],
+    keys: ["YOUTUBE_API_KEY", "PAGESPEED_API_KEY", "GOOGLE_CLOUD_API_KEY"],
+    keysMode: "any",
     probe: async () => {
+      const key = googleCloudKey();
+      if (!key) throw new Error("no Google Cloud API key");
       const r = await fetchWithTimeout(
-        `https://www.googleapis.com/youtube/v3/search?part=snippet&q=test&maxResults=1&key=${encodeURIComponent(val("YOUTUBE_API_KEY"))}`
+        `https://www.googleapis.com/youtube/v3/search?part=snippet&q=test&maxResults=1&key=${encodeURIComponent(key)}`
       );
-      if (!r.ok) throw new Error(`HTTP ${r.status}`);
+      if (!r.ok) throw new Error(`HTTP ${r.status} (enable YouTube Data API on your key)`);
       return "search ok";
     },
   },
   {
     name: "Google Knowledge Graph (entities)",
     tier: "Data",
-    keys: ["GOOGLE_KG_API_KEY"],
+    keys: ["GOOGLE_KG_API_KEY", "PAGESPEED_API_KEY", "GOOGLE_CLOUD_API_KEY"],
+    keysMode: "any",
     probe: async () => {
+      const key = googleCloudKey();
+      if (!key) throw new Error("no Google Cloud API key");
       const r = await fetchWithTimeout(
-        `https://kgsearch.googleapis.com/v1/entities:search?query=google&limit=1&key=${encodeURIComponent(val("GOOGLE_KG_API_KEY"))}`
+        `https://kgsearch.googleapis.com/v1/entities:search?query=google&limit=1&key=${encodeURIComponent(key)}`
       );
-      if (!r.ok) throw new Error(`HTTP ${r.status}`);
+      if (!r.ok) throw new Error(`HTTP ${r.status} (enable Knowledge Graph Search API on your key)`);
       return "lookup ok";
+    },
+  },
+  {
+    name: "Google Natural Language (content entities)",
+    tier: "Data",
+    keys: ["PAGESPEED_API_KEY", "GOOGLE_CLOUD_API_KEY"],
+    keysMode: "any",
+    probe: async () => {
+      const key = googleCloudKey();
+      if (!key) throw new Error("no Google Cloud API key");
+      const r = await fetchWithTimeout(
+        `https://language.googleapis.com/v1/documents:analyzeEntities?key=${encodeURIComponent(key)}`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            document: { type: "PLAIN_TEXT", content: "OmniPresence Engine audits Core Web Vitals and AI visibility." },
+            encodingType: "UTF8",
+          }),
+        }
+      );
+      if (!r.ok) throw new Error(`HTTP ${r.status} (enable Cloud Natural Language API on your key)`);
+      return "entities ok";
     },
   },
 
@@ -400,7 +450,8 @@ const C = {
 async function run() {
   const results = [];
   for (const p of PROVIDERS) {
-    const configured = p.keys.every((k) => has(k));
+    const configured =
+      p.keysMode === "any" ? p.keys.some((k) => has(k)) : p.keys.every((k) => has(k));
     if (!configured) {
       results.push({ name: p.name, tier: p.tier, status: "skip", detail: "not configured" });
       continue;

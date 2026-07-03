@@ -17,9 +17,9 @@ import { request as httpRequest } from "node:http";
 
 const appUrl = (process.argv[2] || process.env.RAILWAY_APP_URL || process.env.SMOKE_BASE_URL || process.env.NEXT_PUBLIC_APP_URL || "https://omnipresence-engine.vercel.app")
   .replace(/\/$/, "");
-const omnidataUrl = (process.argv[3] || process.env.OMNIDATA_PUBLIC_URL || process.env.OMNIDATA_BASE_URL || "")
+const omnidataUrl = (process.argv[3] || process.env.OMNIDATA_PUBLIC_URL || process.env.OMNIDATA_BASE_URL || "https://omnipresence-engine-production.up.railway.app")
   .replace(/\/$/, "");
-const aiCaptureUrl = (process.env.AI_UI_CAPTURE_URL || "").replace(/\/$/, "");
+const aiCaptureUrl = (process.env.AI_UI_CAPTURE_URL || "https://ai-ui-capture-production.up.railway.app/capture").replace(/\/$/, "");
 /** Health is at service root; Vercel env often stores the /capture route URL. */
 const aiCaptureBase = aiCaptureUrl.replace(/\/capture$/i, "");
 
@@ -139,6 +139,38 @@ if (aiCaptureBase && !/localhost|127\.0\.0\.1|0\.0\.0\.0/.test(aiCaptureBase)) {
 } else if (aiCaptureUrl) {
   console.log("\nAI UI Capture service");
   warn("AI_UI_CAPTURE_URL is localhost — skipping remote probe");
+}
+
+// 4) Webgraph / backlink index (full Common Crawl graph)
+if (omnidataUrl && !/localhost|127\.0\.0\.1|0\.0\.0\.0/.test(omnidataUrl)) {
+  console.log("\nWebgraph (Common Crawl backlinks)");
+  const apiKey = process.env.OMNIDATA_API_KEY || "";
+  const requireFull = process.env.WEBGRAPH_REQUIRE_FULL !== "0";
+  try {
+    const headers = apiKey ? { "x-api-key": apiKey } : {};
+    const { ok: healthy, status, json } = await fetchJson(`${omnidataUrl}/v3/backlinks/webgraph/status`, {
+      headers,
+    });
+    if (!healthy || !json) {
+      bad(`/v3/backlinks/webgraph/status returned ${status}`);
+    } else {
+      const row = json?.tasks?.[0]?.result?.[0] || {};
+      const mode = row.ingest_mode || "?";
+      const edges = Number(row.edge_count ?? 0);
+      const vertices = Number(row.vertex_count ?? 0);
+      if (row.ingest_in_progress) {
+        warn(`ingest in progress (mode=${mode}, edges=${edges.toLocaleString()})`);
+      } else if (row.edges_ready && edges > 0) {
+        ok(`edges_ready (mode=${mode}, ${vertices.toLocaleString()} vertices, ${edges.toLocaleString()} edges)`);
+      } else if (requireFull) {
+        bad(`edges not ready (mode=${mode}, vertices=${vertices}, edges=${edges}) — resize volume 20GB+ and run full ingest`);
+      } else {
+        warn(`edges not ready (mode=${mode}) — authority may work, backlinks use fallback`);
+      }
+    }
+  } catch (e) {
+    bad(`webgraph status failed: ${e instanceof Error ? e.message : e}`);
+  }
 }
 
 console.log("");

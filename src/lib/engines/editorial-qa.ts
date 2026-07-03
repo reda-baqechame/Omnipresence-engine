@@ -1,6 +1,7 @@
 import { franc } from "franc-min";
 import { contentTerms, termFrequencies, sentenceStats } from "@/lib/nlp/wink";
 import { checkGrammar, type GrammarIssue } from "@/lib/providers/languagetool";
+import { analyzeTextWithGoogleNlp, type GoogleNlpAnalysis } from "@/lib/providers/google-natural-language";
 
 /**
  * Editorial QA engine (Phase 12) — keyless content-quality pass.
@@ -102,6 +103,7 @@ export interface EditorialQA {
     errorCount: number;
     topIssues: GrammarIssue[];
   };
+  googleNlp: Pick<GoogleNlpAnalysis, "available" | "reason" | "sentiment" | "entities">;
   warnings: string[];
 }
 
@@ -145,5 +147,28 @@ export async function runEditorialQA(
     if (g.available && g.errorCount > 0) warnings.push(`${g.errorCount} grammar/style issue(s) found.`);
   }
 
-  return { readability, keyphrases, language, thinContent, uniqueTermRatio, grammar, warnings };
+  const nlp = await analyzeTextWithGoogleNlp(text);
+  if (nlp.available) {
+    const top = nlp.entities.slice(0, 3).map((e) => e.name);
+    if (top.length) warnings.push(`Top entities (Google NLP): ${top.join(", ")}.`);
+    if (nlp.sentiment.label === "negative" && nlp.sentiment.magnitude > 0.6) {
+      warnings.push("Negative tone detected — consider neutral/authoritative phrasing for YMYL topics.");
+    }
+  }
+
+  return {
+    readability,
+    keyphrases,
+    language,
+    thinContent,
+    uniqueTermRatio,
+    grammar,
+    googleNlp: {
+      available: nlp.available,
+      reason: nlp.reason,
+      sentiment: nlp.sentiment,
+      entities: nlp.entities,
+    },
+    warnings,
+  };
 }

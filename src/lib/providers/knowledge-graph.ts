@@ -1,4 +1,5 @@
 import { fetchWithTimeout } from "./http";
+import { getGoogleCloudApiKey, hasGoogleCloudApiKey } from "./google-cloud-key";
 import { logProviderError } from "@/lib/observability/log";
 
 /**
@@ -11,8 +12,7 @@ const UA = "OmniPresence-Entity/1.0 (https://github.com)";
 
 // ---------- Google Knowledge Graph Search (free key) ----------
 export function hasGoogleKgCapability(): boolean {
-  const k = process.env.GOOGLE_KG_API_KEY;
-  return Boolean(k && k.trim() && !k.startsWith("your-"));
+  return hasGoogleCloudApiKey();
 }
 
 export interface KgEntity {
@@ -25,13 +25,14 @@ export interface KgEntity {
 }
 
 export async function googleKnowledgeGraph(query: string): Promise<{ available: boolean; reason?: string; entities: KgEntity[] }> {
-  if (!hasGoogleKgCapability()) {
-    return { available: false, reason: "GOOGLE_KG_API_KEY not set (free key).", entities: [] };
+  const key = getGoogleCloudApiKey();
+  if (!key) {
+    return { available: false, reason: "Google Cloud API key not set (enable Knowledge Graph Search API on your key).", entities: [] };
   }
   try {
     const params = new URLSearchParams({
       query,
-      key: process.env.GOOGLE_KG_API_KEY!,
+      key,
       limit: "5",
       indent: "false",
     });

@@ -108,6 +108,24 @@ if (needs("INTEGRATION_ENCRYPTION_KEY")) {
   fixes.push(["INTEGRATION_ENCRYPTION_KEY", randomBytes(32).toString("base64url")]);
 }
 
+const providersPath = join(root, ".env.providers");
+const localProviders = existsSync(providersPath)
+  ? parseEnvFile(readFileSync(providersPath, "utf8"))
+  : new Map();
+
+if (needs("RESEND_API_KEY")) {
+  const key = localProviders.get("RESEND_API_KEY");
+  if (key && key.startsWith("re_")) {
+    fixes.push(["RESEND_API_KEY", key]);
+    const from =
+      localProviders.get("RESEND_FROM_EMAIL") ||
+      localProviders.get("EMAIL_FROM") ||
+      "onboarding@resend.dev";
+    if (needs("RESEND_FROM_EMAIL")) fixes.push(["RESEND_FROM_EMAIL", from]);
+    if (needs("EMAIL_FROM")) fixes.push(["EMAIL_FROM", from]);
+  }
+}
+
 if (fixes.length) {
   console.log("Applying auto-fixes on Vercel:\n");
   for (const [key, value] of fixes) {
@@ -126,6 +144,7 @@ const manual = [
   "AI_UI_CAPTURE_URL",
   "GOOGLE_CLIENT_ID",
   "GOOGLE_CLIENT_SECRET",
+  "RESEND_API_KEY",
 ];
 
 async function probeLiveHealth(url) {

@@ -30,6 +30,7 @@ export type ProviderId =
   | "clarity"
   | "languagetool"
   | "google_kg"
+  | "google_nlp"
   | "posthog_query";
 
 export interface ProviderStatus {
@@ -102,6 +103,16 @@ function hasEnv(key: string): boolean {
   return Boolean(v && v.length > 0 && !v.startsWith("your-"));
 }
 
+function hasGoogleCloudApiKey(): boolean {
+  return (
+    hasEnv("PAGESPEED_API_KEY") ||
+    hasEnv("GOOGLE_CLOUD_API_KEY") ||
+    hasEnv("YOUTUBE_API_KEY") ||
+    hasEnv("GOOGLE_KG_API_KEY") ||
+    hasEnv("CRUX_API_KEY")
+  );
+}
+
 /**
  * Paid third-party vendors. In Zero-Paid-Keys mode (Wave L) the provider router
  * (Wave H) refuses these adapters so the platform proves it runs the full loop
@@ -161,10 +172,11 @@ export function getProviderStatuses(): ProviderStatus[] {
     // 100X free / keyless data moat (all optional, graceful fallback).
     { id: "searxng", name: "SearXNG (keyless SERP)", configured: hasEnv("SEARXNG_URL"), required: false, category: "data" },
     { id: "ollama", name: "Ollama (open-model AI)", configured: hasEnv("OLLAMA_BASE_URL"), required: false, category: "ai" },
-    { id: "youtube", name: "YouTube Data API", configured: hasEnv("YOUTUBE_API_KEY"), required: false, category: "data" },
+    { id: "youtube", name: "YouTube Data API", configured: hasGoogleCloudApiKey(), required: false, category: "data" },
     { id: "clarity", name: "Microsoft Clarity", configured: hasEnv("CLARITY_API_TOKEN"), required: false, category: "data" },
     { id: "languagetool", name: "LanguageTool (self-host)", configured: hasEnv("LANGUAGETOOL_URL"), required: false, category: "data" },
-    { id: "google_kg", name: "Google Knowledge Graph", configured: hasEnv("GOOGLE_KG_API_KEY"), required: false, category: "data" },
+    { id: "google_kg", name: "Google Knowledge Graph", configured: hasGoogleCloudApiKey(), required: false, category: "data" },
+    { id: "google_nlp", name: "Google Natural Language", configured: hasGoogleCloudApiKey(), required: false, category: "data" },
     { id: "posthog_query", name: "PostHog Query API", configured: hasEnv("POSTHOG_API_KEY") && hasEnv("POSTHOG_PROJECT_ID"), required: false, category: "data" },
   ];
 }
@@ -318,13 +330,14 @@ export function getCapabilitiesSummary() {
       lookerStudioConnector: true,
       // Token / self-host gated (graceful fallback when unset):
       clarityBehavior: hasEnv("CLARITY_API_TOKEN"),
-      videoSeo: hasEnv("YOUTUBE_API_KEY"),
-      cwvHistory: hasEnv("CRUX_API_KEY") || hasEnv("PAGESPEED_API_KEY"),
+      videoSeo: hasGoogleCloudApiKey(),
+      cwvHistory: hasGoogleCloudApiKey(),
       searxngSerp: hasEnv("SEARXNG_URL"),
       ollamaAi: hasEnv("OLLAMA_BASE_URL"),
       posthogAnalytics: hasEnv("POSTHOG_API_KEY") && hasEnv("POSTHOG_PROJECT_ID"),
       languageToolSelfHost: hasEnv("LANGUAGETOOL_URL"),
-      googleKnowledgeGraph: hasEnv("GOOGLE_KG_API_KEY"),
+      googleKnowledgeGraph: hasGoogleCloudApiKey(),
+      googleNaturalLanguage: hasGoogleCloudApiKey(),
       productHunt: hasEnv("PRODUCTHUNT_TOKEN"),
       githubHigherRate: hasEnv("GITHUB_TOKEN"),
     },

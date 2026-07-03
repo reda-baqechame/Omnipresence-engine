@@ -43,6 +43,12 @@ const omnidataKey = process.env.OMNIDATA_API_KEY || randomBytes(32).toString("he
 const signingSecret = process.env.OMNIDATA_SIGNING_SECRET || randomBytes(32).toString("hex");
 const captureKey = process.env.AI_UI_CAPTURE_KEY || randomBytes(32).toString("hex");
 
+if (!process.env.OMNIDATA_API_KEY || !process.env.OMNIDATA_SIGNING_SECRET) {
+  console.warn(
+    "\n⚠ Set OMNIDATA_API_KEY + OMNIDATA_SIGNING_SECRET in env to avoid rotating Railway secrets on Vercel.\n"
+  );
+}
+
 function vercelSet(key, value, targets = ["production", "preview"]) {
   for (const env of targets) {
     spawnSync("npx", ["vercel", "env", "rm", key, env, "--yes"], {
@@ -75,6 +81,7 @@ const pairs = [
   ["AI_UI_CAPTURE_URL", `${captureUrl}/capture`],
   ["AI_UI_CAPTURE_KEY", captureKey],
   ["NEXT_PUBLIC_APP_URL", "https://omnipresence-engine.vercel.app"],
+  ["COMMONCRAWL_WEBGRAPH_RELEASE", process.env.COMMONCRAWL_WEBGRAPH_RELEASE || "cc-main-2024-aug-sep-oct"],
 ];
 
 for (const [k, v] of pairs) vercelSet(k, v);

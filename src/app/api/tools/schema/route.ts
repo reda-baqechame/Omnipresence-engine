@@ -6,6 +6,22 @@ import { apiError, readJsonBody } from "@/lib/security/api-response";
 
 const RECOMMENDED = ["Organization", "LocalBusiness", "WebSite", "FAQPage", "Product", "Service"];
 
+async function extractSchemaTypesFromHtml(url: string): Promise<string[]> {
+  try {
+    const res = await fetch(url, { signal: AbortSignal.timeout(12_000), headers: { "User-Agent": "OmniPresence-SchemaTool/1.0" } });
+    if (!res.ok) return [];
+    const html = await res.text();
+    const types = new Set<string>();
+    for (const m of html.matchAll(/"@type"\s*:\s*"([^"]+)"/g)) types.add(m[1]);
+    for (const m of html.matchAll(/"@type"\s*:\s*\[([^\]]+)\]/g)) {
+      for (const t of m[1].matchAll(/"([^"]+)"/g)) types.add(t[1]);
+    }
+    return [...types];
+  } catch {
+    return [];
+  }
+}
+
 export async function POST(request: NextRequest) {
   const limited = await guardPublicEndpoint(request, "tools-schema", 10, 60 * 60 * 1000);
   if (limited) return limited;
@@ -28,20 +44,26 @@ export async function POST(request: NextRequest) {
 
   const url = `https://${normalized}`;
   const result = await scrapePage(url);
+  const scraped = result.success && result.data ? result.data : null;
 
-  if (!result.success || !result.data) {
+  const schemaTypes =
+    scraped?.schemaTypes?.length
+      ? scraped.schemaTypes
+      : await extractSchemaTypesFromHtml(url);
+
+  if (!scraped && schemaTypes.length === 0) {
     return apiError("Could not fetch page");
   }
 
-  const schemaTypes = result.data.schemaTypes;
   const missing = RECOMMENDED.filter((t) => !schemaTypes.includes(t));
 
   return NextResponse.json({
     domain: normalized,
     schemaTypes,
     missing,
-    hasTitle: !!result.data.title,
-    hasMetaDescription: !!result.data.metaDescription,
-    wordCount: result.data.wordCount,
+    hasTitle: !!scraped?.title,
+    hasMetaDescription: !!scraped?.metaDescription,
+    wordCount: scraped?.wordCount ?? null,
+    source: scraped?.schemaTypes?.length ? "firecrawl" : "html_fallback",
   });
 }

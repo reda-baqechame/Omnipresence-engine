@@ -5,10 +5,11 @@ import { getAuthorityRating } from "@/lib/engines/authority-rating";
 import { getPageSpeed, pageSpeedToRetrievalScore } from "@/lib/providers/pagespeed";
 import { createServiceClient } from "@/lib/supabase/server";
 import { sendAuditLeadEmail } from "@/lib/email/reports";
+import { logProviderError } from "@/lib/observability/log";
 import { assertPublicDomain, assertDomainResolvesPublic, DomainValidationError } from "@/lib/security/domain";
 import { guardPublicEndpoint, isValidEmail } from "@/lib/security/public-guard";
 import { apiError, readJsonBody } from "@/lib/security/api-response";
-import { runPublicAuditIntelligence } from "@/lib/engines/public-audit-scan";
+import { runPublicAuditIntelligenceWithBudget } from "@/lib/engines/public-audit-scan";
 import { preferLiveData } from "@/lib/config/capabilities";
 
 export const maxDuration = 120;
@@ -55,7 +56,7 @@ export async function POST(request: NextRequest) {
   // feeds into the score, so the public number is computed identically.
   const [technicalFindings, intelligence, authority, pageSpeed] = await Promise.all([
     runTechnicalAudit(normalized),
-    runPublicAuditIntelligence({
+    runPublicAuditIntelligenceWithBudget({
       domain: normalized,
       brandName: name,
       industry: ind,
@@ -165,11 +166,36 @@ export async function POST(request: NextRequest) {
     // Lead persistence is best-effort when DB isn't configured
   }
 
-  sendAuditLeadEmail(email, normalized, score.omnipresence_score).catch(() => {});
+  let emailSent = false;
+  let emailError: string | undefined;
+  try {
+    const emailResult = await sendAuditLeadEmail(email, normalized, score.omnipresence_score, {
+      aiVisibility: scoreSnapshot.ai_visibility,
+      searchVisibility: scoreSnapshot.search_visibility,
+      technicalReadiness: scoreSnapshot.technical_readiness,
+      criticalIssues: criticalCount,
+    });
+    emailSent = emailResult.sent;
+    if (!emailResult.sent && emailResult.reason) {
+      emailError = emailResult.reason;
+      logProviderError("audit-lead-email", new Error(emailResult.reason), {
+        domain: normalized,
+        email: email.toLowerCase().slice(0, 254),
+      });
+    }
+  } catch (error) {
+    emailError = error instanceof Error ? error.message : "Audit email send failed";
+    logProviderError("audit-lead-email", error, { domain: normalized });
+  }
+
+  const showEmailDebug =
+    process.env.NODE_ENV !== "production" || process.env.DEBUG_AUDIT_EMAIL === "true";
 
   return NextResponse.json({
     domain: normalized,
     email,
+    emailSent,
+    ...(showEmailDebug && emailError ? { emailError } : {}),
     score: scoreSnapshot,
     criticalIssues: criticalCount,
     topIssues: technicalFindings

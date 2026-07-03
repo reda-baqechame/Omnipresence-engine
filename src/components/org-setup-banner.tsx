@@ -1,10 +1,19 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useSyncExternalStore } from "react";
 import { useRouter } from "next/navigation";
+
+function subscribeToUrl() {
+  return () => {};
+}
+
+function readSetupFailed(): boolean {
+  return new URLSearchParams(window.location.search).get("setup") === "failed";
+}
 
 export function OrgSetupBanner() {
   const router = useRouter();
+  const setupFailed = useSyncExternalStore(subscribeToUrl, readSetupFailed, () => false);
   const [settingUp, setSettingUp] = useState(false);
   const [orgName, setOrgName] = useState(() => {
     if (typeof window === "undefined") return "";
@@ -39,6 +48,11 @@ export function OrgSetupBanner() {
   return (
     <div className="bg-card border border-border rounded-xl p-8 max-w-lg mx-auto text-center">
       <h2 className="text-xl font-semibold mb-2">Set up your organization</h2>
+      {setupFailed && (
+        <p className="text-sm text-amber-500 mb-4">
+          Your account was created but organization setup did not finish. Enter your agency name below to continue.
+        </p>
+      )}
       <p className="text-sm text-muted-foreground mb-6">
         Create an organization to start auditing client projects.
       </p>

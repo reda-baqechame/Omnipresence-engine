@@ -1,4 +1,5 @@
 import type { ProviderResult } from "./types";
+import { getGoogleCloudApiKey } from "./google-cloud-key";
 import { getPageSpeedViaOmniData } from "./omnidata-performance";
 
 /**
@@ -101,7 +102,7 @@ export async function getPageSpeed(
     return viaOmni;
   }
 
-  const key = process.env.PAGESPEED_API_KEY;
+  const key = getGoogleCloudApiKey();
   const params = new URLSearchParams({
     url: fullUrl,
     category: "performance",

@@ -19,6 +19,15 @@ interface DiyStack {
   dataForSeoOptional: boolean;
 }
 
+interface GoogleCloudCaps {
+  keyConfigured: boolean;
+  pagespeed: boolean;
+  cruxHistory: boolean;
+  youtube: boolean;
+  knowledgeGraph: boolean;
+  naturalLanguage: boolean;
+}
+
 export default function CapabilitiesSettingsPage() {
   const [providers, setProviders] = useState<ProviderStatus[]>([]);
   const [liveData, setLiveData] = useState(false);
@@ -29,6 +38,7 @@ export default function CapabilitiesSettingsPage() {
   const [version, setVersion] = useState("");
   const [prodReady, setProdReady] = useState(false);
   const [prodScore, setProdScore] = useState(0);
+  const [googleCloud, setGoogleCloud] = useState<GoogleCloudCaps | null>(null);
 
   useEffect(() => {
     fetch("/api/capabilities")
@@ -43,6 +53,17 @@ export default function CapabilitiesSettingsPage() {
         setVersion(d.version);
         setProdReady(d.production?.ready ?? false);
         setProdScore(d.production?.score ?? 0);
+        const m = d.freeDataMoat100x;
+        if (m) {
+          setGoogleCloud({
+            keyConfigured: Boolean(m.videoSeo),
+            pagespeed: Boolean(d.freeSignals?.realUserCwv),
+            cruxHistory: Boolean(m.cwvHistory),
+            youtube: Boolean(m.videoSeo),
+            knowledgeGraph: Boolean(m.googleKnowledgeGraph),
+            naturalLanguage: Boolean(m.googleNaturalLanguage),
+          });
+        }
       });
   }, []);
 
@@ -92,6 +113,33 @@ export default function CapabilitiesSettingsPage() {
           Open production setup checklist →
         </Link>
       </div>
+
+      {googleCloud && (
+        <div className="mb-8 border border-border rounded-xl p-4 bg-card">
+          <h3 className="font-semibold mb-1">Google Cloud stack</h3>
+          <p className="text-xs text-muted-foreground mb-3">
+            One key (<code>PAGESPEED_API_KEY</code>) powers PageSpeed, CrUX, YouTube, Knowledge Graph, and Natural Language.
+          </p>
+          <div className="space-y-2">
+            {[
+              { label: "API key configured", ok: googleCloud.keyConfigured, detail: "PAGESPEED_API_KEY on Vercel" },
+              { label: "PageSpeed + CrUX field data", ok: googleCloud.pagespeed, detail: "Technical audits & scans" },
+              { label: "CrUX History trends", ok: googleCloud.cruxHistory, detail: "CWV history panel" },
+              { label: "YouTube video SEO", ok: googleCloud.youtube, detail: "Channel gaps vs competitors" },
+              { label: "Knowledge Graph entities", ok: googleCloud.knowledgeGraph, detail: "Entity panel & gaps" },
+              { label: "Natural Language QA", ok: googleCloud.naturalLanguage, detail: "Content score entities + tone" },
+            ].map((item) => (
+              <div key={item.label} className="flex items-center justify-between text-sm">
+                <div className="flex items-center gap-2">
+                  <span className={item.ok ? "text-green-400" : "text-muted-foreground"}>{item.ok ? "✓" : "○"}</span>
+                  <span>{item.label}</span>
+                </div>
+                <span className="text-xs text-muted-foreground">{item.detail}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
 
       <div className="grid md:grid-cols-2 gap-3">
         {providers.map((p) => (

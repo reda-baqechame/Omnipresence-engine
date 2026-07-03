@@ -23,6 +23,12 @@ interface EditorialQA {
   thinContent: boolean;
   uniqueTermRatio: number;
   grammar: { available: boolean; reason?: string; selfHosted: boolean; errorCount: number; topIssues: Array<{ message: string; category: string; replacements: string[] }> };
+  googleNlp?: {
+    available: boolean;
+    reason?: string;
+    sentiment: { score: number; magnitude: number; label: "positive" | "neutral" | "negative" };
+    entities: Array<{ name: string; type: string; salience: number; wikipediaUrl?: string }>;
+  };
   warnings: string[];
 }
 interface ContentScoreResult {
@@ -160,7 +166,19 @@ export function ContentOptimizerPanel({ projectId }: { projectId: string }) {
                 {result.editorial.grammar.available && (
                   <span>Grammar issues: <strong className={result.editorial.grammar.errorCount === 0 ? "text-green-400" : "text-yellow-400"}>{result.editorial.grammar.errorCount}</strong></span>
                 )}
+                {result.editorial.googleNlp?.available && (
+                  <span>Google NLP tone: <strong className={result.editorial.googleNlp.sentiment.label === "negative" ? "text-yellow-400" : "text-green-400"}>{result.editorial.googleNlp.sentiment.label}</strong></span>
+                )}
               </div>
+              {result.editorial.googleNlp?.available && result.editorial.googleNlp.entities.length > 0 && (
+                <div className="flex flex-wrap gap-1.5">
+                  {result.editorial.googleNlp.entities.slice(0, 8).map((e) => (
+                    <span key={e.name} className="text-xs border border-border/60 rounded px-1.5 py-0.5 text-muted-foreground" title={e.type}>
+                      {e.name}
+                    </span>
+                  ))}
+                </div>
+              )}
               {result.editorial.warnings.length > 0 && (
                 <ul className="text-xs text-yellow-400 list-disc pl-5 space-y-0.5">
                   {result.editorial.warnings.map((w) => <li key={w}>{w}</li>)}

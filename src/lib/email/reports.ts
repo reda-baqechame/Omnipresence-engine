@@ -1,5 +1,27 @@
 import { generateReportHTML, type ReportData } from "@/lib/engines/report-generator";
-import { sendEmail } from "@/lib/email/transport";
+import { sendEmail, type EmailSendResult } from "@/lib/email/transport";
+
+export interface AuditLeadEmailScores {
+  aiVisibility?: number;
+  searchVisibility?: number;
+  technicalReadiness?: number;
+  criticalIssues?: number;
+}
+
+function appBaseUrl(): string {
+  return (process.env.NEXT_PUBLIC_APP_URL || "https://omnipresence-engine.vercel.app").replace(/\/$/, "");
+}
+
+function signupCtaUrl(domain: string): string {
+  const base = appBaseUrl();
+  const params = new URLSearchParams({
+    utm_source: "audit_email",
+    utm_medium: "email",
+    utm_campaign: "preview",
+    domain,
+  });
+  return `${base}/signup?${params.toString()}`;
+}
 
 export async function sendWeeklyReport(
   toEmail: string,
@@ -18,22 +40,46 @@ export async function sendWeeklyReport(
 export async function sendAuditLeadEmail(
   toEmail: string,
   domain: string,
-  score: number
-): Promise<boolean> {
-  const res = await sendEmail({
+  score: number,
+  subScores?: AuditLeadEmailScores
+): Promise<EmailSendResult> {
+  const scoreRows = [
+    subScores?.aiVisibility != null
+      ? `<tr><td style="padding:8px 0;color:#64748b;">AI visibility</td><td style="padding:8px 0;font-weight:600;text-align:right;">${Math.round(subScores.aiVisibility)}/100</td></tr>`
+      : "",
+    subScores?.searchVisibility != null
+      ? `<tr><td style="padding:8px 0;color:#64748b;">Search visibility</td><td style="padding:8px 0;font-weight:600;text-align:right;">${Math.round(subScores.searchVisibility)}/100</td></tr>`
+      : "",
+    subScores?.technicalReadiness != null
+      ? `<tr><td style="padding:8px 0;color:#64748b;">Technical readiness</td><td style="padding:8px 0;font-weight:600;text-align:right;">${Math.round(subScores.technicalReadiness)}/100</td></tr>`
+      : "",
+  ]
+    .filter(Boolean)
+    .join("");
+
+  const criticalLine =
+    subScores?.criticalIssues != null && subScores.criticalIssues > 0
+      ? `<p style="color:#ef4444;margin:16px 0 0;"><strong>${subScores.criticalIssues}</strong> critical/high issue${subScores.criticalIssues === 1 ? "" : "s"} detected — fix these first for fastest gains.</p>`
+      : "";
+
+  const signupUrl = signupCtaUrl(domain);
+
+  return sendEmail({
     to: toEmail,
     subject: `Your OmniPresence preview — ${domain} scored ${Math.round(score)}/100`,
     html: `
         <div style="font-family: sans-serif; max-width: 600px; margin: 0 auto;">
           <h1 style="color: #6366f1;">Your Free Visibility Preview</h1>
-          <p>We analyzed <strong>${domain}</strong> across technical readiness and AI visibility signals.</p>
-          <p style="font-size: 48px; font-weight: bold; color: #6366f1;">${Math.round(score)}/100</p>
-          <p>Sign up for the full audit with competitor analysis, 90-day roadmap, and white-label PDF report.</p>
-          <a href="${process.env.NEXT_PUBLIC_APP_URL}/signup" style="display: inline-block; background: #6366f1; color: white; padding: 12px 24px; border-radius: 8px; text-decoration: none;">Get Full Audit</a>
+          <p>We analyzed <strong>${domain}</strong> across technical readiness, search, and AI visibility signals.</p>
+          <p style="font-size: 48px; font-weight: bold; color: #6366f1; margin-bottom: 8px;">${Math.round(score)}/100</p>
+          ${scoreRows ? `<table style="width:100%;border-collapse:collapse;margin:0 0 16px;">${scoreRows}</table>` : ""}
+          ${criticalLine}
+          <p style="margin-top:20px;">Sign up for the full audit with competitor analysis, 90-day roadmap, and white-label PDF report.</p>
+          <a href="${signupUrl}" style="display: inline-block; background: #6366f1; color: white; padding: 12px 24px; border-radius: 8px; text-decoration: none; margin-top: 8px;">Get Full Audit</a>
+          <p style="font-size:12px;color:#94a3b8;margin-top:24px;">OmniPresence Engine · ${appBaseUrl()}</p>
         </div>
       `,
   });
-  return res.sent;
 }
 
 export async function sendScoreDropAlert(

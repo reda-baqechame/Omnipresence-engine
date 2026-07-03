@@ -257,7 +257,7 @@ export function EntityPanel({ projectId }: { projectId: string }) {
         {gaps && (
           <div className="space-y-3 text-sm">
             {!gaps.googleKgConfigured && (
-              <p className="text-xs text-muted-foreground">Set <code>GOOGLE_KG_API_KEY</code> (free) to include Google Knowledge Graph panel detection.</p>
+              <p className="text-xs text-muted-foreground">Uses your Google Cloud API key (<code>PAGESPEED_API_KEY</code>) with Knowledge Graph Search API enabled.</p>
             )}
             <div className="overflow-auto">
               <table className="w-full text-xs">

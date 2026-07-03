@@ -222,3 +222,42 @@ export async function runPublicAuditIntelligence(input: {
 // already accounts for, double-counting and inflating the public audit score
 // relative to the in-app score. The public route now uses the rigorous scorer
 // directly so both numbers share one honest methodology.
+
+/** Empty intelligence when the public audit time budget is exceeded. */
+export function emptyPublicAuditIntelligence(partial?: Partial<PublicAuditIntelligence>): PublicAuditIntelligence {
+  const providers = getCapabilitiesSummary();
+  const live = preferLiveData();
+  return {
+    liveData: live,
+    dataMode: live ? "measured" : "unavailable",
+    providers,
+    visibilityResults: [],
+    visibilityMetrics: calculateVisibilityMetrics([]),
+    authorityOpportunities: [],
+    coverageGaps: [],
+    coverageItems: [],
+    backlinkCount: 0,
+    backlinksAvailable: false,
+    serpPresence: false,
+    ...partial,
+  };
+}
+
+const PUBLIC_INTELLIGENCE_BUDGET_MS = 50_000;
+
+export async function runPublicAuditIntelligenceWithBudget(
+  input: Parameters<typeof runPublicAuditIntelligence>[0],
+  budgetMs = PUBLIC_INTELLIGENCE_BUDGET_MS
+): Promise<PublicAuditIntelligence> {
+  let settled = false;
+  const work = runPublicAuditIntelligence(input).then((r) => {
+    settled = true;
+    return r;
+  });
+  const timeout = new Promise<PublicAuditIntelligence>((resolve) => {
+    setTimeout(() => {
+      if (!settled) resolve(emptyPublicAuditIntelligence());
+    }, budgetMs);
+  });
+  return Promise.race([work, timeout]);
+}

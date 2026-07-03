@@ -208,6 +208,15 @@ export async function searchGoogleOrganic(
       new Set(items.map((i) => i.type).filter((t) => t && t !== "organic"))
     );
 
+    if (organicResults.length === 0) {
+      return {
+        success: false,
+        error: USE_OMNIDATA
+          ? "OmniData returned no organic results"
+          : "SERP returned no organic results",
+      };
+    }
+
     return {
       success: true,
       data: { organicResults, aiOverview, brandInResults, competitorInResults, serpFeatures },

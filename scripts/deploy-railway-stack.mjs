@@ -50,6 +50,28 @@ if (!existsSync(join(root, ".railway"))) {
 const omnidataDir = join(root, "services", "omnidata");
 const captureDir = join(root, "services", "ai-ui-capture");
 const forceOmnidata = process.argv.includes("--force-omnidata");
+const preserveSecrets = process.argv.includes("--preserve-secrets");
+
+function resolveWebgraphIngestMode(volumeSizeMb) {
+  const explicit = process.env.WEBGRAPH_INGEST_MODE || process.env.RAILWAY_WEBGRAPH_MODE;
+  if (explicit) return explicit;
+  if (process.env.RAILWAY_WEBGRAPH_FULL === "true") return "full";
+  const capGb = volumeSizeMb ? volumeSizeMb / 1024 : 0;
+  return capGb >= 20 ? "full" : "ranks-only";
+}
+
+function readExistingRailwaySecrets() {
+  const existing = railwayCmd(["variable", "list", "--service", "omnipresence-engine", "--json"], {
+    cwd: omnidataDir,
+    capture: true,
+  });
+  if (!existing.ok) return {};
+  try {
+    return JSON.parse(existing.out.trim());
+  } catch {
+    return {};
+  }
+}
 
 async function isWebgraphIngestRunning(baseUrl, apiKey) {
   if (!baseUrl || !apiKey) return false;
@@ -88,8 +110,8 @@ railwayCmd(["up", "--detach"], { cwd: captureDir });
 // --- Volume + worker (Railway hardening) ---
 console.log("\nEnsuring /data volume on omnipresence-engine…");
 railwayCmd(["service", "link", "omnipresence-engine"], { cwd: omnidataDir, capture: true });
-const volList = railwayCmd(["volume", "list"], { cwd: omnidataDir, capture: true });
-if (!volList.out.includes("omnipresence-engine")) {
+const volList = railwayCmd(["volume", "list", "--json"], { cwd: omnidataDir, capture: true });
+if (!volList.out.includes("omnipresence-engine") && !volList.out.includes('"serviceName":"omnipresence-engine"')) {
   const volAdd = railwayCmd(["volume", "add", "--mount-path", "/data", "--json"], {
     cwd: omnidataDir,
     capture: true,
@@ -100,8 +122,19 @@ if (!volList.out.includes("omnipresence-engine")) {
   console.log("  ✓ Volume already attached to omnipresence-engine");
 }
 console.log(
-  "  ℹ Common Crawl domain webgraph needs 20GB+ volume (Live Resize in Railway UI). Hobby caps at 5GB."
+  "  ℹ Common Crawl domain webgraph needs 20GB+ volume (Live Resize in Railway UI on Pro). Hobby caps at 5GB."
 );
+
+let engineVolumeSizeMb = 5000;
+try {
+  const volJson = JSON.parse(volList.out.trim());
+  const engineVol = (volJson.volumes || []).find((v) => v.serviceName === "omnipresence-engine" && !v.isPendingDeletion);
+  if (engineVol?.sizeMB) engineVolumeSizeMb = engineVol.sizeMB;
+} catch {
+  /* ignore */
+}
+const webgraphMode = resolveWebgraphIngestMode(engineVolumeSizeMb);
+console.log(`  ℹ WEBGRAPH_INGEST_MODE → ${webgraphMode} (volume cap ~${Math.round(engineVolumeSizeMb / 1024)}GB)`);
 
 console.log("\nEnsuring omnidata-worker service…");
 const svcList = railwayCmd(["service", "list", "--json"], { cwd: omnidataDir, capture: true });
@@ -163,9 +196,20 @@ if (!omnidataUrl || !captureUrl) {
   process.exit(1);
 }
 
-const omnidataKey = randomBytes(32).toString("hex");
-const signingSecret = randomBytes(32).toString("hex");
-const captureKey = randomBytes(32).toString("hex");
+const existingRailway = preserveSecrets ? readExistingRailwaySecrets() : {};
+
+const omnidataKey =
+  preserveSecrets && existingRailway.OMNIDATA_API_KEY
+    ? existingRailway.OMNIDATA_API_KEY
+    : randomBytes(32).toString("hex");
+const signingSecret =
+  preserveSecrets && existingRailway.OMNIDATA_SIGNING_SECRET
+    ? existingRailway.OMNIDATA_SIGNING_SECRET
+    : randomBytes(32).toString("hex");
+const captureKey =
+  preserveSecrets && existingRailway.AI_UI_CAPTURE_KEY
+    ? existingRailway.AI_UI_CAPTURE_KEY
+    : randomBytes(32).toString("hex");
 
 // Copy paid SERP keys from Vercel production into OmniData (real measured SERP on sovereign stack).
 const pullPath = join(root, ".env.railway.sync");
@@ -199,8 +243,10 @@ for (const [service, vars] of [
       OMNIDATA_API_KEY: omnidataKey,
       OMNIDATA_SIGNING_SECRET: signingSecret,
       OMNIDATA_ENABLE_WORKER: "false",
-      WEBGRAPH_INGEST_MODE: "ranks-only",
+      WEBGRAPH_INGEST_MODE: webgraphMode,
       WEBGRAPH_DB_PATH: "/data/webgraph.duckdb",
+      COMMONCRAWL_WEBGRAPH_RELEASE:
+        serpVars.COMMONCRAWL_WEBGRAPH_RELEASE || "cc-main-2024-aug-sep-oct",
       ...serpVars,
     },
   ],

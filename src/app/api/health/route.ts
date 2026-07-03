@@ -107,6 +107,14 @@ export async function GET() {
       providersConfigured: caps.configuredCount,
       activeSerpProvider: caps.activeSerpProvider,
       diyStack: caps.diyStack,
+      googleCloud: {
+        keyConfigured: caps.freeDataMoat100x.videoSeo,
+        pagespeed: caps.freeSignals.realUserCwv,
+        cruxHistory: caps.freeDataMoat100x.cwvHistory,
+        youtube: caps.freeDataMoat100x.videoSeo,
+        knowledgeGraph: caps.freeDataMoat100x.googleKnowledgeGraph,
+        naturalLanguage: caps.freeDataMoat100x.googleNaturalLanguage,
+      },
       costGuard: spend
         ? {
             day: spend.day,

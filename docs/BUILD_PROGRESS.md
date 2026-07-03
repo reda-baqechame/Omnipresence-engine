@@ -331,3 +331,136 @@
   }
 }
 ```
+
+## Audit email wiring 2026-07-02T16:58:00.000Z
+```json
+{
+  "at": "2026-07-02T16:58:00.000Z",
+  "phase": "audit_report_email",
+  "resend": {
+    "from": "onboarding@resend.dev",
+    "owner_inbox": "redabaquechame58@gmail.com",
+    "vercel_env": ["RESEND_API_KEY", "RESEND_FROM_EMAIL", "EMAIL_FROM", "RESEND_OWNER_EMAIL"]
+  },
+  "code": {
+    "audit_route": "await sendAuditLeadEmail; returns emailSent (+ emailError in debug)",
+    "production_check": "email ok when hasResendCapability || hasSmtpCapability",
+    "scripts": ["ensure-email-env.mjs", "verify-audit-email.mjs", "provision-resend-key.mjs"]
+  },
+  "gates": {
+    "email:verify": true,
+    "api_health_email": "ok",
+    "production_score": 100
+  },
+  "proof": {
+    "POST /api/public/audit": "emailSent: true for owner inbox",
+    "GET /api/health": "production.checks.email = ok"
+  }
+}
+```
+
+### Custom domain unlock (send to ANY lead email)
+
+Resend test sender `onboarding@resend.dev` only delivers to the **Resend account owner** inbox. To email arbitrary visitors from `/audit`:
+
+1. Purchase/connect a domain (e.g. `presenceos.app`) on Vercel Domains or Cloudflare.
+2. Resend dashboard → **Domains** → Add domain → copy SPF + DKIM DNS records.
+3. Add DNS records at your registrar; wait for Resend verification (green).
+4. Update Vercel env (`.env.providers` then `npm run env:push`):
+   - `RESEND_FROM_EMAIL=reports@yourdomain.com`
+   - `EMAIL_FROM=reports@yourdomain.com`
+5. Redeploy: `node scripts/ensure-email-env.mjs --deploy`
+6. Re-run gate with a **non-owner** test address: `RESEND_OWNER_EMAIL=other@example.com npm run email:verify`
+
+Optional follow-up: `scripts/ensure-email-domain.mjs` (DNS checklist + Resend verification poll).
+
+## ship-10-10 2026-07-02T19:06:34.848Z
+```json
+{
+  "at": "2026-07-02T19:06:34.848Z",
+  "gate": "10/10",
+  "steps": {
+    "verify:all": true,
+    "ship-infra": "skipped",
+    "railway:verify": true,
+    "webgraph:verify": true,
+    "production:ready": true,
+    "check-claims-backed": true,
+    "email:verify": true,
+    "generate-case-studies": true
+  }
+}
+```
+
+## Railway Pro + full webgraph 2026-07-02T20:00:00.000Z
+```json
+{
+  "at": "2026-07-02T20:00:00.000Z",
+  "phase": "railway_pro_full_webgraph",
+  "railway": {
+    "plan": "Pro ($20/mo)",
+    "project": "omnipresence-engine",
+    "volume": "omnipresence-engine-volume @ /data (5GB cap shown — Live Resize to 20GB+ recommended in dashboard)",
+    "ingest_mode": "full",
+    "release": "cc-main-2024-aug-sep-oct",
+    "WEBGRAPH_WIPE_ON_START": false
+  },
+  "ingest": {
+    "status": "re-ingesting after container restart",
+    "note": "First run completed 1,679,689,064 edges then restart + WIPE wiped index — WIPE disabled",
+    "vertices_first_run": 96021021,
+    "edges_first_run": 1679689064,
+    "eta_minutes": "90-120"
+  },
+  "scripts_added": [
+    "scripts/verify-webgraph.mjs",
+    "scripts/ensure-railway-webgraph.mjs",
+    "scripts/ingest-provider-keys.mjs"
+  ],
+  "gates": {
+    "verify:all": true,
+    "ship:10-10": "10/10",
+    "production:ready": true,
+    "railway:verify": true,
+    "email:verify": true,
+    "webgraph:verify_strict": "pending ingest completion"
+  },
+  "key_onboarding": "npm run keys:ingest -- --push --verify"
+}
+```
+
+### Key checklist (paste into `.env.providers` when ready)
+
+| Priority | Keys | Unlocks |
+|----------|------|---------|
+| P0 | `OPENAI_API_KEY`, `SERPER_API_KEY` | AI citations + live SERP |
+| P1 | `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET` | GSC/GA4 attribution (12/12 claims) |
+| P1 | `PAGESPEED_API_KEY` | Core Web Vitals in technical audit |
+| P2 | `FIRECRAWL_API_KEY`, `BRAVE_SEARCH_API_KEY` | Scrape + alternate SERP |
+| P2 | Custom domain + Resend DNS | Audit emails to any visitor |
+
+Run: `npm run keys:ingest -- --push --verify`
+
+### After webgraph ingest completes
+
+1. `WEBGRAPH_REQUIRE_FULL=1 npm run webgraph:verify`
+2. `npm run ship:10-10 -- --skip-infra`
+3. Railway dashboard → Live Resize volume to 20GB+ for headroom
+
+## ship-10-10 2026-07-02T23:37:19.581Z
+```json
+{
+  "at": "2026-07-02T23:37:19.581Z",
+  "gate": "10/10",
+  "steps": {
+    "verify:all": true,
+    "ship-infra": "skipped",
+    "railway:verify": true,
+    "webgraph:verify": true,
+    "production:ready": true,
+    "check-claims-backed": true,
+    "email:verify": true,
+    "generate-case-studies": true
+  }
+}
+```

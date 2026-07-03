@@ -4,6 +4,7 @@ import { scrapeGoogleSerp } from "./scrape.js";
 const BING_KEY = process.env.BING_SEARCH_API_KEY;
 const SERPER_KEY = process.env.SERPER_API_KEY;
 const BRAVE_KEY = process.env.BRAVE_SEARCH_API_KEY;
+const FIRECRAWL_KEY = process.env.FIRECRAWL_API_KEY;
 
 function domainFromUrl(url: string): string {
   try {
@@ -166,6 +167,41 @@ async function searchSerper(keyword: string): Promise<SerpResult | null> {
   return result;
 }
 
+async function searchFirecrawl(keyword: string): Promise<SerpResult | null> {
+  if (!FIRECRAWL_KEY || FIRECRAWL_KEY.startsWith("your-")) return null;
+  try {
+    const res = await fetch("https://api.firecrawl.dev/v1/search", {
+      method: "POST",
+      headers: { Authorization: `Bearer ${FIRECRAWL_KEY}`, "Content-Type": "application/json" },
+      body: JSON.stringify({ query: keyword, limit: 20 }),
+      signal: AbortSignal.timeout(30_000),
+    });
+    if (!res.ok) return null;
+    const data = (await res.json()) as {
+      data?: Array<{ url?: string; title?: string; description?: string }>;
+      web?: Array<{ url?: string; title?: string; description?: string }>;
+    };
+    const pages = data.data || data.web || [];
+    if (!pages.length) return null;
+    return {
+      keyword,
+      location: "United States",
+      source: "firecrawl",
+      items: pages.map((p, i) => ({
+        type: "organic",
+        rank_absolute: i + 1,
+        title: p.title || "",
+        url: p.url || "",
+        description: p.description || "",
+        domain: domainFromUrl(p.url || ""),
+        pixel_rank: i + 1,
+      })),
+    };
+  } catch {
+    return null;
+  }
+}
+
 async function searchBrave(keyword: string): Promise<SerpResult | null> {
   if (!BRAVE_KEY) return null;
   const url = `https://api.search.brave.com/res/v1/web/search?q=${encodeURIComponent(keyword)}&count=20`;
@@ -212,6 +248,7 @@ export async function runSerpLive(keyword: string, location = "United States"): 
     (await searchSerper(keyword)) ||
     (await searchBing(keyword)) ||
     (await searchBrave(keyword)) ||
+    (await searchFirecrawl(keyword)) ||
     // Keyless fallback (env-gated): real results with no API key/spend.
     (await scrapeGoogleSerp(keyword, location));
 

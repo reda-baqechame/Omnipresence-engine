@@ -47,7 +47,7 @@ export function VideoSeoPanel({ projectId }: { projectId: string }) {
       {result?.available && (
         <>
           {!result.youtubeConnected && (
-            <p className="text-xs text-muted-foreground">Tip: set <code>YOUTUBE_API_KEY</code> (free) to also detect brand vs competitor channel coverage.</p>
+            <p className="text-xs text-muted-foreground">Tip: enable YouTube Data API on your Google Cloud key (<code>PAGESPEED_API_KEY</code>) for brand vs competitor channel coverage.</p>
           )}
           {result.opportunities.length > 0 ? (
             <ul className="space-y-2 text-sm">
