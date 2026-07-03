@@ -167,7 +167,7 @@ async function openGzipLineStream(url: string): Promise<AsyncIterable<string>> {
 }
 
 /** Stream vertex file into DuckDB without staging gzip on disk. */
-async function streamVerticesFromGzipUrl(conn: DuckDBConnection, url: string): Promise<void> {
+async function streamVerticesFromGzipUrl(conn: DuckDBConnection, url: string): Promise<number> {
   console.log("[webgraph] streaming vertices…");
   await conn.run("CREATE OR REPLACE TABLE vertices(id BIGINT, rev_host VARCHAR);");
   const rl = await openGzipLineStream(url);
@@ -190,10 +190,11 @@ async function streamVerticesFromGzipUrl(conn: DuckDBConnection, url: string): P
   }
   if (batch.length) await conn.run(`INSERT INTO vertices VALUES ${batch.join(",")};`);
   console.log(`[webgraph] vertices complete: ${lines.toLocaleString()} lines`);
+  return lines;
 }
 
 /** Stream multi-GB edge files into DuckDB without staging the full gzip on disk. */
-async function streamEdgesFromGzipUrl(conn: DuckDBConnection, url: string): Promise<void> {
+async function streamEdgesFromGzipUrl(conn: DuckDBConnection, url: string): Promise<number> {
   console.log("[webgraph] streaming edges…");
   await conn.run("CREATE OR REPLACE TABLE edges(from_id BIGINT, to_id BIGINT);");
   const rl = await openGzipLineStream(url);
@@ -215,10 +216,11 @@ async function streamEdgesFromGzipUrl(conn: DuckDBConnection, url: string): Prom
   }
   if (batch.length) await conn.run(`INSERT INTO edges VALUES ${batch.join(",")};`);
   console.log(`[webgraph] edges complete: ${lines.toLocaleString()} lines`);
+  return lines;
 }
 
 /** Stream ranks (best-effort authority index). */
-async function streamRanksFromGzipUrl(conn: DuckDBConnection, url: string): Promise<void> {
+async function streamRanksFromGzipUrl(conn: DuckDBConnection, url: string): Promise<number> {
   console.log("[webgraph] streaming ranks…");
   await conn.run(
     "CREATE OR REPLACE TABLE ranks(harmonic_pos BIGINT, harmonic_val DOUBLE, pr_pos BIGINT, pr_val DOUBLE, rev_host VARCHAR);"
@@ -241,6 +243,7 @@ async function streamRanksFromGzipUrl(conn: DuckDBConnection, url: string): Prom
   }
   if (batch.length) await conn.run(`INSERT INTO ranks VALUES ${batch.join(",")};`);
   console.log(`[webgraph] ranks complete: ${lines.toLocaleString()} lines`);
+  return lines;
 }
 
 /** Build the DuckDB index from a Common Crawl domain webgraph release (heavy, one-time). */
@@ -273,9 +276,22 @@ export async function ingestWebgraph(release: string): Promise<{ ok: boolean; me
       };
     }
 
-    await streamVerticesFromGzipUrl(conn, `${base}-vertices.txt.gz`);
-    await streamEdgesFromGzipUrl(conn, `${base}-edges.txt.gz`);
-    await conn.run("CREATE INDEX IF NOT EXISTS idx_edges_to ON edges(to_id);");
+    const vertexCount = await streamVerticesFromGzipUrl(conn, `${base}-vertices.txt.gz`);
+    const edgeCount = await streamEdgesFromGzipUrl(conn, `${base}-edges.txt.gz`);
+    if (vertexCount === 0 || edgeCount === 0) {
+      return {
+        ok: false,
+        message: `Ingest produced an empty stream (vertices=${vertexCount}, edges=${edgeCount}). Check the release id "${rel}" exists at ${CC_BASE}/${rel}/domain/.`,
+      };
+    }
+    // Commit readiness metadata before optional heavyweight work. Railway can
+    // restart during index/checkpoint work; the completed graph should remain
+    // usable instead of being treated as a failed zero-row ingest.
+    await conn.run(
+      `CREATE OR REPLACE TABLE meta AS SELECT '${rel}' AS release, now() AS ingested_at,
+         ${vertexCount} AS vertex_count,
+         ${edgeCount} AS edge_count;`
+    );
 
     try {
       await streamRanksFromGzipUrl(conn, `${base}-ranks.txt.gz`);
@@ -283,11 +299,13 @@ export async function ingestWebgraph(release: string): Promise<{ ok: boolean; me
     } catch (e) {
       console.warn(`[webgraph] ranks ingest skipped: ${e instanceof Error ? e.message : "unknown"}`);
     }
-    await conn.run(
-      `CREATE OR REPLACE TABLE meta AS SELECT '${rel}' AS release, now() AS ingested_at,
-         (SELECT COUNT(*) FROM vertices) AS vertex_count,
-         (SELECT COUNT(*) FROM edges) AS edge_count;`
-    );
+    if (process.env.WEBGRAPH_BUILD_EDGE_INDEX === "true") {
+      try {
+        await conn.run("CREATE INDEX IF NOT EXISTS idx_edges_to ON edges(to_id);");
+      } catch (e) {
+        console.warn(`[webgraph] edge index skipped: ${e instanceof Error ? e.message : "unknown"}`);
+      }
+    }
     // Validate the ingest actually loaded data so a wrong release id / changed
     // file layout fails loudly instead of leaving an empty "ready" index.
     const meta = await getWebgraphMeta();
@@ -322,6 +340,29 @@ export interface WebgraphMeta {
   edge_count: number;
 }
 
+async function repairWebgraphMetaFromTables(): Promise<WebgraphMeta | null> {
+  const conn = await getConnection();
+  if (!conn) return null;
+  try {
+    const counts = await getLiveWebgraphCounts();
+    if (!counts || counts.vertices <= 0 || counts.edges <= 0) return null;
+    const release = sanitizeRelease(process.env.COMMONCRAWL_WEBGRAPH_RELEASE || "unknown");
+    await conn.run(
+      `CREATE OR REPLACE TABLE meta AS SELECT '${release}' AS release, now() AS ingested_at,
+         ${counts.vertices} AS vertex_count,
+         ${counts.edges} AS edge_count;`
+    );
+    return {
+      release,
+      ingested_at: new Date().toISOString(),
+      vertex_count: counts.vertices,
+      edge_count: counts.edges,
+    };
+  } catch {
+    return null;
+  }
+}
+
 /** Freshness/provenance metadata for the currently-ingested webgraph. */
 export async function getWebgraphMeta(): Promise<WebgraphMeta | null> {
   const conn = await getConnection();
@@ -339,7 +380,7 @@ export async function getWebgraphMeta(): Promise<WebgraphMeta | null> {
       edge_count: Number(row.edge_count ?? 0),
     };
   } catch {
-    return null;
+    return repairWebgraphMetaFromTables();
   }
 }
 

@@ -105,6 +105,7 @@ if (vol) {
 
 const vars = {
   WEBGRAPH_INGEST_MODE: "full",
+  WEBGRAPH_BUILD_EDGE_INDEX: "false",
   COMMONCRAWL_WEBGRAPH_RELEASE: release,
   WEBGRAPH_DB_PATH: "/data/webgraph.duckdb",
   WEBGRAPH_WIPE_ON_START: process.env.WEBGRAPH_WIPE_ON_START === "true" ? "true" : "false",
