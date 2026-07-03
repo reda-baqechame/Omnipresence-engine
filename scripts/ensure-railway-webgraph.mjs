@@ -107,7 +107,7 @@ const vars = {
   WEBGRAPH_INGEST_MODE: "full",
   WEBGRAPH_BUILD_EDGE_INDEX: "false",
   COMMONCRAWL_WEBGRAPH_RELEASE: release,
-  WEBGRAPH_DB_PATH: "/data/webgraph-v2.duckdb",
+  WEBGRAPH_DB_PATH: "/tmp/webgraph.duckdb",
   WEBGRAPH_WIPE_ON_START: process.env.WEBGRAPH_WIPE_ON_START === "true" ? "true" : "false",
 };
 for (const [k, v] of Object.entries(vars)) {
