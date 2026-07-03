@@ -125,6 +125,47 @@ async function searchBing(keyword: string): Promise<SerpResult | null> {
   };
 }
 
+async function searchBingHtml(keyword: string): Promise<SerpResult | null> {
+  try {
+    const res = await fetch(`https://www.bing.com/search?q=${encodeURIComponent(keyword)}`, {
+      headers: {
+        "User-Agent": "Mozilla/5.0 (compatible; OmniData/1.0)",
+        Accept: "text/html",
+      },
+      signal: AbortSignal.timeout(15_000),
+    });
+    if (!res.ok) return null;
+    const html = await res.text();
+    const items: SerpItem[] = [];
+    const blockRe = /<li class="b_algo"[\s\S]*?<\/li>/g;
+    const blocks = html.match(blockRe) || [];
+    let rank = 1;
+    for (const block of blocks) {
+      const link = block.match(/<h2[^>]*>\s*<a[^>]*href="([^"]+)"[^>]*>([\s\S]*?)<\/a>/i);
+      if (!link) continue;
+      const url = decodeHtmlEntities(link[1].trim());
+      const title = decodeHtmlEntities(link[2].replace(/<[^>]+>/g, "").trim());
+      if (!url.startsWith("http") || !title) continue;
+      const snippet = block.match(/<p[^>]*>([\s\S]*?)<\/p>/i);
+      items.push({
+        type: "organic",
+        rank_absolute: rank,
+        title,
+        url,
+        description: snippet ? decodeHtmlEntities(snippet[1].replace(/<[^>]+>/g, "").trim()) : "",
+        domain: domainFromUrl(url),
+        pixel_rank: rank,
+      });
+      rank++;
+      if (items.length >= 20) break;
+    }
+    if (!items.length) return null;
+    return { keyword, location: "United States", source: "bing_html", items };
+  } catch {
+    return null;
+  }
+}
+
 async function searchSerper(keyword: string): Promise<SerpResult | null> {
   if (!SERPER_KEY) return null;
   const res = await fetch("https://google.serper.dev/search", {
@@ -309,7 +350,7 @@ export async function runSerpLive(keyword: string, location = "United States"): 
   tasks: Array<{ result: Array<{ items: SerpItem[]; keyword: string; location_name: string }> }>;
 }> {
   let result: SerpResult | null = null;
-  for (const search of [searchSerper, searchBing, searchBrave, searchDuckDuckGo, searchFirecrawl]) {
+  for (const search of [searchSerper, searchBing, searchBrave, searchBingHtml, searchDuckDuckGo, searchFirecrawl]) {
     const candidate = await search(keyword);
     if (candidate?.items?.length) {
       result = candidate;

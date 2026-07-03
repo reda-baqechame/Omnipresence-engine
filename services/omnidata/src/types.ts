@@ -18,7 +18,7 @@ export interface SerpResult {
   featured_snippet?: SerpItem;
   people_also_ask?: Array<{ question: string; answer?: string }>;
   local_pack?: SerpItem[];
-  source: "bing_api" | "serper" | "brave" | "playwright" | "duckduckgo" | "firecrawl";
+  source: "bing_api" | "bing_html" | "serper" | "brave" | "playwright" | "duckduckgo" | "firecrawl";
 }
 
 export interface BacklinkRow {
