@@ -15,6 +15,10 @@ async function bootstrapWebgraph(): Promise<void> {
   }
   const release = process.env.COMMONCRAWL_WEBGRAPH_RELEASE?.trim();
   if (!release) return;
+  if (process.env.WEBGRAPH_AUTO_INGEST === "false") {
+    console.log("[webgraph] auto-ingest disabled (WEBGRAPH_AUTO_INGEST=false)");
+    return;
+  }
   const ready = await isWebgraphReady();
   if (ready) {
     console.log(`[webgraph] index ready for release ${release}`);
