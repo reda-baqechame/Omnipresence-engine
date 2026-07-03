@@ -31,6 +31,7 @@ interface DuckDBReader {
 interface DuckDBConnection {
   run(sql: string): Promise<unknown>;
   runAndReadAll(sql: string): Promise<DuckDBReader>;
+  close?: () => Promise<void> | void;
 }
 interface DuckDBInstanceLike {
   connect(): Promise<DuckDBConnection>;
@@ -43,8 +44,14 @@ let cachedConn: DuckDBConnection | null = null;
 let duckUnavailable = false;
 
 async function resetWebgraphDb(): Promise<void> {
+  const openConn = cachedConn;
   cachedConn = null;
   duckUnavailable = false;
+  try {
+    await openConn?.close?.();
+  } catch {
+    /* best-effort close before deleting DB/WAL files */
+  }
   const dataDir = dirname(DB_PATH);
   const base = DB_PATH.split(/[/\\]/).pop() || "webgraph.duckdb";
   try {
