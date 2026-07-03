@@ -1,11 +1,10 @@
 #!/usr/bin/env node
 /**
- * Poll webgraph ingest until complete, then run strict verification gates.
- * Does NOT redeploy OmniData.
+ * Poll webgraph ingest until complete, deploy OmniData to Railway, then verify.
  *
  * Usage:
  *   node scripts/poll-webgraph-complete.mjs
- *   node scripts/poll-webgraph-complete.mjs --interval 120 --max-hours 4
+ *   node scripts/poll-webgraph-complete.mjs --interval 120 --max-hours 12
  */
 import { spawnSync } from "child_process";
 import { readFileSync, existsSync } from "fs";
@@ -39,15 +38,23 @@ if (!apiKey) {
   process.exit(1);
 }
 
-function run(cmd, env = {}) {
+const omnidataDir = join(root, "services", "omnidata");
+const deployAfter = !args.includes("--no-deploy");
+
+function run(cmd, env = {}, cwd = root) {
   const result = spawnSync(cmd, {
-    cwd: root,
+    cwd,
     encoding: "utf8",
     stdio: "inherit",
     shell: true,
     env: { ...process.env, ...env },
   });
   return result.status === 0;
+}
+
+function deployRailway() {
+  console.log("\n→ Deploying omnipresence-engine to Railway (latest GitHub code)…\n");
+  return run("npx @railway/cli up --detach -s omnipresence-engine", {}, omnidataDir);
 }
 
 async function status() {
@@ -99,7 +106,12 @@ while (Date.now() < deadline) {
       }
 
       if (r.edges_ready && r.edge_count > 0 && !r.ingest_in_progress) {
-        console.log("\n✓ Ingest complete — running strict gates…\n");
+        console.log("\n✓ Ingest complete — post-ingest pipeline…\n");
+        if (deployAfter) {
+          deployRailway();
+          console.log("  Waiting 90s for Railway boot…");
+          await new Promise((r) => setTimeout(r, 90_000));
+        }
         const v1 = run("npm run webgraph:verify", { WEBGRAPH_REQUIRE_FULL: "1" });
         const v2 = run("npm run ship:10-10 -- --skip-infra");
         process.exit(v1 && v2 ? 0 : 1);
