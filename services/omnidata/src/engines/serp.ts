@@ -24,6 +24,23 @@ function decodeHtmlEntities(text: string): string {
     .replace(/&#x27;/g, "'");
 }
 
+function normalizeBingHtmlUrl(raw: string): string {
+  try {
+    const url = new URL(decodeHtmlEntities(raw));
+    if (url.hostname.includes("bing.com")) {
+      const encoded = url.searchParams.get("u");
+      if (encoded) {
+        const b64 = encoded.startsWith("a1") ? encoded.slice(2) : encoded;
+        const decoded = Buffer.from(b64.replace(/-/g, "+").replace(/_/g, "/"), "base64").toString("utf8");
+        if (decoded.startsWith("http")) return decoded;
+      }
+    }
+    return url.toString();
+  } catch {
+    return decodeHtmlEntities(raw);
+  }
+}
+
 /**
  * Pure SERP decomposition: a provider-agnostic SerpResult → DataForSEO-shaped
  * item list (featured snippet, AI Overview + sources, ranked organic, PAA, local
@@ -143,7 +160,7 @@ async function searchBingHtml(keyword: string): Promise<SerpResult | null> {
     for (const block of blocks) {
       const link = block.match(/<h2[^>]*>\s*<a[^>]*href="([^"]+)"[^>]*>([\s\S]*?)<\/a>/i);
       if (!link) continue;
-      const url = decodeHtmlEntities(link[1].trim());
+      const url = normalizeBingHtmlUrl(link[1].trim());
       const title = decodeHtmlEntities(link[2].replace(/<[^>]+>/g, "").trim());
       if (!url.startsWith("http") || !title) continue;
       const snippet = block.match(/<p[^>]*>([\s\S]*?)<\/p>/i);
