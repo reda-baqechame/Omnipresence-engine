@@ -10,7 +10,7 @@ import { hasFirecrawlCapability } from "@/lib/providers/firecrawl";
 import { routeSerp, rankedAdapters } from "@/lib/providers/router";
 import type { ProviderResult, SERPResult } from "./types";
 
-export type SerpProviderId = "serper" | "brave" | "searxng" | "firecrawl" | "omnidata" | "dataforseo";
+export type SerpProviderId = "serper" | "brave" | "searxng" | "duckduckgo" | "firecrawl" | "omnidata" | "dataforseo";
 
 function hasEnv(key: string): boolean {
   const v = process.env[key];

@@ -79,13 +79,68 @@ async function testHealth() {
   record("health", "Status", json.status === "healthy" ? "pass" : "warn", json.status);
   record("health", "Production ready", json.production?.ready ? "pass" : "fail", `score ${json.production?.score}%`);
   record("health", "Live data", json.checks?.live_data === "ok" ? "pass" : "fail", json.checks?.live_data || "off");
-  record("health", "SERP (OmniData)", json.checks?.serp === "ok" ? "pass" : "fail", json.activeSerpProvider || "none");
+  record("health", "SERP provider", json.checks?.serp === "ok" ? "pass" : "fail", json.activeSerpProvider || "none");
   const g = json.googleCloud;
   if (g) {
     const allOn = g.keyConfigured && g.pagespeed && g.youtube && g.knowledgeGraph && g.naturalLanguage;
     record("health", "Google Cloud stack", allOn ? "pass" : "warn", `key=${g.keyConfigured} PS=${g.pagespeed} YT=${g.youtube} KG=${g.knowledgeGraph} NLP=${g.naturalLanguage}`);
   }
   record("health", "AI engines", "pass", (json.diyStack?.llmDirect ? "ChatGPT/Claude/Gemini" : "limited") + (json.diyStack?.firecrawl ? " + Firecrawl" : ""));
+}
+
+/** Verify live SERP returns real, decodable organic URLs (professional accuracy gate). */
+async function testSerpAccuracy() {
+  console.log("\n## Live SERP accuracy (real organic results)");
+  try {
+    const res = await fetch(
+      `https://html.duckduckgo.com/html/?q=${encodeURIComponent("hubspot crm software")}`,
+      {
+        headers: { "User-Agent": "Mozilla/5.0 (compatible; PresenceOS-QA/1.0)", Accept: "text/html" },
+        signal: AbortSignal.timeout(20_000),
+      }
+    );
+    if (!res.ok) {
+      record("serp-live", "Organic SERP fetch", "fail", `HTTP ${res.status}`);
+      return;
+    }
+    const html = await res.text();
+    const links = [...html.matchAll(/class="result__a"[^>]*href="([^"]+)"[^>]*>([\s\S]*?)<\/a>/g)];
+    const organic = [];
+    for (const m of links) {
+      let raw = m[1].trim();
+      if (raw.startsWith("//")) raw = `https:${raw}`;
+      let url = raw;
+      try {
+        const u = new URL(raw);
+        if (u.hostname.includes("duckduckgo.com") && u.searchParams.has("uddg")) {
+          url = decodeURIComponent(u.searchParams.get("uddg") || raw);
+        }
+      } catch {
+        continue;
+      }
+      const title = m[2].replace(/<[^>]+>/g, "").replace(/&amp;/g, "&").trim();
+      if (url.startsWith("http") && title.length > 3) organic.push({ title, url });
+      if (organic.length >= 10) break;
+    }
+    const hubspotHit = organic.some((o) => /hubspot\.com/i.test(o.url));
+    record(
+      "serp-live",
+      "Organic result count",
+      organic.length >= 5 ? "pass" : organic.length >= 1 ? "warn" : "fail",
+      `${organic.length} results`
+    );
+    record(
+      "serp-live",
+      "Brand domain in SERP",
+      hubspotHit ? "pass" : "warn",
+      hubspotHit ? "hubspot.com found in top results" : "brand not in top 10"
+    );
+    if (organic[0]) {
+      record("serp-live", "Top result sample", "pass", `${organic[0].title.slice(0, 50)} → ${new URL(organic[0].url).hostname}`);
+    }
+  } catch (e) {
+    record("serp-live", "SERP accuracy", "fail", e instanceof Error ? e.message : String(e));
+  }
 }
 
 async function testFreeTool(id, path, body, validate, timeoutMs = 90_000) {
@@ -351,6 +406,7 @@ async function sendReport(html) {
 console.log(`\n${"=".repeat(60)}\n  OmniPresence Professional Tester Suite\n  ${base}\n${"=".repeat(60)}`);
 
 await testHealth();
+await testSerpAccuracy();
 await testAllTools();
 await testPublicAudit();
 await testGoogleProviders();

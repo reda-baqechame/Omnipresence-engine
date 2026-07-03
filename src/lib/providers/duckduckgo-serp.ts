@@ -11,6 +11,16 @@ function hostnameFrom(url: string): string {
   }
 }
 
+function decodeHtmlEntities(text: string): string {
+  return text
+    .replace(/&amp;/g, "&")
+    .replace(/&lt;/g, "<")
+    .replace(/&gt;/g, ">")
+    .replace(/&quot;/g, '"')
+    .replace(/&#39;/g, "'")
+    .replace(/&#x27;/g, "'");
+}
+
 /** Decode DuckDuckGo redirect URLs (//duckduckgo.com/l/?uddg=...). */
 function normalizeResultUrl(raw: string): string {
   if (!raw) return "";
@@ -34,10 +44,10 @@ export function parseDuckDuckGoHtml(html: string): Array<{ title: string; url: s
     const link = block.match(/class="result__a"[^>]*href="([^"]+)"[^>]*>([\s\S]*?)<\/a>/);
     if (!link) continue;
     const url = normalizeResultUrl(link[1].replace(/<[^>]+>/g, "").trim());
-    const title = link[2].replace(/<[^>]+>/g, "").trim();
+    const title = decodeHtmlEntities(link[2].replace(/<[^>]+>/g, "").trim());
     if (!url.startsWith("http") || !title) continue;
     const snippet = block.match(/class="result__snippet"[^>]*>([\s\S]*?)<\/a>/);
-    const description = snippet ? snippet[1].replace(/<[^>]+>/g, "").trim() : "";
+    const description = snippet ? decodeHtmlEntities(snippet[1].replace(/<[^>]+>/g, "").trim()) : "";
     results.push({ title, url, description });
     if (results.length >= 20) break;
   }

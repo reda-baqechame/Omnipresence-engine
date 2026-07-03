@@ -231,7 +231,7 @@ async function searchDuckDuckGo(keyword: string): Promise<SerpResult | null> {
       } catch {
         /* keep raw */
       }
-      const title = link[2].replace(/<[^>]+>/g, "").trim();
+      const title = link[2].replace(/<[^>]+>/g, "").replace(/&amp;/g, "&").replace(/&lt;/g, "<").replace(/&gt;/g, ">").trim();
       if (!url.startsWith("http") || !title) continue;
       const snippet = block.match(/class="result__snippet"[^>]*>([\s\S]*?)<\/a>/);
       items.push({

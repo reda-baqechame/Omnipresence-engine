@@ -129,7 +129,7 @@ const serpAdapters: Adapter<[string, string, string, string[]], SERPResult>[] = 
     category: "surface_measurement",
     paid: false,
     selfHosted: true,
-    confidence: 0.72,
+    confidence: 0.9,
     freshness: "live",
     costPerCall: 0,
     enabled: () => true,
