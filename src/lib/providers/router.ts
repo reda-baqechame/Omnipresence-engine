@@ -17,6 +17,7 @@ import {
   searchGoogleOrganic as searchGoogleOrganicDataForSEO,
   isOmniDataActive,
 } from "@/lib/providers/dataforseo";
+import { searchGoogleOrganicDuckDuckGo } from "@/lib/providers/duckduckgo-serp";
 import { searchGoogleOrganicBrave } from "@/lib/providers/brave-search";
 import { searchGoogleOrganicSerper } from "@/lib/providers/serper";
 import { searchGoogleOrganicSearxng, hasSearxngCapability } from "@/lib/providers/searxng";
@@ -121,6 +122,18 @@ const serpAdapters: Adapter<[string, string, string, string[]], SERPResult>[] = 
     costPerCall: 0,
     enabled: () => hasSearxngCapability(),
     run: (kw, loc, brand, comp) => searchGoogleOrganicSearxng(kw, loc, brand, comp),
+  },
+  {
+    id: "duckduckgo",
+    capability: "serp",
+    category: "surface_measurement",
+    paid: false,
+    selfHosted: true,
+    confidence: 0.72,
+    freshness: "live",
+    costPerCall: 0,
+    enabled: () => true,
+    run: (kw, loc, brand, comp) => searchGoogleOrganicDuckDuckGo(kw, loc, brand, comp),
   },
   {
     id: "omnidata",

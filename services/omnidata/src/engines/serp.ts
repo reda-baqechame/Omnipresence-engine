@@ -202,6 +202,57 @@ async function searchFirecrawl(keyword: string): Promise<SerpResult | null> {
   }
 }
 
+async function searchDuckDuckGo(keyword: string): Promise<SerpResult | null> {
+  try {
+    const res = await fetch(`https://html.duckduckgo.com/html/?q=${encodeURIComponent(keyword)}`, {
+      headers: {
+        "User-Agent": "Mozilla/5.0 (compatible; OmniData/1.0)",
+        Accept: "text/html",
+      },
+      signal: AbortSignal.timeout(15_000),
+    });
+    if (!res.ok) return null;
+    const html = await res.text();
+    const items: SerpItem[] = [];
+    const blockRe = /class="result\s[^"]*"[\s\S]*?(?=class="result\s|class="nav-link")/g;
+    const blocks = html.match(blockRe) || [];
+    let rank = 1;
+    for (const block of blocks) {
+      const link = block.match(/class="result__a"[^>]*href="([^"]+)"[^>]*>([\s\S]*?)<\/a>/);
+      if (!link) continue;
+      let rawUrl = link[1].trim();
+      if (rawUrl.startsWith("//")) rawUrl = `https:${rawUrl}`;
+      let url = rawUrl;
+      try {
+        const u = new URL(rawUrl);
+        if (u.hostname.includes("duckduckgo.com") && u.searchParams.has("uddg")) {
+          url = decodeURIComponent(u.searchParams.get("uddg") || rawUrl);
+        }
+      } catch {
+        /* keep raw */
+      }
+      const title = link[2].replace(/<[^>]+>/g, "").trim();
+      if (!url.startsWith("http") || !title) continue;
+      const snippet = block.match(/class="result__snippet"[^>]*>([\s\S]*?)<\/a>/);
+      items.push({
+        type: "organic",
+        rank_absolute: rank,
+        title,
+        url,
+        description: snippet ? snippet[1].replace(/<[^>]+>/g, "").trim() : "",
+        domain: domainFromUrl(url),
+        pixel_rank: rank,
+      });
+      rank++;
+      if (items.length >= 20) break;
+    }
+    if (!items.length) return null;
+    return { keyword, location: "United States", source: "duckduckgo", items };
+  } catch {
+    return null;
+  }
+}
+
 async function searchBrave(keyword: string): Promise<SerpResult | null> {
   if (!BRAVE_KEY) return null;
   const url = `https://api.search.brave.com/res/v1/web/search?q=${encodeURIComponent(keyword)}&count=20`;
@@ -249,6 +300,7 @@ export async function runSerpLive(keyword: string, location = "United States"): 
     (await searchBing(keyword)) ||
     (await searchBrave(keyword)) ||
     (await searchFirecrawl(keyword)) ||
+    (await searchDuckDuckGo(keyword)) ||
     // Keyless fallback (env-gated): real results with no API key/spend.
     (await scrapeGoogleSerp(keyword, location));
 

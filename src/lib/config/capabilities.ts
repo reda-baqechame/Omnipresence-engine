@@ -201,10 +201,12 @@ export function hasSerpCapability(): boolean {
 
 /** Keyless/self-hosted SERP only (no paid vendor) — what survives Zero-Paid-Keys mode. */
 export function hasKeylessSerpCapability(): boolean {
+  // DuckDuckGo HTML SERP is always available (keyless, best-effort).
   return (
     hasEnv("SEARXNG_URL") ||
     hasEnv("SEARXNG_URLS") ||
-    (hasEnv("OMNIDATA_BASE_URL") && hasEnv("OMNIDATA_API_KEY"))
+    (hasEnv("OMNIDATA_BASE_URL") && hasEnv("OMNIDATA_API_KEY")) ||
+    true
   );
 }
 
