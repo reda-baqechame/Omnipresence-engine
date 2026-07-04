@@ -1,13 +1,26 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, useSyncExternalStore } from "react";
 import Link from "next/link";
 import { Globe } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 
 type Mode = "request" | "reset" | "done";
+const RESET_LINK_ERROR = "This password reset link is invalid or expired. Request a new one below.";
+
+function subscribeToUrl() {
+  return () => {};
+}
+
+function readResetUrlState(): string {
+  const params = new URLSearchParams(window.location.search);
+  if (params.get("error")) return "error";
+  const code = params.get("code");
+  return code ? `code:${code}` : "";
+}
 
 export default function ResetPasswordPage() {
+  const resetUrlState = useSyncExternalStore(subscribeToUrl, readResetUrlState, () => "");
   const [mode, setMode] = useState<Mode>("request");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -15,22 +28,19 @@ export default function ResetPasswordPage() {
   const [message, setMessage] = useState("");
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
+  const urlError = resetUrlState === "error";
+  const resetCode = resetUrlState.startsWith("code:") ? resetUrlState.slice("code:".length) : "";
+  const displayError = error || (urlError ? RESET_LINK_ERROR : "");
 
   useEffect(() => {
-    const code = new URLSearchParams(window.location.search).get("code");
-    const err = new URLSearchParams(window.location.search).get("error");
-    if (err) {
-      setError("This password reset link is invalid or expired. Request a new one below.");
-      return;
-    }
-    if (!code) return;
+    if (urlError || !resetCode) return;
 
     let mounted = true;
     const supabase = createClient();
-    supabase.auth.exchangeCodeForSession(code).then(({ error }) => {
+    supabase.auth.exchangeCodeForSession(resetCode).then(({ error }) => {
       if (!mounted) return;
       if (error) {
-        setError("This password reset link is invalid or expired. Request a new one below.");
+        setError(RESET_LINK_ERROR);
         setMode("request");
       } else {
         setMode("reset");
@@ -40,7 +50,7 @@ export default function ResetPasswordPage() {
     return () => {
       mounted = false;
     };
-  }, []);
+  }, [resetCode, urlError]);
 
   async function requestReset(e: React.FormEvent) {
     e.preventDefault();
@@ -98,7 +108,7 @@ export default function ResetPasswordPage() {
         </div>
 
         <form onSubmit={mode === "reset" ? updatePassword : requestReset} className="bg-card border border-border rounded-xl p-6 space-y-4">
-          {error && <div className="bg-destructive/10 text-destructive text-sm p-3 rounded-lg">{error}</div>}
+          {displayError && <div className="bg-destructive/10 text-destructive text-sm p-3 rounded-lg">{displayError}</div>}
           {message && <div className="bg-primary/10 text-primary text-sm p-3 rounded-lg">{message}</div>}
 
           {mode === "reset" ? (
