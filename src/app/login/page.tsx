@@ -7,13 +7,16 @@ import { Globe } from "lucide-react";
 
 const CALLBACK_ERROR_MSG =
   "Email confirmation link expired or invalid. Sign in after confirming your email.";
+const RESET_SUCCESS_MSG = "Password updated. You can sign in with your new password.";
 
 function subscribeToUrl() {
   return () => {};
 }
 
 function readAuthCallbackError(): string {
-  const err = new URLSearchParams(window.location.search).get("error");
+  const params = new URLSearchParams(window.location.search);
+  const err = params.get("error");
+  if (params.get("reset") === "success") return RESET_SUCCESS_MSG;
   return err === "auth_callback" ? CALLBACK_ERROR_MSG : "";
 }
 
@@ -83,8 +86,9 @@ export default function LoginPage() {
           {error && <div className="bg-destructive/10 text-destructive text-sm p-3 rounded-lg">{error}</div>}
 
           <div>
-            <label className="block text-sm font-medium mb-1.5">Email</label>
+            <label htmlFor="login-email" className="block text-sm font-medium mb-1.5">Email</label>
             <input
+              id="login-email"
               type="email"
               value={email}
               onChange={(e) => setEmail(e.target.value)}
@@ -94,8 +98,9 @@ export default function LoginPage() {
           </div>
 
           <div>
-            <label className="block text-sm font-medium mb-1.5">Password</label>
+            <label htmlFor="login-password" className="block text-sm font-medium mb-1.5">Password</label>
             <input
+              id="login-password"
               type="password"
               value={password}
               onChange={(e) => setPassword(e.target.value)}
@@ -111,6 +116,12 @@ export default function LoginPage() {
           >
             {loading ? "Signing in..." : "Sign In"}
           </button>
+
+          <div className="text-center">
+            <Link href="/auth/reset" className="text-sm text-primary hover:underline">
+              Forgot password?
+            </Link>
+          </div>
 
           <p className="text-center text-sm text-muted-foreground">
             Don&apos;t have an account?{" "}

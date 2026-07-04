@@ -34,6 +34,7 @@
     "auth:configure": "node scripts/configure-supabase-auth.mjs",
     "auth:disable-confirm": "node scripts/disable-email-confirm.mjs",
     "auth:migrate": "node scripts/apply-auth-migration.mjs",
+    "auth:repair-user": "node scripts/admin-user-repair.mjs",
     "test:signup": "node scripts/test-real-signup.mjs",
     "railway:verify": "node scripts/railway-verify.mjs",
     "railway:webgraph": "node scripts/ensure-railway-webgraph.mjs",

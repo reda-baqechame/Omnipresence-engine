@@ -12,6 +12,7 @@ export default function SignupPage() {
   const [orgName, setOrgName] = useState("");
   const [error, setError] = useState("");
   const [info, setInfo] = useState("");
+  const [existingAccount, setExistingAccount] = useState(false);
   const [loading, setLoading] = useState(false);
 
   async function setupOrganization(name: string): Promise<{ ok: boolean; error?: string }> {
@@ -31,6 +32,7 @@ export default function SignupPage() {
     setLoading(true);
     setError("");
     setInfo("");
+    setExistingAccount(false);
 
     const supabase = createClient();
     const appUrl =
@@ -68,7 +70,9 @@ export default function SignupPage() {
     }
 
     if (regRes.status !== 404 && regRes.status !== 501) {
-      setError(regJson.error || "Registration failed. Try again or sign in if you already have an account.");
+      const msg = regJson.error || "Registration failed. Try again or sign in if you already have an account.";
+      setExistingAccount(/already exists|already registered|signing in/i.test(msg));
+      setError(msg);
       setLoading(false);
       return;
     }
@@ -125,29 +129,37 @@ export default function SignupPage() {
 
         <form onSubmit={handleSignup} className="bg-card border border-border rounded-xl p-6 space-y-4">
           {error && <div className="bg-destructive/10 text-destructive text-sm p-3 rounded-lg">{error}</div>}
+          {existingAccount && (
+            <div className="bg-primary/10 text-primary text-sm p-3 rounded-lg">
+              This email already has an account.{" "}
+              <Link href="/login" className="underline">Sign in</Link>
+              {" "}or{" "}
+              <Link href="/auth/reset" className="underline">reset your password</Link>.
+            </div>
+          )}
           {info && <div className="bg-primary/10 text-primary text-sm p-3 rounded-lg">{info}</div>}
 
           <div>
-            <label className="block text-sm font-medium mb-1.5">Full Name</label>
-            <input type="text" value={fullName} onChange={(e) => setFullName(e.target.value)}
+            <label htmlFor="signup-full-name" className="block text-sm font-medium mb-1.5">Full Name</label>
+            <input id="signup-full-name" type="text" value={fullName} onChange={(e) => setFullName(e.target.value)}
               className="w-full bg-background border border-input rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring" required />
           </div>
 
           <div>
-            <label className="block text-sm font-medium mb-1.5">Organization Name</label>
-            <input type="text" value={orgName} onChange={(e) => setOrgName(e.target.value)} placeholder="Your agency or company name"
+            <label htmlFor="signup-org-name" className="block text-sm font-medium mb-1.5">Organization Name</label>
+            <input id="signup-org-name" type="text" value={orgName} onChange={(e) => setOrgName(e.target.value)} placeholder="Your agency or company name"
               className="w-full bg-background border border-input rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring" />
           </div>
 
           <div>
-            <label className="block text-sm font-medium mb-1.5">Email</label>
-            <input type="email" value={email} onChange={(e) => setEmail(e.target.value)}
+            <label htmlFor="signup-email" className="block text-sm font-medium mb-1.5">Email</label>
+            <input id="signup-email" type="email" value={email} onChange={(e) => setEmail(e.target.value)}
               className="w-full bg-background border border-input rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring" required />
           </div>
 
           <div>
-            <label className="block text-sm font-medium mb-1.5">Password</label>
-            <input type="password" value={password} onChange={(e) => setPassword(e.target.value)} minLength={8}
+            <label htmlFor="signup-password" className="block text-sm font-medium mb-1.5">Password</label>
+            <input id="signup-password" type="password" value={password} onChange={(e) => setPassword(e.target.value)} minLength={8}
               className="w-full bg-background border border-input rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring" required />
           </div>
 
