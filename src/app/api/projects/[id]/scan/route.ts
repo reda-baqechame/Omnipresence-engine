@@ -9,6 +9,8 @@ import {
 } from "@/lib/metering/api-usage";
 import { apiError, apiForbidden, apiNotFound, apiServerError, apiUnauthorized } from "@/lib/security/api-response";
 
+const DEFAULT_STALE_SCAN_MS = 6 * 60 * 1000;
+
 export async function POST(
   _request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
@@ -60,8 +62,46 @@ export async function GET(
   const access = await verifyProjectAccess(supabase, id, user.id, "viewer");
   if (!access) return apiNotFound();
 
-  const { data: project } = await supabase.from("projects").select("status, last_scan_at").eq("id", id).single();
+  const { data: project } = await supabase
+    .from("projects")
+    .select("status, last_scan_at, updated_at")
+    .eq("id", id)
+    .single();
   if (!project) return apiNotFound();
+
+  let status = project.status;
+  let recovered = false;
+  let message: string | null = null;
+
+  if (project.status === "scanning") {
+    const staleScanMs = Number(process.env.SCAN_STALE_MS ?? DEFAULT_STALE_SCAN_MS);
+    const updatedAt = project.updated_at ? new Date(project.updated_at).getTime() : 0;
+    const isStale = updatedAt > 0 && Date.now() - updatedAt > staleScanMs;
+
+    if (isStale) {
+      const { data: activeRun } = await supabase
+        .from("visibility_runs")
+        .select("id, status")
+        .eq("project_id", id)
+        .in("status", ["pending", "running"])
+        .order("started_at", { ascending: false })
+        .limit(1)
+        .maybeSingle();
+
+      if (!activeRun) {
+        const recoveryStatus = project.last_scan_at ? "active" : "draft";
+        const serviceClient = await createServiceClient();
+        await serviceClient
+          .from("projects")
+          .update({ status: recoveryStatus })
+          .eq("id", id)
+          .eq("status", "scanning");
+        status = recoveryStatus;
+        recovered = true;
+        message = "Scan did not start. Please retry the scan.";
+      }
+    }
+  }
 
   const { data: score } = await supabase
     .from("scores")
@@ -72,8 +112,10 @@ export async function GET(
     .single();
 
   return NextResponse.json({
-    status: project.status,
+    status,
     lastScanAt: project.last_scan_at,
     score: score?.omnipresence_score ?? null,
+    recovered,
+    message,
   });
 }

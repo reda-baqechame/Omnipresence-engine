@@ -7,15 +7,21 @@ export async function triggerProjectScan(
   projectId: string,
   organizationId: string
 ): Promise<{ mode: "inngest" | "sync" }> {
-  if (process.env.INNGEST_EVENT_KEY) {
+  const scanTriggerMode = process.env.SCAN_TRIGGER_MODE?.toLowerCase();
+  const useInngest =
+    process.env.INNGEST_EVENT_KEY &&
+    (scanTriggerMode === "inngest" || scanTriggerMode === "inngest-only");
+
+  if (useInngest) {
     try {
       await inngest.send({
         name: "project/scan.requested",
         data: { projectId, organizationId },
       });
       return { mode: "inngest" };
-    } catch {
-      // Fall through to sync
+    } catch (error) {
+      console.error("Inngest scan trigger failed; falling back to background scan:", error);
+      // Fall through to the local background runner.
     }
   }
 

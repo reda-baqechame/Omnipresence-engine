@@ -14,6 +14,7 @@ export function ScanPoller({
   const router = useRouter();
   const [status, setStatus] = useState(initialStatus);
   const [score, setScore] = useState<number | null>(null);
+  const [message, setMessage] = useState<string | null>(null);
 
   useEffect(() => {
     if (status !== "scanning") return;
@@ -22,8 +23,9 @@ export function ScanPoller({
       const res = await fetch(`/api/projects/${projectId}/scan`);
       const data = await res.json();
       setStatus(data.status);
-      if (data.score) setScore(data.score);
-      if (data.status === "active") {
+      if (typeof data.score === "number") setScore(data.score);
+      if (typeof data.message === "string") setMessage(data.message);
+      if (data.status !== "scanning") {
         clearInterval(interval);
         router.refresh();
       }
@@ -40,7 +42,7 @@ export function ScanPoller({
       <div>
         <p className="font-medium">OmniPresence scan in progress...</p>
         <p className="text-sm text-muted-foreground">
-          Running technical audit, AI visibility checks, competitor analysis, and coverage scan.
+          {message || "Running technical audit, AI visibility checks, competitor analysis, and coverage scan."}
           {score !== null && ` Current score: ${Math.round(score)}/100`}
         </p>
       </div>
