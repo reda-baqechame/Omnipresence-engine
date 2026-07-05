@@ -47,6 +47,8 @@ export interface CompetitorTrafficEstimate {
   domain: string;
   /** RELATIVE traffic index 0-100 (NOT visits). */
   trafficIndex: number;
+  /** Popularity tier 1-10 (estimated proxy). */
+  popularityTier?: number;
   globalRank?: number;
   signals: string[];
   provenance: TrafficProvenance;
@@ -150,6 +152,7 @@ async function estimateCompetitor(domain: string): Promise<CompetitorTrafficEsti
     return {
       domain: snap.domain,
       trafficIndex: snap.popularity.score,
+      popularityTier: snap.popularity.tier,
       globalRank: snap.popularity.globalRank,
       signals: snap.popularity.signals,
       provenance: "model_estimated",

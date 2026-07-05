@@ -906,6 +906,28 @@ export const monthlyWebgraphReingest = inngest.createFunction(
   }
 );
 
+/** Daily Railway spend guard — warns at 80%/100% of RAILWAY_MONTHLY_BUDGET_USD. */
+export const dailyRailwaySpendGuard = inngest.createFunction(
+  { id: "daily-railway-spend-guard", retries: 0, triggers: [{ cron: "0 9 * * *" }] },
+  async ({ step }) => {
+    return step.run("railway-spend-guard", async () => {
+      const { spawnSync } = await import("child_process");
+      const { join } = await import("path");
+      const script = join(process.cwd(), "scripts", "railway-spend-guard.mjs");
+      const result = spawnSync("node", [script], {
+        encoding: "utf8",
+        env: process.env,
+        shell: process.platform === "win32",
+      });
+      return {
+        exitCode: result.status ?? 1,
+        stdout: (result.stdout || "").slice(-4000),
+        stderr: (result.stderr || "").slice(-2000),
+      };
+    });
+  }
+);
+
 // Measured GEO rewrite loop: baseline citation rate -> AutoGEO answer-first
 // rewrite -> deploy artifact -> wait for propagation -> re-probe -> measure
 // real citation/mention lift from ai_probe_traces -> results-ledger/guarantee.
@@ -1347,6 +1369,7 @@ export const functions = [
   weeklyCwvHistorySync,
   weeklyMentionFirehose,
   monthlyWebgraphReingest,
+  dailyRailwaySpendGuard,
   geoRewriteLoop,
   scheduledContentPublish,
   weeklyIntelligenceSync,

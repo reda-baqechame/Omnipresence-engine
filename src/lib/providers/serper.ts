@@ -1,6 +1,8 @@
 import type { ProviderResult, SERPResult } from "./types";
 import { fetchWithTimeout, withRetry, isRetryableStatus } from "./http";
 import { logProviderError } from "@/lib/observability/log";
+import { BudgetExceededError } from "@/lib/providers/cost-guard";
+import { assertProviderCallAllowed, recordProviderCall } from "@/lib/providers/provider-call-cap";
 
 const SERPER_URL = "https://google.serper.dev/search";
 
@@ -83,6 +85,7 @@ export async function searchGoogleOrganicSerper(
   competitors: string[]
 ): Promise<ProviderResult<SERPResult>> {
   try {
+    await assertProviderCallAllowed("serper");
     const data = await withRetry(
       async () => {
         const response = await fetchWithTimeout(SERPER_URL, {
@@ -137,12 +140,17 @@ export async function searchGoogleOrganicSerper(
         (aiOverview?.citedDomains.some((d) => d.includes(compToken)) ?? false);
     }
 
+    await recordProviderCall("serper");
+
     return {
       success: true,
       data: { organicResults, aiOverview, brandInResults, competitorInResults },
       creditsUsed: 1,
     };
   } catch (error) {
+    if (error instanceof BudgetExceededError) {
+      return { success: false, error: error.reason };
+    }
     logProviderError("serper", error, { keyword, location });
     return {
       success: false,

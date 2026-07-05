@@ -10,9 +10,7 @@
  * Shared signals are fetched ONCE per domain (no duplicate network across the
  * popularity/authority engines) so the matrix stays fast for several domains.
  */
-import { getCcWebGraphAuthority } from "@/lib/providers/ccwebgraph";
 import { getOpenPageRank, hasOpenPageRankCapability } from "@/lib/providers/openpagerank";
-import { getRadarDomainRank, hasCloudflareRadarCapability } from "@/lib/providers/cloudflare-radar";
 import { resolveDomainAuthority } from "@/lib/providers/domain-authority";
 import { getDomainAuthority } from "@/lib/providers/tranco";
 import { getBacklinksFree } from "@/lib/providers/backlinks-free";
@@ -21,11 +19,21 @@ import { getRankToRank, rankToPopularityScore } from "@/lib/providers/rankto";
 import { getWikiInterest } from "@/lib/providers/wikimedia";
 import { detectTechStack } from "@/lib/engines/tech-stack";
 import { getPageSpeed, type CruxFieldData } from "@/lib/providers/pagespeed";
+import { getPopularitySignal, type PopularitySignal } from "@/lib/engines/popularity-signal";
 
 export interface CompetitiveSnapshot {
   target: string;
   domain: string;
-  popularity: { score: number; signals: string[]; globalRank?: number; rankTrend?: string; available: boolean };
+  popularity: {
+    score: number;
+    tier: number;
+    signals: string[];
+    globalRank?: number;
+    rankTrend?: string;
+    available: boolean;
+    dataQuality: "estimated_proxy";
+    attributions: PopularitySignal["attributions"];
+  };
   authority: { rating: number; sources: string[]; available: boolean };
   techCategories: Record<string, string[]>;
   techAvailable: boolean;
@@ -52,7 +60,7 @@ export async function getCompetitiveSnapshot(
   opts: { name?: string; includeWiki?: boolean; includeCwv?: boolean } = {}
 ): Promise<CompetitiveSnapshot> {
   const domain = clean(target);
-  const [authorityRes, backlinks, age, rankto, wiki, tech, ps, ccwg, opr, radar, resolved] = await Promise.all([
+  const [authorityRes, backlinks, age, rankto, wiki, tech, ps, popularitySignal, opr, resolved] = await Promise.all([
     getDomainAuthority(domain).catch(() => null),
     getBacklinksFree(domain, 100).catch(() => null),
     getDomainAge(domain).catch(() => null),
@@ -60,9 +68,8 @@ export async function getCompetitiveSnapshot(
     opts.includeWiki && opts.name ? getWikiInterest(opts.name).catch(() => null) : Promise.resolve(null),
     detectTechStack(domain).catch(() => null),
     opts.includeCwv ? getPageSpeed(domain, "mobile").catch(() => null) : Promise.resolve(null),
-    getCcWebGraphAuthority(domain).catch(() => null),
+    getPopularitySignal(domain, { includeCrux: opts.includeCwv, includeBacklinks: true }),
     hasOpenPageRankCapability() ? getOpenPageRank(domain).catch(() => null) : Promise.resolve(null),
-    hasCloudflareRadarCapability() ? getRadarDomainRank(domain).catch(() => null) : Promise.resolve(null),
     resolveDomainAuthority(domain).catch(() => null),
   ]);
 
@@ -74,18 +81,17 @@ export async function getCompetitiveSnapshot(
   const wikiViews = wiki?.exists ? wiki.totalViews : 0;
   const globalRank = rankto?.available ? rankto.rank : undefined;
 
-  // Popularity Index (relative).
+  // Popularity Index — sovereign blend via popularity-signal engine, plus wiki/age.
   const popParts: Array<{ value: number; weight: number }> = [];
-  const popSignals: string[] = [];
-  if (typeof globalRank === "number") { popParts.push({ value: rankToPopularityScore(globalRank), weight: 0.4 }); popSignals.push("rank.to"); }
-  if (ccwg && ccwg.pageRankNorm > 0) { popParts.push({ value: ccwg.pageRankNorm, weight: 0.35 }); popSignals.push("cc_webgraph"); }
-  if (tranco > 0) { popParts.push({ value: tranco, weight: 0.4 }); popSignals.push("tranco"); }
-  if (radar && radar.popularityScore > 0) { popParts.push({ value: radar.popularityScore, weight: 0.15 }); popSignals.push("cloudflare_radar"); }
-  if (referringDomains > 0) { popParts.push({ value: logScore(referringDomains, 33), weight: 0.3 }); popSignals.push("common_crawl"); }
+  const popSignals: string[] = [...popularitySignal.dataSources];
+  if (popularitySignal.popularityIndex > 0) {
+    popParts.push({ value: popularitySignal.popularityIndex, weight: 0.75 });
+  }
   if (wikiViews > 0) { popParts.push({ value: logScore(wikiViews, 16.6), weight: 0.15 }); popSignals.push("wikipedia"); }
   if (ageYears > 0) { popParts.push({ value: Math.min(100, ageYears * 5), weight: 0.1 }); popSignals.push("domain_age"); }
   const popWeight = popParts.reduce((s, p) => s + p.weight, 0);
   const popularityScore = popWeight > 0 ? Math.round(popParts.reduce((s, p) => s + p.value * p.weight, 0) / popWeight) : 0;
+  const popularityTier = popularityScore > 0 ? Math.max(1, Math.min(10, Math.ceil(popularityScore / 10))) : 0;
 
   // Authority Rating (DR-style). When Tranco is unlisted (domain outside the
   // top-1M), fall back to the rank.to-derived score so smaller real domains
@@ -113,7 +119,16 @@ export async function getCompetitiveSnapshot(
   return {
     target,
     domain,
-    popularity: { score: popularityScore, signals: popSignals, globalRank, rankTrend: rankto?.available ? rankto.trend : undefined, available: popParts.length > 0 },
+    popularity: {
+      score: popularityScore,
+      tier: popularityTier,
+      signals: popSignals,
+      globalRank,
+      rankTrend: rankto?.available ? rankto.trend : undefined,
+      available: popParts.length > 0,
+      dataQuality: "estimated_proxy",
+      attributions: popularitySignal.attributions,
+    },
     authority: { rating: authorityRating, sources: authSources, available: authParts.length > 0 },
     techCategories: tech?.categories || {},
     techAvailable: Boolean(tech?.available),

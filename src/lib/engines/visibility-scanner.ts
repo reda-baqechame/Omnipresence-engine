@@ -6,9 +6,11 @@ import {
 import { hasLLMMentionsCapability } from "@/lib/config/capabilities";
 import { queryPerplexitySonar, hasPerplexityCapability } from "@/lib/providers/perplexity";
 import { searchGoogleOrganicRouter } from "@/lib/providers/serp-router";
-import { hasAiUiCapture, captureAiUiSurface, isCaptureBlocked, type AiUiCaptureSuccess } from "@/lib/providers/ai-ui-capture";
+import { hasAiUiCapture, captureAiUiSurface, isCaptureBlocked, type AiUiCaptureSuccess, type AiUiCaptureSurface, type AiUiCaptureOptions } from "@/lib/providers/ai-ui-capture";
 import { captureOptionsFromLocation } from "@/lib/providers/location-geo";
 import { logProviderError } from "@/lib/observability/log";
+import { createServiceClient } from "@/lib/supabase/server";
+import { assertTenantSurfaceBudget, trackApiUsage, TenantBudgetExceededError } from "@/lib/metering/api-usage";
 import { makeBrandMatcher, makeCompetitorMatcher, sameRegistrableDomain, type EntityMatcher } from "@/lib/engines/brand-matcher";
 import type { VisibilityEngine, VisibilityResult } from "@/types/database";
 import type { DataSource, DataQuality } from "@/types/database";
@@ -18,6 +20,8 @@ import { hasLangfuse, mirrorTracesToLangfuse } from "@/lib/providers/langfuse";
 export interface VisibilityScanConfig {
   projectId: string;
   runId: string;
+  /** When set, AI UI captures consume tenant daily surface credits. */
+  organizationId?: string;
   brandName: string;
   brandDomain: string;
   competitors: string[];
@@ -95,6 +99,47 @@ export async function runVisibilityScan(
   return results;
 }
 
+const CAPTURE_CREDITS = 2;
+
+async function captureWithTenantBudget(
+  config: VisibilityScanConfig,
+  surface: AiUiCaptureSurface,
+  prompt: string,
+  options: AiUiCaptureOptions = {}
+) {
+  if (config.organizationId) {
+    try {
+      const supabase = await createServiceClient();
+      await assertTenantSurfaceBudget(supabase, config.organizationId, CAPTURE_CREDITS);
+    } catch (e) {
+      if (e instanceof TenantBudgetExceededError) {
+        logProviderError("visibility.capture_budget", e, { org: config.organizationId });
+        return null;
+      }
+    }
+  }
+
+  const captured = await captureAiUiSurface(
+    surface,
+    prompt,
+    config.brandName,
+    config.brandDomain,
+    config.competitors,
+    options
+  ).catch(() => null);
+
+  if (captured && config.organizationId && !isCaptureBlocked(captured)) {
+    try {
+      const supabase = await createServiceClient();
+      await trackApiUsage(supabase, config.organizationId, "ai-ui-capture", surface, CAPTURE_CREDITS);
+    } catch {
+      // metering is best-effort
+    }
+  }
+
+  return captured;
+}
+
 async function scanSinglePrompt(
   config: VisibilityScanConfig,
   prompt: { id?: string; text: string },
@@ -131,14 +176,12 @@ async function scanSinglePrompt(
   if (hasAiUiCapture() && (LLM_ENGINES.has(engine) || engine === "perplexity" || engine === "google_ai_overview" || engine === "bing_copilot")) {
     const surface = engine === "claude" ? "chatgpt" : (engine as "chatgpt" | "gemini" | "perplexity" | "google_ai_overview" | "bing_copilot");
     const geoOpts = captureOptionsFromLocation(config.location);
-    const captured = await captureAiUiSurface(
+    const captured = await captureWithTenantBudget(
+      config,
       surface,
       prompt.text,
-      config.brandName,
-      config.brandDomain,
-      config.competitors,
       geoOpts
-    ).catch(() => null);
+    );
     if (isCaptureBlocked(captured)) {
       return unavailableRow(base, "capture_blocked", captured.reason);
     }
@@ -155,14 +198,12 @@ async function scanSinglePrompt(
     } else if (engine === "perplexity") {
       if (hasAiUiCapture()) {
         const geoOpts = captureOptionsFromLocation(config.location);
-        const captured = await captureAiUiSurface(
+        const captured = await captureWithTenantBudget(
+          config,
           "perplexity",
           prompt.text,
-          config.brandName,
-          config.brandDomain,
-          config.competitors,
           geoOpts
-        ).catch(() => null);
+        );
         if (isCaptureBlocked(captured)) {
           return unavailableRow(base, "capture_blocked", captured.reason);
         }
@@ -291,14 +332,12 @@ async function scanSinglePrompt(
     } else if (engine === "bing_copilot") {
       if (hasAiUiCapture()) {
         const geoOpts = captureOptionsFromLocation(config.location);
-        const captured = await captureAiUiSurface(
+        const captured = await captureWithTenantBudget(
+          config,
           "bing_copilot",
           prompt.text,
-          config.brandName,
-          config.brandDomain,
-          config.competitors,
           geoOpts
-        ).catch(() => null);
+        );
         if (isCaptureBlocked(captured)) {
           return unavailableRow(base, "capture_blocked", captured.reason);
         }
@@ -467,14 +506,12 @@ async function sampleLLMVisibility(
   if (!groundedData && hasAiUiCapture() && (engine === "chatgpt" || engine === "gemini")) {
     const surface = engine as "chatgpt" | "gemini";
     const geoOpts = captureOptionsFromLocation(config.location);
-    const captured = await captureAiUiSurface(
+    const captured = await captureWithTenantBudget(
+      config,
       surface,
       prompt.text,
-      config.brandName,
-      config.brandDomain,
-      config.competitors,
       geoOpts
-    ).catch(() => null);
+    );
     if (!isCaptureBlocked(captured) && captured) {
       return mapCaptureToVisibilityResult(
         {

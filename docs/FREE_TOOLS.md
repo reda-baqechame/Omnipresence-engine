@@ -36,7 +36,11 @@ Legend:
 | Wikipedia / Wikidata / DBpedia | CC-BY-SA / CC0 | Entity/KG grounding | `[]` / `unavailable` |
 | OpenStreetMap Nominatim + Overpass | ODbL | Local geocoding + competitors | `available:false` |
 | W3C Nu HTML Checker | Free API | HTML validity | finding skipped |
-| Common Crawl | Open data | Backlinks/webgraph (OmniData) | `unavailable` |
+| Common Crawl webgraph (full edges) | Open data | Real referring domains + authority (OmniData 20GB+ volume) | ranks-only authority only |
+| Popularity Signal engine | Blended — cite Cloudflare Radar (CC BY-NC 4.0) when shown | Relative popularity tier 1-10 (`estimated_proxy`) | `unavailable` |
+
+> **Popularity Signal:** Never displayed as absolute visit counts. Cloudflare Radar
+> requires methodology attribution when its bucket contributes to the tier.
 
 > **Usage etiquette:** Nominatim/Overpass/W3C are courtesy public services with
 > rate limits and a required descriptive `User-Agent` (set). For heavy/agency
@@ -54,6 +58,9 @@ Legend:
 | GitHub Search | Keyless (low) / free token (high) | `GITHUB_TOKEN` | Mentions | low-rate keyless |
 | Stack Exchange | Optional key (higher quota) | `STACKEXCHANGE_KEY` | Mentions | keyless |
 | Reddit API | Free app creds | `REDDIT_CLIENT_ID/SECRET` | Mentions | keyless `site:reddit.com` SERP |
+| Serper (Google SERP) | Paid free-trial — hard cap | `SERPER_API_KEY`, `SERPER_MONTHLY_CAP=2500` | Optional fallback SERP only | next provider in router |
+| Brave Search | Free-tier credits — hard cap | `BRAVE_SEARCH_API_KEY`, `BRAVE_MONTHLY_CAP=2000` | Optional fallback SERP only | next provider in router |
+| Cloudflare Radar | **CC BY-NC 4.0** | `CLOUDFLARE_RADAR_API_TOKEN` | Popularity bucket (Popularity Signal) | skipped |
 
 ## Self-hosted services (open-source, you run them — zero per-call cost)
 
@@ -103,3 +110,20 @@ These are free and fine for an internal, self-hosted SaaS backend, but they are
 
 Everything **bundled into this application** is MIT/Apache-2.0 (permissive). All
 copyleft tools are **optional, network-isolated services** behind env flags.
+
+## Cost guardrails (operator)
+
+| Guard | Env | Default | Purpose |
+|-------|-----|---------|---------|
+| LLM daily budget | `LLM_DAILY_BUDGET_USD` | $5 | Caps paid LLM spend |
+| LLM monthly budget | `LLM_MONTHLY_BUDGET_USD` | $50 | Caps sustained LLM spend |
+| Tenant daily surface cap | `TENANT_DAILY_CREDIT_CAP` | disabled | Per-org AI capture / SERP credits |
+| Serper free-trial cap | `SERPER_MONTHLY_CAP` | 2500 | Auto-disable Serper after allotment |
+| Brave free-tier cap | `BRAVE_MONTHLY_CAP` | 2000 | Auto-disable Brave after allotment |
+| AI capture concurrency | `AI_UI_CAPTURE_MAX_CONCURRENCY` | 3 | Prevents Playwright OOM on Railway |
+| Railway spend alert | `RAILWAY_MONTHLY_BUDGET_USD` | 35 | `scripts/railway-spend-guard.mjs` + daily Inngest cron |
+| Railway workspace id | `RAILWAY_WORKSPACE_ID` | — | Required for billing total in spend guard |
+| Spend alert webhook | `RAILWAY_SPEND_ALERT_WEBHOOK` | — | Optional Slack/Discord webhook at 80%/100% |
+
+Run `node scripts/railway-spend-guard.mjs` manually or rely on the
+`daily-railway-spend-guard` Inngest cron (09:00 UTC daily).

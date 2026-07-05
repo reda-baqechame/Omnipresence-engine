@@ -23,6 +23,7 @@ import { searchGoogleOrganicSerper } from "@/lib/providers/serper";
 import { searchGoogleOrganicSearxng, hasSearxngCapability } from "@/lib/providers/searxng";
 import { searchGoogleOrganicFirecrawl, hasFirecrawlCapability } from "@/lib/providers/firecrawl";
 import { isZeroPaidKeysMode, isBenchmarkOnlyForced, type ProviderCategory } from "@/lib/config/capabilities";
+import { isProviderCallAllowed } from "@/lib/providers/provider-call-cap";
 import { withBreaker, CircuitOpenError, circuitStatus, type CircuitStatus } from "@/lib/providers/http";
 import type { ProviderResult, SERPResult } from "./types";
 
@@ -90,7 +91,7 @@ const serpAdapters: Adapter<[string, string, string, string[]], SERPResult>[] = 
   {
     id: "serper",
     capability: "serp",
-    category: "surface_measurement",
+    category: "fallback_only",
     paid: true,
     selfHosted: false,
     confidence: 0.95,
@@ -102,7 +103,7 @@ const serpAdapters: Adapter<[string, string, string, string[]], SERPResult>[] = 
   {
     id: "brave",
     capability: "serp",
-    category: "surface_measurement",
+    category: "fallback_only",
     paid: false,
     selfHosted: false,
     confidence: 0.85,
@@ -281,6 +282,13 @@ export async function route<TArgs extends unknown[], TData>(
 
   for (const adapter of adapters) {
     const breakerKey = `route:${adapter.id}`;
+    if (adapter.id === "serper" || adapter.id === "brave") {
+      const allowed = await isProviderCallAllowed(adapter.id as "serper" | "brave");
+      if (!allowed) {
+        trail.push({ id: adapter.id, ok: false, error: "monthly cap reached" });
+        continue;
+      }
+    }
     try {
       // The breaker fast-fails a provider that has failed repeatedly so we don't
       // pay its full timeout on every call while it's down — failover stays snappy.

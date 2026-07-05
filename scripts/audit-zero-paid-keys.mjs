@@ -34,6 +34,20 @@ const PAID_KEYS = [
   "CLEARBIT_REVEAL_KEY",
 ];
 
+// Optional free-trial SERP fallbacks — hard-capped, never primary (see router.ts).
+const CAPPED_FALLBACKS = [
+  { id: "serper", capEnv: "SERPER_MONTHLY_CAP", defaultCap: 2500, license: "paid free-trial" },
+  { id: "brave", capEnv: "BRAVE_MONTHLY_CAP", defaultCap: 2000, license: "free-tier credits" },
+];
+
+const POPULARITY_ATTRIBUTIONS = [
+  { source: "cloudflare_radar", license: "CC-BY-NC-4.0" },
+  { source: "tranco", license: "research-grade open list" },
+  { source: "rank.to", license: "public rank API" },
+  { source: "common_crawl_webgraph", license: "open data" },
+  { source: "crux", license: "Google Chrome UX Report terms" },
+];
+
 // Sovereign (non-paid) adapters per capability — mirrors the registry in
 // src/lib/providers/router.ts. "always" = keyless and always architecturally
 // available; otherwise the env var that activates the sovereign path.
@@ -103,6 +117,18 @@ if (warnings.length) {
     `\nNote: sovereign adapters exist for every capability. Not yet configured in this env: ${warnings.join(", ")}.`
   );
   console.log("Configure their keyless infra (SearXNG/OmniData, Ollama, SMTP, direct social) to activate.");
+}
+
+console.log("\nCapped fallback adapters (optional free-trial — must have monthly caps):");
+for (const fb of CAPPED_FALLBACKS) {
+  const cap = Number(process.env[fb.capEnv]);
+  const effective = Number.isFinite(cap) && cap > 0 ? cap : fb.defaultCap;
+  console.log(`  [cap ${effective}] ${fb.id} (${fb.license})`);
+}
+
+console.log("\nPopularity Signal attributions (must remain documented):");
+for (const a of POPULARITY_ATTRIBUTIONS) {
+  console.log(`  ${a.source} — ${a.license}`);
 }
 
 console.log("\nzero-paid-keys: PASS — full loop has a sovereign path for every capability.\n");

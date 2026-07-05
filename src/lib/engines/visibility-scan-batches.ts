@@ -115,6 +115,7 @@ export async function runVisibilityEngineBatch(
   const results = await runVisibilityScan({
     projectId: project.id,
     runId: prep.runId,
+    organizationId: project.organization_id,
     brandName: project.name,
     brandDomain: project.domain,
     competitors: project.competitors || [],

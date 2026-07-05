@@ -49,6 +49,7 @@
     "webgraph:verify": "node scripts/verify-webgraph.mjs",
     "webgraph:poll": "node scripts/poll-webgraph-complete.mjs",
     "railway:volume-resize": "node scripts/railway-volume-resize.mjs",
+    "railway:spend-guard": "node scripts/railway-spend-guard.mjs",
     "prod:keygen": "node scripts/generate-integration-key.mjs",
     "prod:setup": "node scripts/prod-setup.mjs",
     "prod:ensure-env": "node scripts/ensure-prod-env.mjs",

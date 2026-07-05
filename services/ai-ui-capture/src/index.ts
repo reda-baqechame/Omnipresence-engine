@@ -5,6 +5,7 @@ import { analyzeCapture } from "./analyze.js";
 import { getSurfaceHealthSnapshot, markSurfaceBlocked, markSurfaceFailed, markSurfaceSuccess, markSurfaceUngrounded } from "./surface-health.js";
 import { retryWithExponentialBackoff } from "./retry-policy.js";
 import { writeCaptureEvidence } from "./evidence-writer.js";
+import { withCaptureSlot, captureConcurrencySnapshot } from "./concurrency.js";
 
 // Fail fast on insecure production config before binding the port.
 assertProductionAuth();
@@ -15,7 +16,13 @@ app.use(express.json({ limit: "1mb" }));
 
 // Public, unauthenticated health endpoint for container/orchestrator probes.
 app.get("/health", (_req, res) => {
-  res.json({ ok: true, service: "ai-ui-capture", version: "0.2.0", surfaceHealth: getSurfaceHealthSnapshot() });
+  res.json({
+    ok: true,
+    service: "ai-ui-capture",
+    version: "0.2.0",
+    surfaceHealth: getSurfaceHealthSnapshot(),
+    concurrency: captureConcurrencySnapshot(),
+  });
 });
 
 app.use(verifyAuth);
@@ -67,12 +74,14 @@ app.post("/capture", async (req, res) => {
   const selectedSurface = surface as Surface;
 
   try {
-    const raw = await retryWithExponentialBackoff(
-      () => capture(selectedSurface, prompt, options),
-      {
-        attempts: RETRY_ATTEMPTS,
-        shouldRetry: (_error, _attempt, result) => shouldRetryCapture(result ?? null),
-      }
+    const raw = await withCaptureSlot(() =>
+      retryWithExponentialBackoff(
+        () => capture(selectedSurface, prompt, options),
+        {
+          attempts: RETRY_ATTEMPTS,
+          shouldRetry: (_error, _attempt, result) => shouldRetryCapture(result ?? null),
+        }
+      )
     );
 
     if (!raw) {

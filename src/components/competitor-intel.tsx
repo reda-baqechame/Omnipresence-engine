@@ -46,7 +46,8 @@ export async function CompetitorIntel({
           <thead className="text-muted-foreground">
             <tr className="border-b">
               <th className="p-2 text-left">Domain</th>
-              <th className="p-2 text-right" title="Relative popularity (rank.to + Tranco + Common Crawl + Wikipedia + age) — NOT visit counts">Popularity</th>
+              <th className="p-2 text-right" title="Relative popularity tier 1-10 (estimated proxy — NOT visit counts)">Popularity tier</th>
+              <th className="p-2 text-right" title="Relative popularity index 0-100 (estimated proxy — NOT visit counts)">Popularity</th>
               <th className="p-2 text-right" title="Authority Rating: Tranco + Common Crawl referring domains + OpenPageRank + domain age">Authority</th>
               <th className="p-2 text-right" title="rank.to global rank (lower = more popular)">Global rank</th>
               {hasAiData && (
@@ -69,6 +70,7 @@ export async function CompetitorIntel({
                     <span className="ml-1.5 rounded bg-primary/10 px-1.5 py-0.5 text-[10px] uppercase text-primary">You</span>
                   )}
                 </td>
+                <td className="p-2 text-right">{s.popularity.tier > 0 ? `${s.popularity.tier}/10` : "—"}</td>
                 <td className="p-2 text-right">{s.popularity.score > 0 ? `${s.popularity.score}/100` : "—"}</td>
                 <td className="p-2 text-right">{s.authority.rating > 0 ? `${s.authority.rating}/100` : "—"}</td>
                 <td className="p-2 text-right">
@@ -135,7 +137,14 @@ async function safeSnapshot(
     return {
       target,
       domain: cleanLabel(target),
-      popularity: { score: 0, signals: [], available: false },
+      popularity: {
+        score: 0,
+        tier: 0,
+        signals: [],
+        available: false,
+        dataQuality: "estimated_proxy",
+        attributions: [],
+      },
       authority: { rating: 0, sources: [], available: false },
       techCategories: {},
       techAvailable: false,

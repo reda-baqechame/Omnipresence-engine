@@ -1,6 +1,8 @@
 import type { ProviderResult, SERPResult } from "./types";
 import { fetchWithTimeout } from "./http";
 import { logProviderError } from "@/lib/observability/log";
+import { BudgetExceededError } from "@/lib/providers/cost-guard";
+import { assertProviderCallAllowed, recordProviderCall } from "@/lib/providers/provider-call-cap";
 
 const BRAVE_URL = "https://api.search.brave.com/res/v1/web/search";
 
@@ -37,6 +39,7 @@ export async function searchGoogleOrganicBrave(
   competitors: string[]
 ): Promise<ProviderResult<SERPResult>> {
   try {
+    await assertProviderCallAllowed("brave");
     const params = new URLSearchParams({
       q: keyword,
       count: "20",
@@ -79,12 +82,17 @@ export async function searchGoogleOrganicBrave(
       );
     }
 
+    await recordProviderCall("brave");
+
     return {
       success: true,
       data: { organicResults, brandInResults, competitorInResults },
       creditsUsed: 1,
     };
   } catch (error) {
+    if (error instanceof BudgetExceededError) {
+      return { success: false, error: error.reason };
+    }
     logProviderError("brave-search", error, { keyword });
     return {
       success: false,
