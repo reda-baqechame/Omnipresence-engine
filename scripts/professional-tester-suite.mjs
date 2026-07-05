@@ -91,37 +91,72 @@ async function testHealth() {
 /** Verify live SERP returns real, decodable organic URLs (professional accuracy gate). */
 async function testSerpAccuracy() {
   console.log("\n## Live SERP accuracy (real organic results)");
-  try {
-    const res = await fetch(
-      `https://html.duckduckgo.com/html/?q=${encodeURIComponent("hubspot crm software")}`,
-      {
-        headers: { "User-Agent": "Mozilla/5.0 (compatible; PresenceOS-QA/1.0)", Accept: "text/html" },
-        signal: AbortSignal.timeout(20_000),
+  const query = "hubspot crm software";
+  let organic = [];
+
+  const omnidataUrl = (process.env.OMNIDATA_BASE_URL || "").replace(/\/$/, "");
+  const omnidataKey = process.env.OMNIDATA_API_KEY || "";
+  if (omnidataUrl && omnidataKey) {
+    try {
+      const res = await fetch(`${omnidataUrl}/v3/serp/google/organic/live`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "x-api-key": omnidataKey },
+        body: JSON.stringify([{ keyword: query, location_name: "United States", language_code: "en" }]),
+        signal: AbortSignal.timeout(30_000),
+      });
+      if (res.ok) {
+        const json = await res.json();
+        const items = json?.tasks?.[0]?.result?.[0]?.items || json?.tasks?.[0]?.result?.[0]?.organic || [];
+        for (const item of items) {
+          const url = item.url || item.link;
+          const title = item.title || item.description || "";
+          if (url?.startsWith("http") && title.length > 3) organic.push({ title, url });
+          if (organic.length >= 10) break;
+        }
       }
-    );
-    if (!res.ok) {
-      record("serp-live", "Organic SERP fetch", "fail", `HTTP ${res.status}`);
+    } catch {
+      /* fall through */
+    }
+  }
+
+  if (!organic.length) {
+    try {
+      const res = await fetch(
+        `https://html.duckduckgo.com/html/?q=${encodeURIComponent(query)}`,
+        {
+          headers: { "User-Agent": "Mozilla/5.0 (compatible; PresenceOS-QA/1.0)", Accept: "text/html" },
+          signal: AbortSignal.timeout(20_000),
+        }
+      );
+      if (!res.ok) {
+        record("serp-live", "Organic SERP fetch", "fail", `HTTP ${res.status}`);
+        return;
+      }
+      const html = await res.text();
+      const links = [...html.matchAll(/class="result__a"[^>]*href="([^"]+)"[^>]*>([\s\S]*?)<\/a>/g)];
+      for (const m of links) {
+        let raw = m[1].trim();
+        if (raw.startsWith("//")) raw = `https:${raw}`;
+        let url = raw;
+        try {
+          const u = new URL(raw);
+          if (u.hostname.includes("duckduckgo.com") && u.searchParams.has("uddg")) {
+            url = decodeURIComponent(u.searchParams.get("uddg") || raw);
+          }
+        } catch {
+          continue;
+        }
+        const title = m[2].replace(/<[^>]+>/g, "").replace(/&amp;/g, "&").trim();
+        if (url.startsWith("http") && title.length > 3) organic.push({ title, url });
+        if (organic.length >= 10) break;
+      }
+    } catch (e) {
+      record("serp-live", "SERP accuracy", "fail", e instanceof Error ? e.message : String(e));
       return;
     }
-    const html = await res.text();
-    const links = [...html.matchAll(/class="result__a"[^>]*href="([^"]+)"[^>]*>([\s\S]*?)<\/a>/g)];
-    const organic = [];
-    for (const m of links) {
-      let raw = m[1].trim();
-      if (raw.startsWith("//")) raw = `https:${raw}`;
-      let url = raw;
-      try {
-        const u = new URL(raw);
-        if (u.hostname.includes("duckduckgo.com") && u.searchParams.has("uddg")) {
-          url = decodeURIComponent(u.searchParams.get("uddg") || raw);
-        }
-      } catch {
-        continue;
-      }
-      const title = m[2].replace(/<[^>]+>/g, "").replace(/&amp;/g, "&").trim();
-      if (url.startsWith("http") && title.length > 3) organic.push({ title, url });
-      if (organic.length >= 10) break;
-    }
+  }
+
+  try {
     const hubspotHit = organic.some((o) => /hubspot\.com/i.test(o.url));
     record(
       "serp-live",
