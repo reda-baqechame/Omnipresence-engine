@@ -22,7 +22,9 @@ function arg(name) {
 const projectId = arg("--project") || process.env.PROJECT_ID || "b1055406-874d-4f5b-975a-9be1bf6aabbf";
 const base = (arg("--base") || process.env.SMOKE_BASE_URL || "https://omnipresence-engine.vercel.app").replace(/\/$/, "");
 const requireOAuth = args.includes("--require-oauth");
+const skipOAuth = args.includes("--skip-oauth");
 const skipScan = args.includes("--skip-scan");
+const strict = args.includes("--strict");
 const reportDir = join(root, "reports");
 mkdirSync(reportDir, { recursive: true });
 const stamp = new Date().toISOString().replace(/[:.]/g, "-").slice(0, 19);
@@ -37,14 +39,17 @@ function record(id, name, status, detail, data) {
 }
 
 function runStep(name, cmd, cmdArgs, env = {}) {
+  const useShell = process.platform === "win32" && (cmd === "npm" || cmd === "node");
   const r = spawnSync(cmd, cmdArgs, {
     cwd: root,
     encoding: "utf8",
-    shell: true,
+    shell: useShell,
     env: { ...process.env, ...env },
+    stdio: ["inherit", "pipe", "pipe"],
   });
   const ok = r.status === 0;
-  record(name, name, ok ? "pass" : "fail", ok ? "ok" : (r.stderr || r.stdout || "").trim().split("\n").slice(-3).join(" "));
+  const errTail = (r.stderr || r.stdout || "").trim().split("\n").slice(-3).join(" ");
+  record(name, name, ok ? "pass" : "fail", ok ? "ok" : errTail);
   return ok;
 }
 
@@ -61,7 +66,12 @@ async function fetchJson(url, opts = {}) {
 
 console.log(`\n=== hub-e2e-audit ===`);
 console.log(`  base: ${base}`);
-console.log(`  project: ${projectId}\n`);
+console.log(`  project: ${projectId}`);
+if (strict) console.log(`  strict: warn → fail`);
+console.log("");
+
+console.log("Schema + repo gates");
+runStep("verify-all", "npm", ["run", "verify:all"]);
 
 console.log("Infrastructure");
 runStep("verify-prod", "npm", ["run", "verify:prod", base], { SMOKE_BASE_URL: base });
@@ -107,10 +117,16 @@ if (!skipScan) {
 
 console.log("\nAuthenticated sweeps");
 runStep("test-browser", "npm", ["run", "test:browser", base], { SMOKE_BASE_URL: base });
+runStep("test-panels", "npm", ["run", "test:panels", base], { SMOKE_BASE_URL: base });
+runStep("test-professional", "npm", ["run", "test:professional"]);
 
 const oauthArgs = ["scripts/verify-oauth-connectors.mjs", projectId];
 if (requireOAuth) oauthArgs.push("--require");
-runStep("oauth-connectors", "node", oauthArgs);
+if (skipOAuth) {
+  record("oauth-connectors", "OAuth connectors", "warn", "skipped (--skip-oauth)");
+} else {
+  runStep("oauth-connectors", "node", oauthArgs);
+}
 
 console.log("\nProject data");
 runStep("audit-project-data", "node", ["scripts/audit-project-data.mjs", projectId]);
@@ -131,17 +147,22 @@ const hubRoutes = [
 console.log("\nHub tab routes");
 for (const route of hubRoutes) {
   const path = `/app/projects/${projectId}${route}`;
-  const res = await fetch(`${base}${path}`, { redirect: "manual", signal: AbortSignal.timeout(45_000) });
-  const status = res.status;
-  record(`hub-${route}`, `Hub ${route}`, status === 200 || status === 307 ? "pass" : "fail", `HTTP ${status}`);
+  try {
+    const res = await fetch(`${base}${path}`, { redirect: "manual", signal: AbortSignal.timeout(45_000) });
+    const status = res.status;
+    record(`hub-${route}`, `Hub ${route}`, status === 200 || status === 307 ? "pass" : "fail", `HTTP ${status}`);
+  } catch (e) {
+    record(`hub-${route}`, `Hub ${route}`, "fail", e instanceof Error ? e.message : "fetch failed");
+  }
 }
 
 const fails = results.filter((r) => r.status === "fail").length;
 const warns = results.filter((r) => r.status === "warn").length;
-const summary = { base, projectId, fails, warns, passes: results.filter((r) => r.status === "pass").length, at: new Date().toISOString() };
+const effectiveFails = fails + (strict ? warns : 0);
+const summary = { base, projectId, fails, warns, strict, passes: results.filter((r) => r.status === "pass").length, at: new Date().toISOString() };
 
 writeFileSync(reportPath, JSON.stringify({ summary, results }, null, 2));
 console.log(`\nReport: ${reportPath}`);
-console.log(`Summary: ${summary.passes} pass, ${warns} warn, ${fails} fail\n`);
+console.log(`Summary: ${summary.passes} pass, ${warns} warn, ${fails} fail${strict && warns ? ` (${warns} warn treated as fail)` : ""}\n`);
 
-process.exit(fails > 0 ? 1 : 0);
+process.exit(effectiveFails > 0 ? 1 : 0);

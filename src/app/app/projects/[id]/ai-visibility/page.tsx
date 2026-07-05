@@ -66,7 +66,7 @@ export default async function AiVisibilityHub({ params }: { params: Promise<{ id
           <div>
             <h3 className="text-lg font-semibold mb-3">Visibility · Position · Sentiment (per prompt)</h3>
             <p className="text-xs text-muted-foreground mb-3">Peec-style triple metric from grounded probes — mention rate, answer slot, and sentiment per engine.</p>
-            <VisibilityTripleTable rows={tripleMetrics} />
+            <VisibilityTripleTable rows={tripleMetrics} projectId={id} />
           </div>
 
           <div>

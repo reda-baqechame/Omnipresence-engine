@@ -2803,4 +2803,7 @@ DROP POLICY IF EXISTS rank_schedule_keywords_all ON rank_schedule_keywords;
 CREATE POLICY rank_schedule_keywords_all ON rank_schedule_keywords FOR ALL
   USING (project_id IN (SELECT id FROM projects WHERE organization_id IN (SELECT get_user_org_ids())));
 
+-- Share of AI Voice snapshot per visibility run (persisted at scan finalize).
+ALTER TABLE visibility_runs ADD COLUMN IF NOT EXISTS brand_sov NUMERIC;
+
 

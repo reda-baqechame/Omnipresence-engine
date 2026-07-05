@@ -149,6 +149,16 @@ export function calculateShareOfVoice(
   };
 }
 
+/** Brand share of voice (0–1) for persisting on visibility_runs. */
+export function computeBrandSovFromResults(
+  results: VisibilityResult[],
+  brandName: string,
+  competitors: string[]
+): number | null {
+  const { brand } = calculateShareOfVoice(results, brandName, competitors);
+  return brand?.shareOfVoice ?? null;
+}
+
 export interface SovByEngine {
   engine: string;
   sov: ShareOfVoiceResult;

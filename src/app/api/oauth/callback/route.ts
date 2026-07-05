@@ -4,6 +4,8 @@ import { discoverGa4Property } from "@/lib/engines/attribution";
 import { discoverGbpAccountLocation } from "@/lib/providers/gbp-discovery";
 import { verifyOAuthState } from "@/lib/security/oauth-state";
 import { verifyProjectAccess } from "@/lib/security/project-access";
+import { inngest } from "@/lib/inngest/client";
+import { syncProjectAttribution } from "@/lib/engines/attribution-sync";
 
 async function exchangeGoogleToken(code: string, redirectUri: string) {
   const response = await fetch("https://oauth2.googleapis.com/token", {
@@ -183,6 +185,19 @@ export async function GET(request: NextRequest) {
     },
     { onConflict: "project_id,provider" }
   );
+
+  if (
+    payload.provider === "google_search_console" ||
+    payload.provider === "google_analytics"
+  ) {
+    if (process.env.INNGEST_EVENT_KEY) {
+      await inngest
+        .send({ name: "project/attribution.sync", data: { projectId: payload.projectId } })
+        .catch(() => undefined);
+    } else {
+      await syncProjectAttribution(service, payload.projectId).catch(() => undefined);
+    }
+  }
 
   const redirectTab =
     payload.provider === "google_business_profile" ? "distribution" : "attribution";

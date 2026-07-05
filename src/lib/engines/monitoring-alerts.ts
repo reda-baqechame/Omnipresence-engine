@@ -2,6 +2,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import { sendMonitoringAlert, type MonitoringAlertItem } from "@/lib/email/reports";
 import { sendSlackWebhook, buildMonitoringSlackMessage } from "@/lib/notifications/slack";
 import { competitorWinPrompts } from "@/lib/engines/visibility-insights";
+import { computeBrandSovFromResults } from "@/lib/engines/share-of-voice";
 import type { VisibilityResult } from "@/types/database";
 
 /**
@@ -57,16 +58,39 @@ export async function collectProjectAlertItems(
   }
 
   // SoV movement between latest two visibility runs.
+  const { data: project } = await supabase
+    .from("projects")
+    .select("name, competitors")
+    .eq("id", projectId)
+    .single();
+
   const { data: runs } = await supabase
     .from("visibility_runs")
     .select("id, created_at, brand_sov")
     .eq("project_id", projectId)
     .order("created_at", { ascending: false })
     .limit(2);
+
+  async function resolveRunSov(run: { id: string; brand_sov?: number | null }): Promise<number | null> {
+    const stored = Number(run.brand_sov);
+    if (Number.isFinite(stored)) return stored;
+    if (!project?.name) return null;
+    const { data: probes } = await supabase
+      .from("visibility_results")
+      .select("*")
+      .eq("run_id", run.id);
+    if (!probes?.length) return null;
+    return computeBrandSovFromResults(
+      probes as VisibilityResult[],
+      project.name,
+      (project.competitors as string[]) || []
+    );
+  }
+
   if (runs && runs.length === 2) {
-    const latest = Number(runs[0].brand_sov);
-    const prev = Number(runs[1].brand_sov);
-    if (Number.isFinite(latest) && Number.isFinite(prev)) {
+    const latest = await resolveRunSov(runs[0]);
+    const prev = await resolveRunSov(runs[1]);
+    if (latest != null && prev != null) {
       const delta = latest - prev;
       if (Math.abs(delta) >= 0.03) {
         items.push({

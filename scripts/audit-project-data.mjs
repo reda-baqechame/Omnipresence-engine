@@ -29,11 +29,11 @@ const { data: project } = await s.from("projects").select("*").eq("id", projectI
 
 const tables = [
   ["visibility_results", "*"],
-  ["prompts", "id,text,category,priority,data_source,source_query,evidence_url,created_at"],
+  ["prompts", "id,text,category,priority,is_tracked,created_at"],
   ["scores", "*"],
   ["technical_findings", "id,title,severity,category,data_source"],
-  ["authority_opportunities", "id,title,type,data_source,is_estimated,estimated_impact,source_url"],
-  ["execution_tasks", "id,title,status,source_type,evidence_url,impact_score"],
+  ["authority_opportunities", "id,type,target_site,target_url,data_source,is_estimated,estimated_impact,evidence_url"],
+  ["execution_tasks", "id,title,status,source_module,evidence,impact,description"],
   ["roadmaps", "id,items,created_at"],
   ["brand_profiles", "*"],
 ];
@@ -59,12 +59,12 @@ for (const r of vis || []) {
 }
 console.log("\n## visibility breakdown", JSON.stringify({ total: vis?.length, byEngine, bySource }, null, 2));
 
-// Prompts data sources
-const { data: prompts } = await s.from("prompts").select("text,data_source,source_query").eq("project_id", projectId).limit(15);
+// Prompts sample
+const { data: prompts } = await s.from("prompts").select("text,category,priority,is_tracked").eq("project_id", projectId).limit(15);
 console.log("\n## sample prompts", JSON.stringify(prompts?.slice(0, 8), null, 2));
 
 // Generic tasks
-const { data: tasks } = await s.from("execution_tasks").select("title,source_type,evidence_url,description").eq("project_id", projectId).limit(20);
+const { data: tasks } = await s.from("execution_tasks").select("title,source_module,evidence,impact,description").eq("project_id", projectId).limit(20);
 console.log("\n## sample tasks", JSON.stringify(tasks?.slice(0, 10), null, 2));
 
 // Roadmap items
@@ -72,8 +72,8 @@ const { data: roadmap } = await s.from("roadmaps").select("items").eq("project_i
 const items = (roadmap?.items || []).slice(0, 8);
 console.log("\n## roadmap sample", JSON.stringify(items, null, 2));
 
-// Simulated/estimated counts
-for (const table of ["visibility_results", "authority_opportunities", "prompts"]) {
+// Simulated/estimated counts (tables with data_source column only)
+for (const table of ["visibility_results", "authority_opportunities"]) {
   const { count: sim } = await s.from(table).select("id", { count: "exact", head: true }).eq("project_id", projectId).eq("data_source", "simulated");
   const { count: est } = await s.from(table).select("id", { count: "exact", head: true }).eq("project_id", projectId).eq("data_source", "estimated");
   const { count: unav } = await s.from(table).select("id", { count: "exact", head: true }).eq("project_id", projectId).eq("data_source", "unavailable");

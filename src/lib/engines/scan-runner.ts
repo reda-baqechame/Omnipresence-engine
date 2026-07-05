@@ -24,6 +24,7 @@ import {
   assessVisibilityRunQuality,
   visibilityRunStatusFromQuality,
 } from "@/lib/engines/visibility-run-quality";
+import { computeBrandSovFromResults } from "@/lib/engines/share-of-voice";
 import { emitWebhookEvent } from "@/lib/notifications/webhooks";
 import { buildSourceGraph } from "@/lib/engines/source-graph";
 import type {
@@ -166,12 +167,18 @@ export async function runProjectScan(
     visibilityResults as import("@/lib/engines/visibility-scanner").VisibilityScanResult[]
   );
   const runStatus = visibilityRunStatusFromQuality(quality);
+  const brandSov = computeBrandSovFromResults(
+    visibilityResults as unknown as VisibilityResult[],
+    p.name,
+    p.competitors || []
+  );
   await supabase
     .from("visibility_runs")
     .update({
       status: runStatus,
       completed_at: new Date().toISOString(),
       error_message: quality.message,
+      brand_sov: brandSov,
     })
     .eq("id", run!.id);
 

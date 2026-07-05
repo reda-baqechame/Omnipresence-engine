@@ -16,6 +16,8 @@ import {
   assessVisibilityRunQuality,
   visibilityRunStatusFromQuality,
 } from "@/lib/engines/visibility-run-quality";
+import { computeBrandSovFromResults } from "@/lib/engines/share-of-voice";
+import type { VisibilityResult } from "@/types/database";
 
 export interface VisibilityScanPrep {
   runId: string;
@@ -133,6 +135,11 @@ export async function finalizeVisibilityScan(
 ) {
   const quality = assessVisibilityRunQuality(visibilityResults);
   const runStatus = visibilityRunStatusFromQuality(quality);
+  const brandSov = computeBrandSovFromResults(
+    visibilityResults as unknown as VisibilityResult[],
+    project.name,
+    project.competitors || []
+  );
 
   const citationRows = extractCitationSources(visibilityResults, project.competitors || [], project.domain).map(
     (row) => ({ ...row, project_id: project.id, run_id: runId })
@@ -151,6 +158,7 @@ export async function finalizeVisibilityScan(
       status: runStatus,
       completed_at: new Date().toISOString(),
       error_message: quality.message,
+      brand_sov: brandSov,
     })
     .eq("id", runId);
 

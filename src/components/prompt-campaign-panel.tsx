@@ -40,8 +40,10 @@ export function PromptCampaignPanel({
   demandSignals = [],
 }: PromptCampaignPanelProps) {
   const [prompts, setPrompts] = useState<PromptRow[]>(initialPrompts);
+  const [demand, setDemand] = useState<PromptDemandSignal[]>(demandSignals);
   const [csv, setCsv] = useState("");
   const [loading, setLoading] = useState(false);
+  const [demandLoading, setDemandLoading] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
 
   async function reloadPrompts() {
@@ -90,6 +92,24 @@ export function PromptCampaignPanel({
     if (res.ok) reloadPrompts();
   }
 
+  async function refreshDemand() {
+    setDemandLoading(true);
+    setMessage(null);
+    const res = await fetch("/api/prompts/refresh-demand", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ projectId }),
+    });
+    const data = await res.json();
+    if (res.ok) {
+      setDemand(data.signals || []);
+      setMessage(`Refreshed demand for ${data.count ?? 0} prompts`);
+    } else {
+      setMessage(data.error || "Demand refresh failed");
+    }
+    setDemandLoading(false);
+  }
+
   return (
     <div className="space-y-8">
       <div>
@@ -123,12 +143,23 @@ export function PromptCampaignPanel({
         </div>
       </div>
 
-      {demandSignals.length > 0 && (
+      {(demand.length > 0 || prompts.some((p) => p.is_tracked)) && (
         <div className="bg-card border border-border rounded-xl p-4">
-          <h3 className="font-semibold mb-2">Prompt demand (Profound-style)</h3>
+          <div className="flex flex-wrap items-center justify-between gap-2 mb-2">
+            <h3 className="font-semibold">Prompt demand (Profound-style)</h3>
+            <button
+              type="button"
+              onClick={refreshDemand}
+              disabled={demandLoading || !prompts.some((p) => p.is_tracked)}
+              className="text-sm px-3 py-1 rounded-lg border border-border hover:bg-secondary disabled:opacity-50"
+            >
+              {demandLoading ? "Refreshing…" : "Refresh demand"}
+            </button>
+          </div>
           <p className="text-xs text-muted-foreground mb-3">
             Relative query interest from Autocomplete breadth + Google Trends momentum — not absolute volume.
           </p>
+          {demand.length > 0 ? (
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
               <thead>
@@ -140,7 +171,7 @@ export function PromptCampaignPanel({
                 </tr>
               </thead>
               <tbody>
-                {demandSignals.slice(0, 30).map((d) => (
+                {demand.slice(0, 30).map((d) => (
                   <tr key={d.prompt} className="border-b border-border/40">
                     <td className="p-2 max-w-xs truncate" title={d.prompt}>{d.prompt}</td>
                     <td className="p-2 text-right tabular-nums">{d.demandIndex}/100</td>
@@ -151,6 +182,9 @@ export function PromptCampaignPanel({
               </tbody>
             </table>
           </div>
+          ) : (
+            <p className="text-sm text-muted-foreground">Click Refresh demand to measure tracked prompts.</p>
+          )}
           <MetricGlossary keys={["prompt_demand"]} className="mt-3 pt-3 border-t border-border" />
         </div>
       )}

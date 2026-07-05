@@ -33,7 +33,8 @@ import {
   visibilityRunStatusFromQuality,
 } from "@/lib/engines/visibility-run-quality";
 import { computeAndRecordFindingDiff } from "@/lib/engines/finding-diff";
-import type { Project, AuthorityOpportunity } from "@/types/database";
+import { computeBrandSovFromResults } from "@/lib/engines/share-of-voice";
+import type { Project, AuthorityOpportunity, VisibilityResult } from "@/types/database";
 
 export async function stepTechnicalAudit(supabase: SupabaseClient, projectId: string, domain: string) {
   const findings = [...(await runTechnicalAudit(domain)), ...(await analyzePassageReadiness(domain))];
@@ -182,6 +183,11 @@ export async function stepVisibilityScan(supabase: SupabaseClient, project: Proj
     visibilityResults as import("@/lib/engines/visibility-scanner").VisibilityScanResult[]
   );
   const runStatus = visibilityRunStatusFromQuality(quality);
+  const brandSov = computeBrandSovFromResults(
+    visibilityResults as unknown as VisibilityResult[],
+    project.name,
+    project.competitors || []
+  );
 
   const citationRows = extractCitationSources(
     visibilityResults as import("@/lib/engines/visibility-scanner").VisibilityScanResult[],
@@ -208,6 +214,7 @@ export async function stepVisibilityScan(supabase: SupabaseClient, project: Proj
       status: runStatus,
       completed_at: new Date().toISOString(),
       error_message: quality.message,
+      brand_sov: brandSov,
     })
     .eq("id", run!.id);
 

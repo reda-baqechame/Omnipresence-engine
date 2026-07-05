@@ -155,7 +155,7 @@ export default async function VisibilityPage({
           <p className="text-sm text-muted-foreground mb-4 max-w-3xl">
             Peec-style triple metric from grounded probes — mention rate, answer slot, and sentiment per engine.
           </p>
-          <VisibilityTripleTable rows={tripleMetrics} />
+          <VisibilityTripleTable rows={tripleMetrics} projectId={id} />
         </div>
       )}
 

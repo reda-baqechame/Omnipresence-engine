@@ -195,6 +195,8 @@ export interface VisibilityRun {
   started_at?: string;
   completed_at?: string;
   error_message?: string;
+  /** Prominence-weighted brand share of voice (0–1), persisted at scan finalize. */
+  brand_sov?: number | null;
   created_at: string;
 }
 
