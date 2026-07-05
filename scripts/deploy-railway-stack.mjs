@@ -42,8 +42,9 @@ console.log(who.out.trim());
 
 // Ensure linked
 if (!existsSync(join(root, ".railway"))) {
-  console.log("\nLink Railway project (select or create Omnipresence stack)…\n");
-  const link = railwayCmd(["link"]);
+  const project = process.env.RAILWAY_PROJECT || "omnipresence-engine";
+  console.log(`\nLink Railway project (${project})…\n`);
+  const link = railwayCmd(["link", "--project", project]);
   if (!link.ok) process.exit(1);
 }
 

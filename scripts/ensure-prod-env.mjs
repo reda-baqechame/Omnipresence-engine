@@ -50,13 +50,15 @@ function parseEnvFile(text) {
 function vercelAdd(key, value, targets = ["production", "preview"]) {
   for (const env of targets) {
     run("npx", ["vercel", "env", "rm", key, env, "--yes"], { capture: true });
-    const add = run(
-      "npx",
-      ["vercel", "env", "add", key, env, "--value", value, "--yes", "--sensitive"],
-      { capture: true }
-    );
-    if (!add.ok) {
-      console.error(`Failed to set ${key} on ${env}:`, add.out);
+    const add = spawnSync("npx", ["vercel", "env", "add", key, env, "--yes", "--sensitive"], {
+      cwd: root,
+      input: value,
+      encoding: "utf8",
+      stdio: ["pipe", "pipe", "pipe"],
+      shell: process.platform === "win32",
+    });
+    if (add.status !== 0) {
+      console.error(`Failed to set ${key} on ${env}:`, (add.stdout || "") + (add.stderr || ""));
       return false;
     }
     console.log(`  ✓ ${key} → ${env}`);

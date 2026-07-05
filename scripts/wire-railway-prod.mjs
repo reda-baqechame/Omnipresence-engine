@@ -56,11 +56,13 @@ function vercelSet(key, value, targets = ["production", "preview"]) {
       shell: true,
       stdio: "ignore",
     });
-    const add = spawnSync(
-      "npx",
-      ["vercel", "env", "add", key, env, "--value", value, "--yes", "--sensitive"],
-      { cwd: root, shell: true, encoding: "utf8" }
-    );
+    const add = spawnSync("npx", ["vercel", "env", "add", key, env, "--yes", "--sensitive"], {
+      cwd: root,
+      input: value,
+      encoding: "utf8",
+      stdio: ["pipe", "pipe", "pipe"],
+      shell: true,
+    });
     if (add.status !== 0) {
       console.error(`Failed ${key} on ${env}`);
       process.exit(1);
