@@ -911,19 +911,8 @@ export const dailyRailwaySpendGuard = inngest.createFunction(
   { id: "daily-railway-spend-guard", retries: 0, triggers: [{ cron: "0 9 * * *" }] },
   async ({ step }) => {
     return step.run("railway-spend-guard", async () => {
-      const { spawnSync } = await import("child_process");
-      const { join } = await import("path");
-      const script = join(process.cwd(), "scripts", "railway-spend-guard.mjs");
-      const result = spawnSync("node", [script], {
-        encoding: "utf8",
-        env: process.env,
-        shell: process.platform === "win32",
-      });
-      return {
-        exitCode: result.status ?? 1,
-        stdout: (result.stdout || "").slice(-4000),
-        stderr: (result.stderr || "").slice(-2000),
-      };
+      const { runRailwaySpendGuard } = await import("@/lib/ops/railway-spend-guard");
+      return runRailwaySpendGuard();
     });
   }
 );

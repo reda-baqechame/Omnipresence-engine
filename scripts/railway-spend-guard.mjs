@@ -1,14 +1,7 @@
 #!/usr/bin/env node
 /**
- * Railway spend guard — alerts at 80% and 100% of RAILWAY_MONTHLY_BUDGET_USD.
- *
- * Uses Railway GraphQL `customer.subscriptions.nextInvoiceCurrentTotal` when
- * RAILWAY_WORKSPACE_ID + Railway CLI token are available. Falls back to volume
- * cap reporting when billing data is unavailable.
- *
- * Usage:
- *   node scripts/railway-spend-guard.mjs
- *   RAILWAY_MONTHLY_BUDGET_USD=35 RAILWAY_SPEND_ALERT_WEBHOOK=https://...
+ * Railway spend guard CLI — wraps the same logic as the Inngest cron.
+ * For local/CI use without bundling into Next.js.
  */
 import { readFileSync, existsSync } from "fs";
 import { join, dirname } from "path";
@@ -54,9 +47,7 @@ async function gql(query, variables = {}) {
     body: JSON.stringify({ query, variables }),
   });
   const json = await res.json();
-  if (json.errors?.length) {
-    throw new Error(json.errors.map((e) => e.message).join("; "));
-  }
+  if (json.errors?.length) throw new Error(json.errors.map((e) => e.message).join("; "));
   return json.data;
 }
 
@@ -66,11 +57,7 @@ async function fetchEstimatedSpendUsd() {
     const data = await gql(
       `query($workspaceId: String!) {
         workspace(workspaceId: $workspaceId) {
-          customer {
-            subscriptions {
-              nextInvoiceCurrentTotal
-            }
-          }
+          customer { subscriptions { nextInvoiceCurrentTotal } }
         }
       }`,
       { workspaceId }
@@ -153,8 +140,7 @@ if (volume) {
 }
 
 if (spendUsd == null) {
-  console.log("Billing total unavailable (set RAILWAY_WORKSPACE_ID + Railway token).");
-  console.log("Volume cap check only — no spend alert fired.\n");
+  console.log("Billing total unavailable (set RAILWAY_WORKSPACE_ID + Railway token).\n");
   process.exit(volume && volume.capGb < 20 ? 1 : 0);
 }
 
