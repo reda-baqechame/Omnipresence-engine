@@ -10,6 +10,7 @@
 import { readFileSync, existsSync, writeFileSync, mkdirSync } from "fs";
 import { join, dirname } from "path";
 import { fileURLToPath } from "url";
+import { spawnSync } from "child_process";
 import { createClient } from "@supabase/supabase-js";
 import { createServerClient } from "@supabase/ssr";
 
@@ -168,8 +169,21 @@ async function rescanAndWait(projectId) {
     const { json } = await api(`/api/projects/${projectId}/scan`, {}, 30_000);
     const st = json?.status || json?.scan?.status;
     if (st === "complete" || st === "completed" || json?.complete) {
-      record("rescan", "Scan complete", "pass", `score=${json?.scores?.omnipresence ?? json?.omnipresence_score ?? "?"}`);
-      return true;
+      const report = spawnSync("node", ["scripts/scan-failure-report.mjs", "--project", projectId], {
+        cwd: root,
+        encoding: "utf8",
+        shell: process.platform === "win32",
+      });
+      const measuredOk = report.status === 0;
+      record(
+        "rescan",
+        "Scan complete",
+        measuredOk ? "pass" : "fail",
+        measuredOk
+          ? `score=${json?.scores?.omnipresence ?? json?.omnipresence_score ?? "?"} · 100% measured`
+          : (report.stderr || report.stdout || "measuredRate < 100%").trim().split("\n").slice(-2).join(" ")
+      );
+      return measuredOk;
     }
     if (st === "failed" || st === "error") {
       record("rescan", "Scan complete", "fail", st);

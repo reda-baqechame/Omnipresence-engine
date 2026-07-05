@@ -26,6 +26,11 @@ for (const file of [".env.providers", ".env.local", ".env.migrate.tmp", ".env.ve
 
 const projectId = process.argv[2] || "b1055406-874d-4f5b-975a-9be1bf6aabbf";
 
+const DEFAULT_CAPTURE_URL = "https://ai-ui-capture-production.up.railway.app/capture";
+if (!process.env.ENABLE_AI_UI_CAPTURE) process.env.ENABLE_AI_UI_CAPTURE = "true";
+if (!process.env.AI_UI_CAPTURE_URL) process.env.AI_UI_CAPTURE_URL = DEFAULT_CAPTURE_URL;
+if (!process.env.VISIBILITY_SCAN_BUDGET_MS) process.env.VISIBILITY_SCAN_BUDGET_MS = "900000";
+
 const { runProjectScan, getOwnerEmail } = await import("../src/lib/engines/scan-runner.ts");
 const { assessVisibilityRunQuality } = await import("../src/lib/engines/visibility-run-quality.ts");
 

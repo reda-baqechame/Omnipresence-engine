@@ -116,7 +116,7 @@ export async function queryPerplexitySonar(
         "Content-Type": "application/json",
       },
       body: JSON.stringify({
-        model: "sonar",
+        model: process.env.PERPLEXITY_CHAT_MODEL?.trim() || "sonar",
         messages: [{ role: "user", content: prompt }],
         max_tokens: maxOutputTokens("probe"),
       }),
@@ -124,6 +124,24 @@ export async function queryPerplexitySonar(
     });
 
     if (!response.ok) {
+      const searchFallback = await searchPerplexity(prompt, brandDomain, competitors);
+      if (searchFallback.success && searchFallback.data) {
+        const answer = searchFallback.data.results
+          .map((r) => `${r.title}: ${r.snippet}`)
+          .join("\n");
+        const citations = searchFallback.data.results.map((r) => r.url).filter(Boolean);
+        return {
+          success: true,
+          data: {
+            answer,
+            brandMentioned: searchFallback.data.brandMentioned,
+            brandCited: searchFallback.data.brandCited,
+            competitorMentions: searchFallback.data.competitorMentions,
+            citations,
+          },
+          creditsUsed: 1,
+        };
+      }
       throw new Error(`Perplexity Sonar error: ${response.status}`);
     }
 

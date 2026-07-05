@@ -110,7 +110,10 @@ if (roiTool.ok && roiTool.json?.methodology) {
 
 if (!skipScan) {
   console.log("\nLive scan (may take 15+ min)");
-  runStep("scan-live", "npm", ["run", "scan:live", "--", projectId]);
+  const scanOk = runStep("scan-live", "npm", ["run", "scan:live", "--", projectId]);
+  if (scanOk) {
+    runStep("scan-failure-report", "node", ["scripts/scan-failure-report.mjs", "--project", projectId]);
+  }
 } else {
   record("scan-live", "Live scan", "warn", "skipped (--skip-scan)");
 }

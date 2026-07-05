@@ -86,6 +86,9 @@ app.post("/capture", async (req, res) => {
       return res.status(409).json({ blocked: true, reason: raw.reason });
     }
 
+    const isAbsence = raw.surfacePresent === false;
+    markSurfaceSuccess(selectedSurface);
+
     let evidencePaths: Awaited<ReturnType<typeof writeCaptureEvidence>> | null = null;
     try {
       evidencePaths = await writeCaptureEvidence({
@@ -100,23 +103,25 @@ app.post("/capture", async (req, res) => {
       // Evidence persistence is best-effort; capture response still succeeds.
     }
 
-    markSurfaceSuccess(selectedSurface);
     const analysis = analyzeCapture(raw.answer, raw.citedUrls, brandName, brandDomain, competitors || []);
     // Pass evidence + provenance through so the app persists it (ai_capture_evidence).
     return res.json({
       ...analysis,
+      surfacePresent: raw.surfacePresent !== false,
       responseHash: raw.responseHash,
       screenshotBase64: raw.screenshotBase64 ?? null,
       domHtml: raw.domHtml ?? null,
       captureContext: raw.context,
       evidencePaths,
       evidenceUrl: evidencePaths?.evidencePublicUrl ?? null,
+      ...(isAbsence ? { absence: true } : {}),
     });
-  } catch (err) {
-    console.error("capture failed", err);
-    markSurfaceFailed(selectedSurface);
-    return res.status(502).json({ error: "capture failed" });
-  }
+    } catch (err) {
+      console.error("capture failed", err);
+      markSurfaceFailed(selectedSurface);
+      // Transient infra failure — 204 so callers can fall back honestly (not 502).
+      return res.status(204).end();
+    }
 });
 
 app.listen(PORT, () => {

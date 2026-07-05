@@ -16,10 +16,8 @@ export interface VisibilityRunQuality {
   message: string | null;
 }
 
-/** Minimum grounded measurements before we call a scan professionally usable. */
-const MIN_GROUNDED_PROBES = 12;
-const MIN_MEASURED_RATE = 0.15;
-const MIN_LLM_ENGINES = 2;
+/** Every completed scan must be 100% measured — zero unavailable, zero model_knowledge. */
+const MIN_MEASURED_RATE = 1.0;
 
 export function assessVisibilityRunQuality(results: VisibilityScanResult[]): VisibilityRunQuality {
   const attempted = results.length;
@@ -40,13 +38,19 @@ export function assessVisibilityRunQuality(results: VisibilityScanResult[]): Vis
   let status: VisibilityRunQuality["status"] = "failed";
   let message: string | null = null;
 
-  if (measured >= MIN_GROUNDED_PROBES && measuredRate >= MIN_MEASURED_RATE && llmEnginesWithSignal >= MIN_LLM_ENGINES) {
+  const fullyMeasured =
+    attempted > 0 &&
+    measuredRate >= MIN_MEASURED_RATE &&
+    unavailable === 0 &&
+    modelKnowledge === 0;
+
+  if (fullyMeasured) {
     status = "completed";
-  } else if (measured > 0 || modelKnowledge > 0) {
+  } else if (measured > 0) {
     status = "partial";
-    message = `Only ${measured} grounded probes (${Math.round(measuredRate * 100)}% coverage, ${llmEnginesWithSignal} AI engines responding). Connect SERP + LLM keys and re-scan for full measurement.`;
+    message = `Incomplete measurement: ${measured}/${attempted} grounded (${Math.round(measuredRate * 100)}%), ${unavailable} unavailable, ${modelKnowledge} model_knowledge. Re-scan after fixing providers.`;
   } else {
-    message = "No live visibility measurements — check API keys (SERP + LLM) and re-scan.";
+    message = "No live visibility measurements — check API keys (SERP + LLM + capture) and re-scan.";
   }
 
   const acceptable = status === "completed";

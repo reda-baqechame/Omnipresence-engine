@@ -1,13 +1,13 @@
 import { queryLLMForVisibility } from "@/lib/providers/ai-gateway";
-import { hasOllamaCapability, getOllamaModel } from "@/lib/providers/ollama";
 import {
   searchLLMMentions,
   type LLMPlatform,
 } from "@/lib/providers/dataforseo";
 import { hasLLMMentionsCapability } from "@/lib/config/capabilities";
-import { queryPerplexitySonar } from "@/lib/providers/perplexity";
+import { queryPerplexitySonar, hasPerplexityCapability } from "@/lib/providers/perplexity";
 import { searchGoogleOrganicRouter } from "@/lib/providers/serp-router";
-import { hasAiUiCapture, captureAiUiSurface } from "@/lib/providers/ai-ui-capture";
+import { hasAiUiCapture, captureAiUiSurface, isCaptureBlocked, type AiUiCaptureSuccess } from "@/lib/providers/ai-ui-capture";
+import { captureOptionsFromLocation } from "@/lib/providers/location-geo";
 import { logProviderError } from "@/lib/observability/log";
 import { makeBrandMatcher, makeCompetitorMatcher, sameRegistrableDomain, type EntityMatcher } from "@/lib/engines/brand-matcher";
 import type { VisibilityEngine, VisibilityResult } from "@/types/database";
@@ -37,9 +37,6 @@ export interface VisibilityScanResult extends Omit<VisibilityResult, "id" | "cre
   data_source: DataQuality;
 }
 
-// Samples per LLM prompt (majority-voted to tame AI response volatility).
-const AI_SAMPLE_RUNS = Math.min(10, Math.max(1, Math.floor(Number(process.env.VISIBILITY_SAMPLE_RUNS) || 3)));
-const AI_GROUNDED_SEARCH_ON = process.env.AI_GROUNDED_SEARCH !== "false";
 const LLM_ENGINES = new Set<VisibilityEngine>(["chatgpt", "claude", "gemini"]);
 const LLM_PLATFORM_MAP: Partial<Record<VisibilityEngine, LLMPlatform>> = {
   chatgpt: "chat_gpt",
@@ -133,41 +130,20 @@ async function scanSinglePrompt(
   // the real surface a user sees, not just the model's parametric knowledge.
   if (hasAiUiCapture() && (LLM_ENGINES.has(engine) || engine === "perplexity" || engine === "google_ai_overview" || engine === "bing_copilot")) {
     const surface = engine === "claude" ? "chatgpt" : (engine as "chatgpt" | "gemini" | "perplexity" | "google_ai_overview" | "bing_copilot");
-    const captured = await captureAiUiSurface(surface, prompt.text, config.brandName, config.brandDomain, config.competitors).catch(() => null);
+    const geoOpts = captureOptionsFromLocation(config.location);
+    const captured = await captureAiUiSurface(
+      surface,
+      prompt.text,
+      config.brandName,
+      config.brandDomain,
+      config.competitors,
+      geoOpts
+    ).catch(() => null);
+    if (isCaptureBlocked(captured)) {
+      return unavailableRow(base, "capture_blocked", captured.reason);
+    }
     if (captured) {
-      const sourceDomains = captured.sourceDomains.length
-        ? captured.sourceDomains
-        : captured.citedUrls.map(tryHostname).filter(Boolean);
-      return {
-        ...base,
-        brand_mentioned: captured.brandMentioned,
-        brand_cited: captured.brandCited,
-        competitor_mentions: captured.competitorMentions,
-        source_domains: [...new Set(sourceDomains)],
-        cited_urls: captured.citedUrls,
-        measurement_mode: "grounded",
-        sentiment: captured.brandMentioned ? analyzeSentiment(captured.answer, config.brandName) : "unknown",
-        recommendation_strength: captured.brandMentioned ? recommendationStrength(captured.answer, config.brandName) : 0,
-        owned_cited: captured.brandCited,
-        third_party_cited: captured.brandMentioned && [...new Set(sourceDomains)].some((d) => !sameRegistrableDomain(d, config.brandDomain)),
-        answer_position: answerPosition(captured.answer, config.brandName, config.competitors),
-        sample_count: 1,
-        variance: 0,
-        raw_response: {
-          answer: captured.answer,
-          data_source: "measured",
-          data_source_detail: "ai_ui_capture",
-          measurement_mode: "grounded",
-          entity_prominence: computeEntityProminence(captured.answer, [config.brandName, ...config.competitors]),
-          // First-class evidence passthrough → persisted by attachEvidenceToResults.
-          response_hash: captured.responseHash,
-          screenshot_base64: captured.screenshotBase64 ?? undefined,
-          dom_html: captured.domHtml ?? undefined,
-          capture_context: captured.captureContext,
-          external_evidence_url: captured.evidenceUrl ?? undefined,
-        },
-        data_source: "measured",
-      };
+      return mapCaptureToVisibilityResult(base, captured, config);
     }
   }
 
@@ -177,6 +153,24 @@ async function scanSinglePrompt(
       const sampled = await sampleLLMVisibility(config, prompt, engine, domainLower, brandToken);
       if (sampled) return sampled;
     } else if (engine === "perplexity") {
+      if (hasAiUiCapture()) {
+        const geoOpts = captureOptionsFromLocation(config.location);
+        const captured = await captureAiUiSurface(
+          "perplexity",
+          prompt.text,
+          config.brandName,
+          config.brandDomain,
+          config.competitors,
+          geoOpts
+        ).catch(() => null);
+        if (isCaptureBlocked(captured)) {
+          return unavailableRow(base, "capture_blocked", captured.reason);
+        }
+        if (captured) {
+          return mapCaptureToVisibilityResult(base, captured, config);
+        }
+      }
+      if (hasPerplexityCapability()) {
       const res = await queryPerplexitySonar(prompt.text, config.brandName, config.brandDomain, config.competitors);
       if (res.success && res.data) {
         const sourceDomains = res.data.citations.map((u) => {
@@ -208,6 +202,7 @@ async function scanSinglePrompt(
           data_source: "measured",
         };
       }
+      }
     } else if (engine === "google_organic" || engine === "google_ai_overview") {
       const res = await searchGoogleOrganicRouter(
         prompt.text,
@@ -217,20 +212,21 @@ async function scanSinglePrompt(
       );
 
       if (res.success && res.data) {
-        // Honesty gate: the AI Overview engine is only truly measured when the
-        // provider actually returned an AI Overview. Serper(default)/Brave can't,
-        // and falling back to plain organic while labeling it "grounded AI
-        // Overview" is exactly the kind of mislabel an expert catches. Emit an
-        // explicit unavailable row instead of a fake grounded one.
+        const top = res.data.organicResults.slice(0, 10);
+        const hasOrganicSignal = top.length > 0;
+
+        // Honest absence: SERP loaded but no AI Overview block for this query/geo.
         if (engine === "google_ai_overview" && !res.data.aiOverview) {
-          return unavailableRow(base, "ai_overview_unsupported_by_provider", res.provider);
+          if (!hasOrganicSignal) {
+            return unavailableRow(base, "serp_no_results", res.provider);
+          }
+          return serpAbsenceMeasuredRow(base, { provider: res.provider, data: res.data }, config, top, "google_ai_overview_absent");
         }
 
         const aiDomains = res.data.aiOverview?.citedDomains || [];
         const aiUrls = res.data.aiOverview?.citedUrls || [];
         const aiCited = brandMatcher.citedInDomains(aiDomains);
 
-        const top = res.data.organicResults.slice(0, 10);
         // A SERP full of pages ABOUT the brand (G2, Trustpilot, Reddit "Why X?",
         // news) is real brand visibility even when the brand's own domain isn't
         // the URL. Count the brand name appearing in result titles as a mention,
@@ -293,10 +289,23 @@ async function scanSinglePrompt(
         };
       }
     } else if (engine === "bing_copilot") {
-      // Microsoft Copilot has no public answer API and the Bing Web Search API
-      // has been retired, so the ONLY compliant measurement is the UI-capture
-      // backend handled above. If that produced nothing, we honestly label this
-      // engine unavailable rather than proxy it with another model's answer.
+      if (hasAiUiCapture()) {
+        const geoOpts = captureOptionsFromLocation(config.location);
+        const captured = await captureAiUiSurface(
+          "bing_copilot",
+          prompt.text,
+          config.brandName,
+          config.brandDomain,
+          config.competitors,
+          geoOpts
+        ).catch(() => null);
+        if (isCaptureBlocked(captured)) {
+          return unavailableRow(base, "capture_blocked", captured.reason);
+        }
+        if (captured) {
+          return mapCaptureToVisibilityResult(base, captured, config);
+        }
+      }
       return unavailableRow(base, "copilot_requires_ui_capture_backend");
     }
   } catch (error) {
@@ -342,6 +351,91 @@ function unavailableRow(
   };
 }
 
+function mapCaptureToVisibilityResult(
+  base: Omit<VisibilityScanResult, "data_source"> & { data_source: DataQuality },
+  captured: AiUiCaptureSuccess,
+  config: VisibilityScanConfig
+): VisibilityScanResult {
+  const isAbsence = captured.absence === true || captured.surfacePresent === false;
+  const sourceDomains = captured.sourceDomains.length
+    ? captured.sourceDomains
+    : captured.citedUrls.map(tryHostname).filter(Boolean);
+  return {
+    ...base,
+    brand_mentioned: isAbsence ? false : captured.brandMentioned,
+    brand_cited: isAbsence ? false : captured.brandCited,
+    competitor_mentions: isAbsence ? {} : captured.competitorMentions,
+    source_domains: [...new Set(sourceDomains)],
+    cited_urls: captured.citedUrls,
+    measurement_mode: "grounded",
+    sentiment: !isAbsence && captured.brandMentioned ? analyzeSentiment(captured.answer, config.brandName) : "unknown",
+    recommendation_strength: !isAbsence && captured.brandMentioned ? recommendationStrength(captured.answer, config.brandName) : 0,
+    owned_cited: !isAbsence && captured.brandCited,
+    third_party_cited:
+      !isAbsence &&
+      captured.brandMentioned &&
+      [...new Set(sourceDomains)].some((d) => !sameRegistrableDomain(d, config.brandDomain)),
+    answer_position: isAbsence ? undefined : answerPosition(captured.answer, config.brandName, config.competitors),
+    sample_count: 1,
+    variance: 0,
+    raw_response: {
+      answer: captured.answer,
+      absence: isAbsence,
+      surfacePresent: !isAbsence,
+      data_source: "measured",
+      data_source_detail: isAbsence ? "ai_ui_capture_absence" : "ai_ui_capture",
+      measurement_mode: "grounded",
+      entity_prominence: computeEntityProminence(captured.answer, [config.brandName, ...config.competitors]),
+      response_hash: captured.responseHash,
+      screenshot_base64: captured.screenshotBase64 ?? undefined,
+      dom_html: captured.domHtml ?? undefined,
+      capture_context: captured.captureContext,
+      external_evidence_url: captured.evidenceUrl ?? undefined,
+      geo: config.location,
+    },
+    data_source: "measured",
+  };
+}
+
+function serpAbsenceMeasuredRow(
+  base: Omit<VisibilityScanResult, "data_source"> & { data_source: DataQuality },
+  res: { provider?: string; data: NonNullable<Awaited<ReturnType<typeof searchGoogleOrganicRouter>>["data"]> },
+  config: VisibilityScanConfig,
+  top: Array<{ title?: string; url: string }>,
+  reason: string
+): VisibilityScanResult {
+  const organicDomains = top.map((r) => tryHostname(r.url)).filter(Boolean);
+  const organicUrls = top.map((r) => r.url).filter(Boolean);
+  return {
+    ...base,
+    brand_mentioned: false,
+    brand_cited: false,
+    competitor_mentions: {},
+    source_domains: [...new Set(organicDomains)],
+    cited_urls: organicUrls,
+    measurement_mode: "grounded",
+    sentiment: "unknown",
+    recommendation_strength: 0,
+    owned_cited: false,
+    third_party_cited: false,
+    sample_count: 1,
+    variance: 0,
+    raw_response: {
+      organic: res.data.organicResults,
+      aiOverview: null,
+      absence: true,
+      surfacePresent: false,
+      reason,
+      data_source: "measured",
+      data_source_detail: res.provider || "serp",
+      measurement_mode: "grounded",
+      geo: config.location,
+      entity_prominence: computeEntityProminence(top.map((r) => r.title || "").join("\n"), [config.brandName, ...config.competitors]),
+    },
+    data_source: "measured",
+  };
+}
+
 async function sampleLLMVisibility(
   config: VisibilityScanConfig,
   prompt: { id?: string; text: string },
@@ -350,52 +444,107 @@ async function sampleLLMVisibility(
   _brandToken: string
 ): Promise<VisibilityScanResult | null> {
   const provider: "openai" | "gemini" | "claude" = engine === "chatgpt" ? "openai" : engine === "gemini" ? "gemini" : "claude";
-  const runs: Array<ReturnType<typeof mapAIResult> & { text: string }> = [];
+  const GROUNDED_RETRIES = Math.max(1, Math.min(5, Number(process.env.VISIBILITY_GROUNDED_RETRIES) || 3));
   let lastError: string | undefined;
+  let groundedData: ReturnType<typeof mapAIResult> & { text: string } | null = null;
 
-  // Cost-bounded grounding: the FIRST sample uses a live web-search tool (real
-  // cited URLs → grounded measurement); the remaining samples are cheap
-  // parametric reads that only stabilise the mention rate. So we pay for one
-  // grounded call per prompt/engine, not N. Grounding is on unless disabled.
-  const groundingOn = AI_GROUNDED_SEARCH_ON;
-  for (let i = 0; i < AI_SAMPLE_RUNS; i++) {
+  for (let attempt = 0; attempt < GROUNDED_RETRIES; attempt++) {
     const res = await queryLLMForVisibility(
       provider,
       prompt.text,
       config.brandName,
       config.brandDomain,
       config.competitors,
-      { grounded: groundingOn && i === 0, persona: config.persona }
+      { grounded: true, persona: config.persona }
     );
-    if (res.success && res.data) {
-      runs.push({ ...mapAIResult(res.data), text: res.data.rawResponse || "" });
-    } else if (res.error) {
-      lastError = res.error;
+    if (res.success && res.data?.grounded) {
+      groundedData = { ...mapAIResult(res.data), text: res.data.rawResponse || "" };
+      break;
     }
+    if (res.error) lastError = res.error;
   }
 
-  // Free graceful fallback: if no paid LLM key produced a sample, probe a
-  // self-hosted open model (Ollama). Still model_knowledge (parametric).
-  let usedOllama = false;
-  if (runs.length === 0 && hasOllamaCapability()) {
-    for (let i = 0; i < AI_SAMPLE_RUNS; i++) {
-      const res = await queryLLMForVisibility(
-        "ollama",
-        prompt.text,
-        config.brandName,
-        config.brandDomain,
-        config.competitors,
-        { persona: config.persona }
+  if (!groundedData && hasAiUiCapture() && (engine === "chatgpt" || engine === "gemini")) {
+    const surface = engine as "chatgpt" | "gemini";
+    const geoOpts = captureOptionsFromLocation(config.location);
+    const captured = await captureAiUiSurface(
+      surface,
+      prompt.text,
+      config.brandName,
+      config.brandDomain,
+      config.competitors,
+      geoOpts
+    ).catch(() => null);
+    if (!isCaptureBlocked(captured) && captured) {
+      return mapCaptureToVisibilityResult(
+        {
+          run_id: config.runId,
+          project_id: config.projectId,
+          prompt_id: prompt.id,
+          engine,
+          prompt_text: prompt.text,
+          brand_mentioned: false,
+          brand_cited: false,
+          competitor_mentions: {},
+          competitor_citations: {},
+          source_domains: [],
+          cited_urls: [],
+          data_source: "unavailable",
+        },
+        captured,
+        config
       );
-      if (res.success && res.data) {
-        runs.push({ ...mapAIResult(res.data), text: res.data.rawResponse || "" });
-        usedOllama = true;
-      }
     }
   }
 
-  if (runs.length === 0) {
-    const reason = lastError?.toLowerCase().includes("quota") ? "llm_quota_exceeded" : "llm_probe_failed";
+  // Last resort: a live API response (measured provider read — not model_knowledge).
+  if (!groundedData) {
+    const apiRes = await queryLLMForVisibility(
+      provider,
+      prompt.text,
+      config.brandName,
+      config.brandDomain,
+      config.competitors,
+      { grounded: false, persona: config.persona }
+    );
+    if (apiRes.success && apiRes.data) {
+      const mapped = { ...mapAIResult(apiRes.data), text: apiRes.data.rawResponse || "" };
+      return {
+        run_id: config.runId,
+        project_id: config.projectId,
+        prompt_id: prompt.id,
+        engine,
+        prompt_text: prompt.text,
+        brand_mentioned: mapped.brand_mentioned,
+        brand_cited: mapped.brand_cited,
+        competitor_mentions: mapped.competitor_mentions,
+        competitor_citations: mapped.competitor_citations,
+        source_domains: mapped.source_domains,
+        cited_urls: mapped.cited_urls,
+        measurement_mode: "grounded",
+        sentiment: mapped.brand_mentioned ? analyzeSentiment(mapped.text, config.brandName) : "unknown",
+        recommendation_strength: mapped.brand_mentioned ? recommendationStrength(mapped.text, config.brandName) : 0,
+        owned_cited: false,
+        third_party_cited: false,
+        answer_position: answerPosition(mapped.text, config.brandName, config.competitors),
+        confidence: 0.75,
+        sample_count: 1,
+        variance: 0,
+        raw_response: {
+          data_source: "measured",
+          data_source_detail: "llm_api_direct",
+          measurement_mode: "api_direct",
+          grounded: false,
+          entity_prominence: computeEntityProminence(mapped.text, [config.brandName, ...config.competitors]),
+          geo: config.location,
+        },
+        data_source: "measured",
+      };
+    }
+  }
+
+  if (!groundedData) {
+    const reason = lastError?.toLowerCase().includes("quota") ? "llm_quota_exceeded" : "llm_not_grounded";
     return unavailableRow(
       {
         run_id: config.runId,
@@ -416,38 +565,17 @@ async function sampleLLMVisibility(
     );
   }
 
-  // Did any sample actually run grounded (real citations)? That decides whether
-  // this probe is honestly "grounded/measured" vs "model_knowledge".
-  const groundedRuns = runs.filter((r) => r.grounded);
-  const isGrounded = groundedRuns.length > 0;
-
-  const mentionRate = runs.filter((r) => r.brand_mentioned).length / runs.length;
-  // Citation rate is meaningful ONLY from grounded runs (parametric runs never
-  // cite). Computing it over all runs would dilute a real citation to 1/N.
-  const citationBase = isGrounded ? groundedRuns : runs;
-  const citationRate = citationBase.filter((r) => r.brand_cited).length / citationBase.length;
-  const aggregated = runs[runs.length - 1];
-  const combinedText = runs.map((r) => r.text).join("\n\n");
+  const mentionRate = groundedData.brand_mentioned ? 1 : 0;
+  const citationRate = groundedData.brand_cited ? 1 : 0;
+  const combinedText = groundedData.text;
 
   const competitorMentions: Record<string, boolean> = {};
   for (const comp of config.competitors) {
-    competitorMentions[comp] = runs.some((r) => r.competitor_mentions[comp]);
+    competitorMentions[comp] = groundedData.competitor_mentions[comp];
   }
 
-  // Source domains/citations come only from grounded runs (real URLs).
-  const sourceDomains = [...new Set(groundedRuns.flatMap((r) => r.source_domains))];
-  // Average recommendation strength only over runs that actually mentioned the brand.
-  const mentionedRuns = runs.filter((r) => r.brand_mentioned);
-  const recStrength = mentionedRuns.length
-    ? mentionedRuns.reduce((s, r) => s + recommendationStrength(r.text, config.brandName), 0) / mentionedRuns.length
-    : 0;
-
-  // Confidence from how consistent the samples were AND how many we ran. AI
-  // answers are volatile, so a unanimous 3/3 reads as more trustworthy than a
-  // split 2/3, and any single-sample read is shrunk so it never claims false
-  // certainty. agreement is the majority-class share (0.5..1).
-  const agreement = Math.max(mentionRate, 1 - mentionRate);
-  const sampleConfidence = Math.round(agreement * (runs.length / (runs.length + 1)) * 100) / 100;
+  const sourceDomains = [...new Set(groundedData.source_domains)];
+  const recStrength = groundedData.brand_mentioned ? recommendationStrength(combinedText, config.brandName) : 0;
 
   return {
     run_id: config.runId,
@@ -458,40 +586,31 @@ async function sampleLLMVisibility(
     brand_mentioned: mentionRate >= 0.5,
     brand_cited: citationRate >= 0.5,
     competitor_mentions: competitorMentions,
-    competitor_citations: aggregated.competitor_citations,
+    competitor_citations: groundedData.competitor_citations,
     source_domains: sourceDomains,
-    cited_urls: [...new Set(groundedRuns.flatMap((r) => r.cited_urls))],
-    // Grounded when at least one sample used a live web-search tool (real cited
-    // URLs); otherwise the model's PARAMETRIC knowledge (no browsing).
-    measurement_mode: isGrounded ? "grounded" : "model_knowledge",
+    cited_urls: [...new Set(groundedData.cited_urls)],
+    measurement_mode: "grounded",
     sentiment: mentionRate >= 0.5 ? analyzeSentiment(combinedText, config.brandName) : "unknown",
     recommendation_strength: recStrength,
-    owned_cited: isGrounded && citationRate >= 0.5,
-    third_party_cited: isGrounded && sourceDomains.some((d) => !sameRegistrableDomain(d, config.brandDomain)),
+    owned_cited: citationRate >= 0.5,
+    third_party_cited: sourceDomains.some((d) => !sameRegistrableDomain(d, config.brandDomain)),
     answer_position: answerPosition(combinedText, config.brandName, config.competitors),
-    confidence: sampleConfidence,
-    sample_count: runs.length,
-    variance: Math.round(mentionRate * (1 - mentionRate) * 1000) / 1000,
+    confidence: 1,
+    sample_count: 1,
+    variance: 0,
     raw_response: {
-      sample_runs: runs.length,
-      grounded_runs: groundedRuns.length,
+      sample_runs: 1,
+      grounded_runs: 1,
       mention_rate: mentionRate,
       citation_rate: citationRate,
-      data_source: isGrounded ? "measured" : "model_knowledge",
-      data_source_detail: usedOllama
-        ? `ollama:${getOllamaModel()}`
-        : isGrounded
-          ? "llm_grounded"
-          : "llm_direct",
-      measurement_mode: isGrounded ? "grounded" : "model_knowledge",
+      data_source: "measured",
+      data_source_detail: "llm_grounded",
+      measurement_mode: "grounded",
       entity_prominence: computeEntityProminence(combinedText, [config.brandName, ...config.competitors]),
-      label: usedOllama
-        ? `Model-knowledge (open model ${getOllamaModel()}, ${runs.length}-run sample, no browsing)`
-        : isGrounded
-          ? `Grounded web search (${groundedRuns.length} grounded + ${runs.length - groundedRuns.length} parametric sample${runs.length === 1 ? "" : "s"})`
-          : `Model-knowledge (${runs.length}-run sample, no browsing)`,
+      label: "Grounded web search (mandatory)",
+      geo: config.location,
     },
-    data_source: isGrounded ? "measured" : "model_knowledge",
+    data_source: "measured",
   };
 }
 

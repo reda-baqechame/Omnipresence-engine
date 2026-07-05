@@ -134,12 +134,16 @@ if (needs("VISIBILITY_SCAN_BUDGET_MS")) {
 
 const providerKeys = [
   "PERPLEXITY_API_KEY",
+  // Optional — rank.to fallback covers authority when absent/invalid.
   "OPEN_PAGERANK_API_KEY",
   "CLOUDFLARE_RADAR_API_TOKEN",
+  "KEYWORDS_EVERYWHERE_API_KEY",
+  "AI_GEMINI_MODEL",
   "OPENAI_API_KEY",
   "ANTHROPIC_API_KEY",
   "GOOGLE_GENERATIVE_AI_API_KEY",
   "SERPER_API_KEY",
+  "BRAVE_SEARCH_API_KEY",
   "GOOGLE_CLIENT_ID",
   "GOOGLE_CLIENT_SECRET",
 ];

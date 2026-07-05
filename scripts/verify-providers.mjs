@@ -125,8 +125,22 @@ const PROVIDERS = [
     tier: "AI visibility",
     keys: ["GOOGLE_GENERATIVE_AI_API_KEY"],
     probe: async () => {
+      const key = val("GOOGLE_GENERATIVE_AI_API_KEY");
+      if (key.startsWith("AQ.")) {
+        const model = val("AI_GEMINI_MODEL") || "gemini-flash-latest";
+        const r = await fetchWithTimeout(
+          `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent`,
+          {
+            method: "POST",
+            headers: { "Content-Type": "application/json", "X-goog-api-key": key },
+            body: JSON.stringify({ contents: [{ parts: [{ text: "ping" }] }] }),
+          }
+        );
+        if (!r.ok) throw new Error(`HTTP ${r.status}`);
+        return `express REST (${model})`;
+      }
       const r = await fetchWithTimeout(
-        `https://generativelanguage.googleapis.com/v1beta/models?key=${encodeURIComponent(val("GOOGLE_GENERATIVE_AI_API_KEY"))}`
+        `https://generativelanguage.googleapis.com/v1beta/models?key=${encodeURIComponent(key)}`
       );
       if (!r.ok) throw new Error(`HTTP ${r.status}`);
       const j = await r.json();
@@ -138,13 +152,13 @@ const PROVIDERS = [
     tier: "AI visibility",
     keys: ["PERPLEXITY_API_KEY"],
     probe: async () => {
-      const r = await fetchWithTimeout("https://api.perplexity.ai/chat/completions", {
+      const r = await fetchWithTimeout("https://api.perplexity.ai/search", {
         method: "POST",
         headers: { Authorization: `Bearer ${val("PERPLEXITY_API_KEY")}`, "Content-Type": "application/json" },
-        body: JSON.stringify({ model: "sonar", messages: [{ role: "user", content: "ping" }], max_tokens: 1 }),
+        body: JSON.stringify({ query: "ping", max_results: 1, max_tokens_per_page: 64 }),
       });
       if (!r.ok) throw new Error(`HTTP ${r.status}`);
-      return "chat reachable";
+      return "search API reachable";
     },
   },
 
@@ -185,9 +199,83 @@ const PROVIDERS = [
         headers: { Authorization: `Bearer ${val("FIRECRAWL_API_KEY")}`, "Content-Type": "application/json" },
         body: JSON.stringify({ query: "test", limit: 1 }),
       }, 30000);
+      if (r.status === 402) return "key valid (quota/billing exhausted)";
       if (!r.ok) throw new Error(`HTTP ${r.status}`);
       const j = await r.json();
       return `search ok (${j.data?.length ?? 0} results)`;
+    },
+  },
+  {
+    name: "OpenPageRank (domain authority)",
+    tier: "Search data",
+    keys: [],
+    probe: async () => {
+      const key = (val("OPEN_PAGERANK_API_KEY") || val("API_OPR_KEY")).trim();
+      if (key && !key.startsWith("your-")) {
+        const r = await fetchWithTimeout(
+          "https://openpagerank.com/api/v1.0/getPageRank?domains[]=google.com",
+          { headers: { "API-OPR": key } }
+        );
+        if (r.ok) {
+          const j = await r.json();
+          const row = j.response?.[0];
+          if (row?.status_code === 200) {
+            return `OPR API (google.com PR ${row.page_rank_integer ?? "?"})`;
+          }
+        }
+        if (r.status !== 401 && r.status !== 403) {
+          throw new Error(`HTTP ${r.status}`);
+        }
+      }
+      const rt = await fetchWithTimeout("https://rank.to/api/?d=google.com&n=7");
+      if (!rt.ok) throw new Error(`rank.to fallback HTTP ${rt.status}`);
+      const j = await rt.json();
+      const entries = Object.entries(j.ranks || {}).filter(([, v]) => typeof v === "number");
+      if (!entries.length) throw new Error("rank.to returned no data");
+      const rank = entries[entries.length - 1][1];
+      return `rank.to fallback (google.com global rank ${rank})`;
+    },
+  },
+  {
+    name: "Cloudflare Radar (popularity signal)",
+    tier: "Search data",
+    keys: ["CLOUDFLARE_RADAR_API_TOKEN"],
+    probe: async () => {
+      const r = await fetchWithTimeout("https://api.cloudflare.com/client/v4/user/tokens/verify", {
+        headers: { Authorization: `Bearer ${val("CLOUDFLARE_RADAR_API_TOKEN")}` },
+      });
+      if (!r.ok) throw new Error(`HTTP ${r.status}`);
+      const j = await r.json();
+      if (!j.success) throw new Error(j.errors?.[0]?.message || "token invalid");
+      return "token valid";
+    },
+  },
+  {
+    name: "Keywords Everywhere (search volume)",
+    tier: "Search data",
+    keys: ["KEYWORDS_EVERYWHERE_API_KEY"],
+    probe: async () => {
+      const key = val("KEYWORDS_EVERYWHERE_API_KEY");
+      const body = new URLSearchParams({
+        dataSource: "gkp",
+        country: "us",
+        currency: "usd",
+      });
+      body.append("kw[]", "seo");
+      const r = await fetchWithTimeout("https://api.keywordseverywhere.com/v1/get_keyword_data", {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${key}`,
+          Accept: "application/json",
+          "Content-Type": "application/x-www-form-urlencoded",
+        },
+        body: body.toString(),
+      });
+      if (r.status === 402) return "key valid (insufficient credits)";
+      if (!r.ok) throw new Error(`HTTP ${r.status}`);
+      const j = await r.json();
+      if (!j.data?.length) throw new Error("no keyword data");
+      return `vol=${j.data[0].vol ?? 0}, credits=${j.credits ?? "?"}`;
     },
   },
   {

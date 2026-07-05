@@ -33,7 +33,11 @@ export function defaultModelId(provider: "openai" | "gemini" | "anthropic"): str
     return v && v.trim() ? v.trim() : dflt;
   };
   if (provider === "openai") return env("AI_OPENAI_MODEL", "gpt-4o-mini");
-  if (provider === "gemini") return env("AI_GEMINI_MODEL", "gemini-2.5-flash");
+  if (provider === "gemini") {
+    const key = process.env.GOOGLE_GENERATIVE_AI_API_KEY?.trim() || "";
+    if (key.startsWith("AQ.")) return env("AI_GEMINI_MODEL", "gemini-flash-latest");
+    return env("AI_GEMINI_MODEL", "gemini-2.5-flash");
+  }
   return env("AI_ANTHROPIC_MODEL", "claude-haiku-4-5");
 }
 
@@ -80,6 +84,93 @@ function hostnameOf(url: string): string {
   }
 }
 
+function isRetryableLlmError(err: unknown): boolean {
+  const msg = err instanceof Error ? err.message : String(err);
+  return /429|quota|rate.?limit|resource.?exhausted|overloaded/i.test(msg);
+}
+
+function isGeminiModelError(err: unknown): boolean {
+  const msg = err instanceof Error ? err.message : String(err);
+  return /not found|not supported|404/i.test(msg);
+}
+
+function geminiModelChain(): string[] {
+  const primary = defaultModelId("gemini");
+  return [...new Set([primary, "gemini-2.5-flash", "gemini-2.0-flash", "gemini-1.5-flash"])];
+}
+
+async function generateGroundedWithProvider(
+  provider: "openai" | "gemini" | "claude",
+  systemPrompt: string,
+  prompt: string
+): Promise<{ text: string; sources: string[]; modelId: string }> {
+  const guardProvider: GuardProvider =
+    provider === "openai" ? "openai" : provider === "gemini" ? "gemini" : "anthropic";
+
+  if (provider === "gemini") {
+    const { usesGeminiExpressKey, generateGeminiRestWithFallback } = await import("@/lib/providers/gemini-rest");
+    if (usesGeminiExpressKey()) {
+      const out = await generateGeminiRestWithFallback(systemPrompt, prompt);
+      await recordSpend(guardProvider, out.modelId, undefined, {
+        fallbackOutputTokens: maxOutputTokens("probe"),
+      });
+      return { text: out.text, sources: [], modelId: out.modelId };
+    }
+  }
+
+  const { generateText } = await import("ai");
+  const attempts =
+    provider === "gemini"
+      ? geminiModelChain().map((modelId) => ({ modelId, providerKind: "gemini" as const }))
+      : [{ modelId: defaultModelId(provider === "openai" ? "openai" : "anthropic"), providerKind: provider }];
+
+  let lastError: unknown;
+  for (const attempt of attempts) {
+    try {
+      let model: Parameters<typeof generateText>[0]["model"];
+      let tools: Record<string, unknown>;
+      if (attempt.providerKind === "openai") {
+        const { openai } = await import("@ai-sdk/openai");
+        model = openai(attempt.modelId);
+        tools = { web_search: openai.tools.webSearch({ searchContextSize: "low" }) };
+      } else if (attempt.providerKind === "gemini") {
+        const { google } = await import("@ai-sdk/google");
+        model = google(attempt.modelId);
+        tools = { google_search: google.tools.googleSearch({}) };
+      } else {
+        const { anthropic } = await import("@ai-sdk/anthropic");
+        model = anthropic(attempt.modelId);
+        tools = { web_search: anthropic.tools.webSearch_20250305({ maxUses: 2 }) };
+      }
+
+      const result = await generateText({
+        model,
+        system: systemPrompt,
+        prompt,
+        tools: tools as Parameters<typeof generateText>[0]["tools"],
+        maxOutputTokens: maxOutputTokens("probe"),
+        abortSignal: AbortSignal.timeout(60000),
+      });
+
+      await recordSpend(guardProvider, attempt.modelId, result.usage, {
+        fallbackOutputTokens: maxOutputTokens("probe"),
+      });
+
+      const sources = ((result.sources ?? []) as Array<{ sourceType?: string; url?: string }>)
+        .filter((s) => s.sourceType === "url" && typeof s.url === "string")
+        .map((s) => s.url as string);
+
+      if (!result.text.trim()) continue;
+      return { text: result.text, sources, modelId: attempt.modelId };
+    } catch (err) {
+      lastError = err;
+      if (provider === "gemini" && (isRetryableLlmError(err) || isGeminiModelError(err))) continue;
+      throw err;
+    }
+  }
+  throw lastError instanceof Error ? lastError : new Error("grounded generation failed");
+}
+
 /**
  * Live web-search generation for one provider. Returns the answer text + the
  * REAL cited source URLs (from result.sources), or null when grounding is
@@ -101,52 +192,13 @@ async function runGroundedSearch(
     provider === "openai" ? "openai" : provider === "gemini" ? "gemini" : "anthropic";
   await assertWithinBudget(guardProvider);
 
-  const { generateText } = await import("ai");
-  let modelId: string;
-  let model: Parameters<typeof generateText>[0]["model"];
-  let tools: Record<string, unknown>;
-  if (provider === "openai") {
-    const { openai } = await import("@ai-sdk/openai");
-    modelId = defaultModelId("openai");
-    model = openai(modelId);
-    // searchContextSize "low" keeps the per-call search cost down.
-    tools = { web_search: openai.tools.webSearch({ searchContextSize: "low" }) };
-  } else if (provider === "gemini") {
-    const { google } = await import("@ai-sdk/google");
-    modelId = defaultModelId("gemini");
-    model = google(modelId);
-    tools = { google_search: google.tools.googleSearch({}) };
-  } else {
-    const { anthropic } = await import("@ai-sdk/anthropic");
-    modelId = defaultModelId("anthropic");
-    model = anthropic(modelId);
-    tools = { web_search: anthropic.tools.webSearch_20250305({ maxUses: 2 }) };
+  try {
+    const result = await generateGroundedWithProvider(provider, systemPrompt, prompt);
+    groundedCache.set(cacheKey, { at: Date.now(), text: result.text, sources: result.sources });
+    return { text: result.text, sources: result.sources };
+  } catch {
+    return null;
   }
-
-  const result = await generateText({
-    model,
-    system: systemPrompt,
-    prompt,
-    tools: tools as Parameters<typeof generateText>[0]["tools"],
-    maxOutputTokens: maxOutputTokens("probe"),
-    abortSignal: AbortSignal.timeout(60000),
-  });
-
-  await recordSpend(guardProvider, modelId, result.usage, {
-    fallbackOutputTokens: maxOutputTokens("probe"),
-  });
-
-  // result.sources is the SDK-standardized cited-URL list across providers.
-  const sources = ((result.sources ?? []) as Array<{ sourceType?: string; url?: string }>)
-    .filter((s) => s.sourceType === "url" && typeof s.url === "string")
-    .map((s) => s.url as string);
-
-  // A grounded answer with zero citations isn't really grounded — treat as a miss
-  // so the caller falls back to the honest parametric (model_knowledge) label.
-  if (sources.length === 0) return null;
-
-  groundedCache.set(cacheKey, { at: Date.now(), text: result.text, sources });
-  return { text: result.text, sources };
 }
 
 export async function queryLLMForVisibility(
@@ -221,24 +273,64 @@ export async function queryLLMForVisibility(
         const { openai } = await import("@ai-sdk/openai");
         modelId = defaultModelId("openai");
         model = openai(modelId);
+        const result = await generateText({
+          model,
+          system: systemPrompt,
+          prompt,
+          maxOutputTokens: maxOutputTokens("probe"),
+          abortSignal: AbortSignal.timeout(45000),
+        });
+        responseText = result.text;
+        await recordSpend(guardProvider, modelId, result.usage);
       } else if (provider === "gemini") {
+        const { usesGeminiExpressKey, generateGeminiRestWithFallback } = await import("@/lib/providers/gemini-rest");
+        if (usesGeminiExpressKey()) {
+          const out = await generateGeminiRestWithFallback(systemPrompt, prompt);
+          responseText = out.text;
+          modelId = out.modelId;
+          await recordSpend(guardProvider, modelId, undefined, {
+            fallbackOutputTokens: maxOutputTokens("probe"),
+          });
+        } else {
         const { google } = await import("@ai-sdk/google");
-        modelId = defaultModelId("gemini");
-        model = google(modelId);
+        const models = geminiModelChain();
+        let lastGeminiError: unknown;
+        for (const mid of models) {
+          try {
+            modelId = mid;
+            model = google(mid);
+            const result = await generateText({
+              model,
+              system: systemPrompt,
+              prompt,
+              maxOutputTokens: maxOutputTokens("probe"),
+              abortSignal: AbortSignal.timeout(45000),
+            });
+            responseText = result.text;
+            await recordSpend(guardProvider, modelId, result.usage);
+            lastGeminiError = null;
+            break;
+          } catch (err) {
+            lastGeminiError = err;
+            if (!isRetryableLlmError(err) && !isGeminiModelError(err)) throw err;
+          }
+        }
+        if (!responseText && lastGeminiError) throw lastGeminiError;
+        }
       } else {
         const { anthropic } = await import("@ai-sdk/anthropic");
         modelId = defaultModelId("anthropic");
         model = anthropic(modelId);
+        const result = await generateText({
+          model,
+          system: systemPrompt,
+          prompt,
+          maxOutputTokens: maxOutputTokens("probe"),
+          abortSignal: AbortSignal.timeout(45000),
+        });
+        responseText = result.text;
+        await recordSpend(guardProvider, modelId, result.usage);
       }
-      const result = await generateText({
-        model,
-        system: systemPrompt,
-        prompt,
-        maxOutputTokens: maxOutputTokens("probe"),
-        abortSignal: AbortSignal.timeout(45000),
-      });
-      responseText = result.text;
-      await recordSpend(guardProvider, modelId, result.usage);
     }
 
     // PARAMETRIC (no-browsing): URLs a non-browsing model emits in prose are

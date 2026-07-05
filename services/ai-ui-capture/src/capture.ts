@@ -33,6 +33,11 @@ export interface RawCapture {
   domHtml?: string;
   /** Effective geo/locale/persona the capture actually ran under (provenance). */
   context: { geo?: string; locale: string; timezone?: string; persona: "desktop" | "mobile" };
+  /**
+   * False when the SERP loaded but the AI answer block was absent — still a
+   * valid measured observation (not a failed capture).
+   */
+  surfacePresent?: boolean;
 }
 
 /** Returned when a surface is blocked (captcha / rate-limit / consent wall). */
@@ -156,17 +161,28 @@ function buildResult(
   answer: string,
   hrefs: string[],
   evidence: { screenshotBase64?: string; domHtml?: string },
-  opts: CaptureOptions
+  opts: CaptureOptions,
+  surfacePresent = true
 ): RawCapture {
   const persona = opts.persona === "mobile" ? "mobile" : "desktop";
+  const fingerprint = surfacePresent ? answer : `absence:${opts.geo || "unknown"}:${sha256(answer)}`;
   return {
     answer,
     citedUrls: externalLinks(hrefs),
-    responseHash: sha256(answer),
+    responseHash: sha256(fingerprint),
     screenshotBase64: evidence.screenshotBase64,
     domHtml: evidence.domHtml,
     context: { geo: opts.geo, locale: opts.locale || localeForGeo(opts.geo), timezone: opts.timezone, persona },
+    surfacePresent,
   };
+}
+
+function buildAbsenceResult(
+  hrefs: string[],
+  evidence: { screenshotBase64?: string; domHtml?: string },
+  opts: CaptureOptions
+): RawCapture {
+  return buildResult("", hrefs, evidence, opts, false);
 }
 
 async function capturePerplexity(ctx: BrowserContext, prompt: string, opts: CaptureOptions): Promise<CaptureOutcome> {
@@ -195,27 +211,47 @@ async function captureGoogleAiOverview(ctx: BrowserContext, prompt: string, opts
   const page = await ctx.newPage();
   try {
     const gl = opts.geo ? `&gl=${encodeURIComponent(opts.geo.toLowerCase())}` : "";
-    await page.goto(`https://www.google.com/search?q=${encodeURIComponent(prompt)}${gl}`, {
+    const hl = opts.locale ? `&hl=${encodeURIComponent(opts.locale.split("-")[0] || "en")}` : "";
+    await page.goto(`https://www.google.com/search?q=${encodeURIComponent(prompt)}${gl}${hl}`, {
       waitUntil: "domcontentloaded",
       timeout: NAV_TIMEOUT,
     });
     await page.waitForTimeout(5000);
-    const candidates = ["[data-attrid='AIOverview']", "div[jsname][data-mcpr]", "#rso"];
+    const aioSelectors = [
+      "[data-attrid='AIOverview']",
+      "div[jsname][data-mcpr]",
+      ".WaaZC",
+      "[data-subtree='aimc']",
+      ".LLtSOc",
+      "div[data-snhf='0']",
+    ];
     let answer = "";
-    for (const sel of candidates) {
+    for (const sel of aioSelectors) {
       const loc = page.locator(sel).first();
       if (await loc.count().catch(() => 0)) {
-        answer = (await loc.innerText().catch(() => "")) || "";
-        if (answer.trim()) break;
+        const text = (await loc.innerText().catch(() => "")) || "";
+        if (text.trim().length > 40) {
+          answer = text;
+          break;
+        }
       }
     }
-    const blocked = detectBlock(page.url(), answer || (await page.title().catch(() => "")));
+    const pageText = (await page.locator("body").innerText().catch(() => "")) || "";
+    const blocked = detectBlock(page.url(), answer || pageText || (await page.title().catch(() => "")));
     if (blocked) return { blocked: true, reason: blocked };
     const hrefs = await page.locator("a").evaluateAll((els) =>
       els.map((e) => (e as HTMLAnchorElement).href).filter(Boolean)
     );
+    const evidence = await collectEvidence(page, opts.withEvidence !== false);
+    const rso = page.locator("#rso").first();
+    const serpLoaded =
+      (await rso.count().catch(() => 0)) > 0 &&
+      ((await rso.innerText().catch(() => "")) || "").trim().length > 80;
+    if (!answer.trim() && serpLoaded) {
+      return buildAbsenceResult(hrefs, evidence, opts);
+    }
     if (!answer.trim()) return null;
-    return buildResult(answer, hrefs, await collectEvidence(page, opts.withEvidence !== false), opts);
+    return buildResult(answer, hrefs, evidence, opts, true);
   } finally {
     await page.close().catch(() => {});
   }
@@ -224,28 +260,46 @@ async function captureGoogleAiOverview(ctx: BrowserContext, prompt: string, opts
 async function captureBingCopilot(ctx: BrowserContext, prompt: string, opts: CaptureOptions): Promise<CaptureOutcome> {
   const page = await ctx.newPage();
   try {
-    // Bing's "Copilot answers" render inline on the SERP for many queries (keyless).
-    await page.goto(`https://www.bing.com/search?q=${encodeURIComponent(prompt)}`, {
+    const cc = opts.geo ? `&cc=${encodeURIComponent(opts.geo.toUpperCase())}` : "";
+    await page.goto(`https://www.bing.com/search?q=${encodeURIComponent(prompt)}${cc}`, {
       waitUntil: "domcontentloaded",
       timeout: NAV_TIMEOUT,
     });
     await page.waitForTimeout(5000);
-    const candidates = ["#b_results", "[class*='b_ans']", "main"];
+    const copilotSelectors = [
+      "[class*='b_ans']",
+      "#copans",
+      "[data-priority='2']",
+      ".b_slidebar",
+      "div.b_algoSlug",
+    ];
     let answer = "";
-    for (const sel of candidates) {
+    for (const sel of copilotSelectors) {
       const loc = page.locator(sel).first();
       if (await loc.count().catch(() => 0)) {
-        answer = (await loc.innerText().catch(() => "")) || "";
-        if (answer.trim()) break;
+        const text = (await loc.innerText().catch(() => "")) || "";
+        if (text.trim().length > 40) {
+          answer = text;
+          break;
+        }
       }
     }
-    const blocked = detectBlock(page.url(), answer || (await page.title().catch(() => "")));
+    const pageText = (await page.locator("body").innerText().catch(() => "")) || "";
+    const blocked = detectBlock(page.url(), answer || pageText || (await page.title().catch(() => "")));
     if (blocked) return { blocked: true, reason: blocked };
     const hrefs = await page.locator("a").evaluateAll((els) =>
       els.map((e) => (e as HTMLAnchorElement).href).filter(Boolean)
     );
+    const evidence = await collectEvidence(page, opts.withEvidence !== false);
+    const results = page.locator("#b_results").first();
+    const serpLoaded =
+      (await results.count().catch(() => 0)) > 0 &&
+      ((await results.innerText().catch(() => "")) || "").trim().length > 80;
+    if (!answer.trim() && serpLoaded) {
+      return buildAbsenceResult(hrefs, evidence, opts);
+    }
     if (!answer.trim()) return null;
-    return buildResult(answer, hrefs, await collectEvidence(page, opts.withEvidence !== false), opts);
+    return buildResult(answer, hrefs, evidence, opts, true);
   } finally {
     await page.close().catch(() => {});
   }

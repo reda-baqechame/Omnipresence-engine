@@ -37,6 +37,7 @@
     "auth:migrate": "node scripts/apply-auth-migration.mjs",
     "auth:repair-user": "node scripts/admin-user-repair.mjs",
     "scan:live": "node --import ./tests/_lib/register-loader.mjs scripts/run-live-rescan-runner.mjs",
+    "scan:report": "node --import ./tests/_lib/register-loader.mjs scripts/scan-failure-report.mjs",
     "probe:engines": "node --import ./tests/_lib/register-loader.mjs scripts/probe-engines.mjs",
     "audit:hubs": "node scripts/hub-e2e-audit.mjs",
     "verify:oauth": "node scripts/verify-oauth-connectors.mjs",

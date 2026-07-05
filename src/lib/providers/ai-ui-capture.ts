@@ -24,7 +24,7 @@ export function hasAiUiCapture(): boolean {
   );
 }
 
-export interface AiUiCaptureResult {
+export interface AiUiCaptureSuccess {
   brandMentioned: boolean;
   brandCited: boolean;
   competitorMentions: Record<string, boolean>;
@@ -38,6 +38,20 @@ export interface AiUiCaptureResult {
   /** Effective geo/locale/persona the capture ran under (provenance). */
   captureContext?: { geo?: string; locale?: string; timezone?: string; persona?: string };
   evidenceUrl?: string | null;
+  /** False when SERP loaded but the AI block was absent (still measured). */
+  surfacePresent?: boolean;
+  absence?: boolean;
+}
+
+export interface AiUiCaptureBlocked {
+  blocked: true;
+  reason: string;
+}
+
+export type AiUiCaptureResult = AiUiCaptureSuccess | AiUiCaptureBlocked;
+
+export function isCaptureBlocked(r: AiUiCaptureResult | null): r is AiUiCaptureBlocked {
+  return Boolean(r && "blocked" in r && r.blocked === true);
 }
 
 /** Geo/persona/locale controls for a capture (all optional). */
@@ -52,8 +66,7 @@ export interface AiUiCaptureOptions {
 
 /**
  * Capture a grounded AI answer from the configured UI-capture backend. Returns
- * null when disabled or on any failure — callers must fall back to the API path
- * and label the result honestly.
+ * null when disabled or on transport failure — callers must fall back honestly.
  */
 export type AiUiCaptureSurface =
   | "chatgpt"
@@ -93,23 +106,30 @@ export async function captureAiUiSurface(
       }),
       signal: AbortSignal.timeout(45000),
     });
-    // 204 = not grounded; 409 = blocked (rate-limited/captcha). Both → honest null
-    // so the caller falls back to the API path and labels the surface accordingly.
+    if (res.status === 409) {
+      const data = (await res.json().catch(() => ({}))) as { reason?: string };
+      return { blocked: true, reason: data.reason || "capture_blocked" };
+    }
+    // 204 = page did not load / login required — not a measured absence.
     if (!res.ok) return null;
-    const data = (await res.json()) as Partial<AiUiCaptureResult> & { answer?: string };
-    if (!data || typeof data.answer !== "string") return null;
+    const data = (await res.json()) as Partial<AiUiCaptureSuccess> & { answer?: string };
+    if (!data) return null;
+    const isAbsence = data.surfacePresent === false || data.absence === true;
+    if (!isAbsence && typeof data.answer !== "string") return null;
     return {
       brandMentioned: Boolean(data.brandMentioned),
       brandCited: Boolean(data.brandCited),
       competitorMentions: data.competitorMentions || {},
       sourceDomains: data.sourceDomains || [],
       citedUrls: data.citedUrls || [],
-      answer: data.answer,
+      answer: data.answer || "",
       responseHash: data.responseHash,
       screenshotBase64: data.screenshotBase64 ?? null,
       domHtml: data.domHtml ?? null,
       captureContext: data.captureContext,
-      evidenceUrl: (data as { evidenceUrl?: string }).evidenceUrl ?? null,
+      evidenceUrl: data.evidenceUrl ?? null,
+      surfacePresent: data.surfacePresent !== false,
+      absence: isAbsence,
     };
   } catch {
     return null;

@@ -25,19 +25,19 @@ function hasEnv(name: string): boolean {
 /** Engines we can actually measure in this deployment (keys + backends present). */
 export function getActiveScanEngines(): VisibilityEngine[] {
   const engines: VisibilityEngine[] = [];
+  const captureOn = process.env.ENABLE_AI_UI_CAPTURE === "true" && hasEnv("AI_UI_CAPTURE_URL");
   if (hasEnv("OPENAI_API_KEY")) engines.push("chatgpt");
-  if (hasEnv("PERPLEXITY_API_KEY")) engines.push("perplexity");
+  if (hasEnv("PERPLEXITY_API_KEY") || captureOn) engines.push("perplexity");
   if (hasEnv("GOOGLE_GENERATIVE_AI_API_KEY")) engines.push("gemini");
   if (hasEnv("ANTHROPIC_API_KEY")) engines.push("claude");
-  if (process.env.ENABLE_AI_UI_CAPTURE === "true" && hasEnv("AI_UI_CAPTURE_URL")) {
-    engines.push("bing_copilot");
-  }
+  if (captureOn) engines.push("bing_copilot");
   if (hasSerpCapability()) engines.push("google_organic", "google_ai_overview");
   return engines.length ? engines : ["google_organic"];
 }
 
 /** Whether a single engine has the provider credentials/backends it needs. */
 export function isEngineConfigured(engine: VisibilityEngine): boolean {
+  const captureOn = process.env.ENABLE_AI_UI_CAPTURE === "true" && hasEnv("AI_UI_CAPTURE_URL");
   switch (engine) {
     case "chatgpt":
       return hasEnv("OPENAI_API_KEY");
@@ -46,9 +46,9 @@ export function isEngineConfigured(engine: VisibilityEngine): boolean {
     case "gemini":
       return hasEnv("GOOGLE_GENERATIVE_AI_API_KEY");
     case "perplexity":
-      return hasEnv("PERPLEXITY_API_KEY");
+      return hasEnv("PERPLEXITY_API_KEY") || captureOn;
     case "bing_copilot":
-      return process.env.ENABLE_AI_UI_CAPTURE === "true" && hasEnv("AI_UI_CAPTURE_URL");
+      return captureOn;
     case "google_organic":
     case "google_ai_overview":
       return hasSerpCapability();
