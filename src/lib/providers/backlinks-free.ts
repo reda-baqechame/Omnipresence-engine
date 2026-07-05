@@ -10,7 +10,7 @@ export interface BacklinkItem {
   estimated?: boolean;
   /** Real 0-100 authority (Common Crawl/Tranco/rank.to) — free DR that paid indexes bill for. */
   authority?: number;
-  authoritySource?: "commoncrawl" | "tranco" | "rank.to" | "unlisted";
+  authoritySource?: "commoncrawl" | "ccwebgraph" | "openpagerank" | "tranco" | "rank.to" | "unlisted";
 }
 
 /**

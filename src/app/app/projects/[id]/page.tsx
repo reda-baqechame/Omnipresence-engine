@@ -5,8 +5,9 @@ import { FindingCard } from "@/components/finding-card";
 import { ScoreHistoryChart } from "@/components/score-chart";
 import { ScanPoller } from "@/components/scan-poller";
 import { CompetitorChart } from "@/components/competitor-chart";
-import { calculateVisibilityMetrics } from "@/lib/engines/visibility-scanner";
-import type { VisibilityResult, ExecutionTask } from "@/types/database";
+import { loadProjectVisibilitySnapshot } from "@/lib/engines/visibility-scope";
+import { VisibilityHonestyBanner, VisibilityMetricTiles } from "@/components/visibility-honesty-banner";
+import type { ExecutionTask } from "@/types/database";
 import { getProject } from "@/lib/projects";
 import { buildActionPlan } from "@/lib/engines/action-plan";
 import { ActionPlanPanel } from "@/components/action-plan-panel";
@@ -28,14 +29,14 @@ export default async function ProjectOverviewPage({
     { data: scores },
     { data: findings },
     { data: coverage },
-    { data: visibility },
+    visibilitySnapshot,
     { data: brandProfile },
     { data: tasks },
   ] = await Promise.all([
     supabase.from("scores").select("*").eq("project_id", id).order("created_at", { ascending: true }),
     supabase.from("technical_findings").select("*").eq("project_id", id).order("severity"),
     supabase.from("coverage_items").select("*").eq("project_id", id),
-    supabase.from("visibility_results").select("*").eq("project_id", id),
+    loadProjectVisibilitySnapshot(supabase, id, project.name, project.competitors || []),
     supabase.from("brand_profiles").select("*").eq("project_id", id).single(),
     supabase.from("execution_tasks").select("*").eq("project_id", id),
   ]);
@@ -48,10 +49,11 @@ export default async function ProjectOverviewPage({
   const scoreDelta = previousScore
     ? latestScore!.omnipresence_score - previousScore.omnipresence_score
     : null;
-  const visibilityMetrics = calculateVisibilityMetrics((visibility || []) as VisibilityResult[]);
+  const visibilityResults = visibilitySnapshot.allResults;
   const criticalFindings =
     findings?.filter((f) => f.severity === "critical" || f.severity === "high") || [];
-  const missingCoverage = coverage?.filter((c) => !c.is_present) || [];
+  const missingCoverage =
+    coverage?.filter((c) => !c.is_present && c.data_quality !== "unavailable") || [];
 
   return (
     <div className="space-y-8">
@@ -98,9 +100,9 @@ export default async function ProjectOverviewPage({
             />
           )}
 
-          {visibility && visibility.length > 0 && (
+          {visibilitySnapshot.groundedCount > 0 && (
             <CompetitorChart
-              results={visibility as VisibilityResult[]}
+              results={visibilitySnapshot.groundedResults}
               brandName={project.name}
               competitors={project.competitors || []}
             />
@@ -112,19 +114,10 @@ export default async function ProjectOverviewPage({
         </div>
       )}
 
-      {visibility && visibility.length > 0 && (
-        <div className="grid md:grid-cols-4 gap-4">
-          {[
-            { label: "Mention Rate", value: `${Math.round(visibilityMetrics.mentionRate * 100)}%` },
-            { label: "Citation Rate", value: `${Math.round(visibilityMetrics.citationRate * 100)}%` },
-            { label: "Share of Voice", value: `${Math.round(visibilityMetrics.shareOfVoice * 100)}%` },
-            { label: "Win Rate", value: `${Math.round(visibilityMetrics.winRate * 100)}%` },
-          ].map((m) => (
-            <div key={m.label} className="bg-card border border-border rounded-xl p-4 text-center">
-              <div className="text-2xl font-bold text-primary">{m.value}</div>
-              <div className="text-sm text-muted-foreground">{m.label}</div>
-            </div>
-          ))}
+      {visibilityResults.length > 0 && (
+        <div className="space-y-4">
+          <VisibilityHonestyBanner snapshot={visibilitySnapshot} />
+          <VisibilityMetricTiles snapshot={visibilitySnapshot} />
         </div>
       )}
 
@@ -152,16 +145,19 @@ export default async function ProjectOverviewPage({
         <div>
           <h2 className="text-xl font-semibold mb-4">Platform Coverage</h2>
           <div className="grid grid-cols-2 gap-2 max-h-96 overflow-y-auto">
-            {coverage?.map((c) => (
-              <div
-                key={c.id}
-                className={`text-sm px-3 py-2 rounded-lg ${
-                  c.is_present ? "bg-green-500/10 text-green-400" : "bg-red-500/10 text-red-400"
-                }`}
-              >
-                {c.is_present ? "✓" : "✗"} {c.platform_name}
-              </div>
-            ))}
+            {coverage?.map((c) => {
+              const tone = c.is_present
+                ? "bg-green-500/10 text-green-400"
+                : c.data_quality === "unavailable"
+                  ? "bg-secondary/50 text-muted-foreground"
+                  : "bg-red-500/10 text-red-400";
+              const mark = c.is_present ? "✓" : c.data_quality === "unavailable" ? "?" : "✗";
+              return (
+                <div key={c.id} className={`text-sm px-3 py-2 rounded-lg ${tone}`}>
+                  {mark} {c.platform_name}
+                </div>
+              );
+            })}
           </div>
           {missingCoverage.length > 0 && (
             <p className="text-sm text-muted-foreground mt-3">{missingCoverage.length} platforms missing</p>

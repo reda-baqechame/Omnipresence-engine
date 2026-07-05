@@ -2,6 +2,7 @@ import { notFound } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { PromptCampaignPanel } from "@/components/prompt-campaign-panel";
 import { getProject } from "@/lib/projects";
+import { measurePromptDemandBatch } from "@/lib/engines/prompt-demand";
 
 export default async function PromptsPage({
   params,
@@ -24,11 +25,17 @@ export default async function PromptsPage({
     .eq("project_id", id)
     .order("priority", { ascending: false });
 
+  const trackedTexts = (prompts || []).filter((p) => p.is_tracked).map((p) => p.text);
+  const demandSignals = trackedTexts.length
+    ? await measurePromptDemandBatch(trackedTexts, { max: 15 })
+    : [];
+
   return (
     <PromptCampaignPanel
       projectId={id}
       hasGscConnection={connections?.some((c) => c.provider === "google_search_console") || false}
       initialPrompts={prompts || []}
+      demandSignals={demandSignals}
     />
   );
 }

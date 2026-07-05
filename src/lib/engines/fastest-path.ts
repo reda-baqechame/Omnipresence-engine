@@ -136,8 +136,8 @@ export function buildWinnableSurfaces(context: FastestPathContext): WinnableSurf
     });
   }
 
-  // 2. Local / GBP — fast, high-trust surface for local brands.
-  if (context.isLocal || context.hasGbp === false) {
+  // 2. Local / GBP — only for explicitly local businesses.
+  if (context.isLocal) {
     surfaces.push({
       id: "local:gbp",
       type: "local_gbp",
@@ -167,7 +167,13 @@ export function buildWinnableSurfaces(context: FastestPathContext): WinnableSurf
   }
 
   // 4. Low-competition directories / review sites the brand is missing.
-  for (const dir of (context.missingDirectories || []).slice(0, 8)) {
+  for (const dir of (context.missingDirectories || [])
+    .filter(
+      (d) =>
+        !["social", "community"].includes(d.surface) &&
+        !/reddit|quora|facebook|instagram|tiktok/i.test(d.name)
+    )
+    .slice(0, 8)) {
     const isReview = ["g2", "capterra", "trustpilot", "review_site"].includes(dir.surface);
     surfaces.push({
       id: `directory:${dir.surface}:${dir.name}`,
@@ -184,18 +190,23 @@ export function buildWinnableSurfaces(context: FastestPathContext): WinnableSurf
     });
   }
 
-  // 5. Reddit / Quora — community answers AI engines cite heavily.
-  surfaces.push({
-    id: "community:reddit_quora",
-    type: "reddit_quora",
-    title: "Answer high-intent Reddit/Quora threads in your category",
-    timeToImpactDays: 14,
-    effort: "low",
-    winnability: 0.7,
-    impact: 50,
-    rationale: "Reddit/Quora are disproportionately cited by ChatGPT/Perplexity and rank quickly.",
-    action: "outreach",
-  });
+  // 5. Reddit / Quora — only when measured AI answers cite these domains.
+  const hasCommunityCitationGap = (context.citationGapDomains || []).some((d) =>
+    /reddit\.com|quora\.com/i.test(d.domain)
+  );
+  if (hasCommunityCitationGap) {
+    surfaces.push({
+      id: "community:reddit_quora",
+      type: "reddit_quora",
+      title: "Answer high-intent Reddit/Quora threads cited in AI answers",
+      timeToImpactDays: 14,
+      effort: "low",
+      winnability: 0.7,
+      impact: 50,
+      rationale: "Measured AI answers cite Reddit/Quora for your prompts — earn placement on those threads.",
+      action: "outreach",
+    });
+  }
 
   // 6. AI-cited source gaps — earn a mention where competitors are cited.
   for (const src of (context.citationGapDomains || []).slice(0, 6)) {

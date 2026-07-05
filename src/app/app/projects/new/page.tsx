@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 import { ArrowLeft, ArrowRight } from "lucide-react";
 import Link from "next/link";
 
-const STEPS = ["Brand Info", "Competitors", "Goals"];
+const STEPS = ["Brand", "Competitors"];
 
 export default function NewProjectPage() {
   const router = useRouter();
@@ -15,16 +15,7 @@ export default function NewProjectPage() {
     name: "",
     domain: "",
     industry: "",
-    location: "",
     competitors: "",
-    target_buyer: "",
-    main_offer: "",
-    conversion_goal: "",
-    monthly_ad_spend: "",
-    current_monthly_traffic: "",
-    aov: "",
-    ltv: "",
-    scope: "national",
   });
 
   function update(field: string, value: string) {
@@ -37,19 +28,16 @@ export default function NewProjectPage() {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
-        ...form,
+        name: form.name,
+        domain: form.domain,
+        industry: form.industry,
         competitors: form.competitors.split(",").map((c) => c.trim()).filter(Boolean),
-        monthly_ad_spend: form.monthly_ad_spend ? parseFloat(form.monthly_ad_spend) : undefined,
-        current_monthly_traffic: form.current_monthly_traffic ? parseInt(form.current_monthly_traffic) : undefined,
-        aov: form.aov ? parseFloat(form.aov) : undefined,
-        ltv: form.ltv ? parseFloat(form.ltv) : undefined,
-        scope: form.scope,
       }),
     });
 
     if (res.ok) {
       const { project } = await res.json();
-      router.push(`/app/projects/${project.id}`);
+      router.push(`/app/projects/${project.id}?scan=start`);
     } else {
       setLoading(false);
     }
@@ -62,7 +50,9 @@ export default function NewProjectPage() {
       </Link>
 
       <h1 className="text-3xl font-bold mb-2">New OmniPresence Audit</h1>
-      <p className="text-muted-foreground mb-8">Tell us about the brand you want to audit.</p>
+      <p className="text-muted-foreground mb-8">
+        Start with the minimum needed for a real measurement — like an Otterly GEO audit. Your first scan measures AI visibility across ChatGPT, Gemini, Claude, and search.
+      </p>
 
       <div className="flex gap-2 mb-8">
         {STEPS.map((s, i) => (
@@ -83,17 +73,10 @@ export default function NewProjectPage() {
               <input value={form.domain} onChange={(e) => update("domain", e.target.value)} placeholder="example.com"
                 className="w-full bg-background border border-input rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring" required />
             </div>
-            <div className="grid grid-cols-2 gap-4">
-              <div>
-                <label className="block text-sm font-medium mb-1.5">Industry *</label>
-                <input value={form.industry} onChange={(e) => update("industry", e.target.value)} placeholder="e.g. Dental, SaaS, Legal"
-                  className="w-full bg-background border border-input rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring" required />
-              </div>
-              <div>
-                <label className="block text-sm font-medium mb-1.5">Location</label>
-                <input value={form.location} onChange={(e) => update("location", e.target.value)} placeholder="e.g. Montreal, QC"
-                  className="w-full bg-background border border-input rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring" />
-              </div>
+            <div>
+              <label className="block text-sm font-medium mb-1.5">Industry *</label>
+              <input value={form.industry} onChange={(e) => update("industry", e.target.value)} placeholder="e.g. Skincare, B2B SaaS, Dental"
+                className="w-full bg-background border border-input rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring" required />
             </div>
           </>
         )}
@@ -104,63 +87,10 @@ export default function NewProjectPage() {
               <label className="block text-sm font-medium mb-1.5">Competitors (comma-separated)</label>
               <input value={form.competitors} onChange={(e) => update("competitors", e.target.value)} placeholder="Competitor A, Competitor B, Competitor C"
                 className="w-full bg-background border border-input rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring" />
+              <p className="mt-2 text-xs text-muted-foreground">
+                Optional, but recommended. Competitors help the audit identify real share-of-voice and backlink/source gaps.
+              </p>
             </div>
-            <div>
-              <label className="block text-sm font-medium mb-1.5">Target Buyer</label>
-              <input value={form.target_buyer} onChange={(e) => update("target_buyer", e.target.value)} placeholder="e.g. Homeowners with urgent plumbing needs"
-                className="w-full bg-background border border-input rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring" />
-            </div>
-            <div>
-              <label className="block text-sm font-medium mb-1.5">Main Offer</label>
-              <input value={form.main_offer} onChange={(e) => update("main_offer", e.target.value)} placeholder="e.g. 24/7 emergency plumbing"
-                className="w-full bg-background border border-input rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring" />
-            </div>
-          </>
-        )}
-
-        {step === 2 && (
-          <>
-            <div>
-              <label className="block text-sm font-medium mb-1.5">Conversion Goal</label>
-              <input value={form.conversion_goal} onChange={(e) => update("conversion_goal", e.target.value)} placeholder="e.g. Book a call, Request a quote"
-                className="w-full bg-background border border-input rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring" />
-            </div>
-            <div className="grid grid-cols-2 gap-4">
-              <div>
-                <label className="block text-sm font-medium mb-1.5">Monthly Ad Spend ($)</label>
-                <input type="number" value={form.monthly_ad_spend} onChange={(e) => update("monthly_ad_spend", e.target.value)} placeholder="0" title="Monthly ad spend"
-                  className="w-full bg-background border border-input rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring" />
-              </div>
-              <div>
-                <label className="block text-sm font-medium mb-1.5">Monthly Traffic</label>
-                <input type="number" value={form.current_monthly_traffic} onChange={(e) => update("current_monthly_traffic", e.target.value)} placeholder="0" title="Current monthly traffic"
-                  className="w-full bg-background border border-input rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring" />
-              </div>
-            </div>
-            <div className="grid grid-cols-3 gap-4">
-              <div>
-                <label className="block text-sm font-medium mb-1.5">Avg. Order Value ($)</label>
-                <input type="number" value={form.aov} onChange={(e) => update("aov", e.target.value)} placeholder="e.g. 250"
-                  className="w-full bg-background border border-input rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring" />
-              </div>
-              <div>
-                <label className="block text-sm font-medium mb-1.5">Customer LTV ($)</label>
-                <input type="number" value={form.ltv} onChange={(e) => update("ltv", e.target.value)} placeholder="e.g. 1200"
-                  className="w-full bg-background border border-input rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring" />
-              </div>
-              <div>
-                <label className="block text-sm font-medium mb-1.5">Market Scope</label>
-                <select value={form.scope} onChange={(e) => update("scope", e.target.value)} aria-label="Market scope" title="Market scope"
-                  className="w-full bg-background border border-input rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring">
-                  <option value="local">Local</option>
-                  <option value="national">National</option>
-                  <option value="global">Global</option>
-                </select>
-              </div>
-            </div>
-            <p className="text-xs text-muted-foreground">
-              AOV/LTV and scope tune the 90-day operating plan and paid-ad-equivalent value — they&apos;re never used to fabricate metrics.
-            </p>
           </>
         )}
 
@@ -173,7 +103,7 @@ export default function NewProjectPage() {
               Next <ArrowRight className="h-4 w-4" />
             </button>
           ) : (
-            <button onClick={handleSubmit} disabled={loading || !form.name || !form.domain}
+            <button onClick={handleSubmit} disabled={loading || !form.name || !form.domain || !form.industry}
               className="bg-primary text-primary-foreground px-6 py-2 rounded-lg text-sm font-medium disabled:opacity-50">
               {loading ? "Creating & Scanning..." : "Start OmniPresence Audit"}
             </button>

@@ -2,13 +2,15 @@ import { notFound } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { getProject } from "@/lib/projects";
 import { CompetitorIntel } from "@/components/competitor-intel";
+import { ShareOfAiVoiceKpi } from "@/components/share-of-ai-voice-kpi";
+import { PopularityPanel } from "@/components/popularity-panel";
+import { buildPopularityPanelRows } from "@/lib/engines/popularity-panel-data";
 import {
   competitorVisibilityRates,
   competitorWinPrompts,
   type EntityVisibilityRate,
 } from "@/lib/engines/visibility-insights";
-import { calculateShareOfVoice } from "@/lib/engines/share-of-voice";
-import type { VisibilityResult } from "@/types/database";
+import { loadProjectVisibilitySnapshot } from "@/lib/engines/visibility-scope";
 
 export const dynamic = "force-dynamic";
 
@@ -28,8 +30,8 @@ export default async function CompetitorsPage({ params }: { params: Promise<{ id
   const competitors = project.competitors || [];
   const supabase = await createClient();
 
-  const [{ data: visibility }, { data: graph }] = await Promise.all([
-    supabase.from("visibility_results").select("*").eq("project_id", id),
+  const [{ scopedResults, sov }, { data: graph }, popularityRows] = await Promise.all([
+    loadProjectVisibilitySnapshot(supabase, id, project.name, competitors),
     supabase
       .from("backlink_graph_snapshots")
       .select("intersection, created_at")
@@ -37,14 +39,15 @@ export default async function CompetitorsPage({ params }: { params: Promise<{ id
       .order("created_at", { ascending: false })
       .limit(1)
       .maybeSingle(),
+    buildPopularityPanelRows(project.domain, competitors, project.name),
   ]);
 
-  const results = (visibility || []) as VisibilityResult[];
+  const results = scopedResults;
   const rates = competitorVisibilityRates(results, competitors);
   const aiRates: Record<string, EntityVisibilityRate> = { [project.domain]: rates.brand };
   for (const c of competitors) aiRates[c] = rates.competitors[c];
 
-  const sov = calculateShareOfVoice(results, project.name, competitors);
+  const sovLeaderboard = sov;
   const winPrompts = competitorWinPrompts(results, 20);
 
   const intersection = ((graph?.intersection as IntersectionRow[] | null) || []).filter((r) => r.brand_gap);
@@ -60,42 +63,10 @@ export default async function CompetitorsPage({ params }: { params: Promise<{ id
         </p>
       </div>
 
-      {/* Share of Voice leaderboard */}
-      <div className="rounded-xl border border-border p-4">
-        <div className="flex items-center justify-between">
-          <h3 className="font-semibold">AI Share of Voice</h3>
-          <span className="text-xs text-muted-foreground">
-            Prominence-weighted · {sov.sampleSize} measured answer{sov.sampleSize === 1 ? "" : "s"}
-          </span>
-        </div>
-        {sov.sampleSize === 0 ? (
-          <p className="mt-3 text-sm text-muted-foreground">
-            No measured AI answers yet. Run a visibility scan to populate Share of Voice.
-          </p>
-        ) : (
-          <div className="mt-4 space-y-1.5">
-            {sov.leaderboard.slice(0, 10).map((e, i) => (
-              <div key={e.name} className="flex items-center gap-3 text-sm">
-                <span className="w-5 text-right text-muted-foreground tabular-nums">{i + 1}</span>
-                <span className={`w-40 truncate shrink-0 ${e.isBrand ? "font-semibold text-primary" : ""}`}>
-                  {e.name}
-                  {e.isBrand && <span className="ml-1.5 text-[10px] uppercase text-primary">You</span>}
-                </span>
-                <div className="flex-1 h-2 rounded bg-muted overflow-hidden">
-                  <div
-                    className={e.isBrand ? "h-2 bg-primary" : "h-2 bg-muted-foreground/40"}
-                    style={{ width: `${Math.round(e.shareOfVoice * 100)}%` }}
-                  />
-                </div>
-                <span className="w-12 text-right tabular-nums">{Math.round(e.shareOfVoice * 100)}%</span>
-                <span className="w-24 text-right text-xs text-muted-foreground">
-                  {e.appearances} appear · pos {e.avgPosition?.toFixed(1) ?? "—"}
-                </span>
-              </div>
-            ))}
-          </div>
-        )}
-      </div>
+      {/* Share of Voice headline KPI */}
+      <ShareOfAiVoiceKpi sov={sovLeaderboard} />
+
+      <PopularityPanel rows={popularityRows} />
 
       {/* Competitive matrix (existing engine) */}
       <CompetitorIntel domain={project.domain} competitors={competitors} brandName={project.name} aiRates={aiRates} />

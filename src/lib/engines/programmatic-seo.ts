@@ -65,7 +65,8 @@ function buildTopic(
  */
 export function expandPseoMatrix(
   input: PseoCampaignInput,
-  domain: string
+  domain: string,
+  evidence?: Map<string, { demandIndex: number; confidence: string }>
 ): PseoPageSpec[] {
   const maxPages = Math.min(input.maxPages ?? 50, PSEO_MAX_PAGES);
   const pattern = input.urlPattern || "/{type}/{slug}";
@@ -90,6 +91,9 @@ export function expandPseoMatrix(
         if (specs.length >= maxPages) return specs;
 
         const topic = buildTopic(input.templateType, service, location, keyword || undefined);
+        const evidenceKey = keyword || `${service} ${location}`;
+        const ev = evidence?.get(evidenceKey.toLowerCase());
+        if (evidence && ev && ev.demandIndex < 15 && ev.confidence === "low") continue;
         const slug = slugify(
           keyword ? `${keyword}-${service}-${location}` : `${service}-${location}`
         );
@@ -125,6 +129,70 @@ export function expandPseoMatrix(
   }
 
   return specs;
+}
+
+/** Count matrix cells before evidence gate (for skipped reporting). */
+export function countPseoMatrixCells(input: PseoCampaignInput): number {
+  const services = Math.max(input.services.length, 1);
+  const locations = Math.max(input.locations.length, 1);
+  const keywords = input.keywords?.length ? input.keywords.length : 1;
+  return Math.min(
+    services * locations * keywords,
+    Math.min(input.maxPages ?? 50, PSEO_MAX_PAGES)
+  );
+}
+
+export interface PseoEvidenceEntry {
+  demandIndex: number;
+  confidence: string;
+  method: "keyword_opportunity" | "prompt_demand" | "unavailable";
+}
+
+/**
+ * Build query-demand evidence for pSEO matrix gating from stored keyword
+ * opportunities + optional live prompt-demand for top cells.
+ */
+export async function buildPseoEvidenceMap(
+  keywords: string[],
+  stored?: Array<{
+    keyword: string;
+    trend_index?: number | null;
+    volume_confidence?: string | null;
+    opportunity_score?: number | null;
+  }>
+): Promise<Map<string, PseoEvidenceEntry>> {
+  const map = new Map<string, PseoEvidenceEntry>();
+  for (const row of stored || []) {
+    const k = row.keyword.trim().toLowerCase();
+    if (!k) continue;
+    const trend = typeof row.trend_index === "number" ? row.trend_index : 0;
+    const opp = typeof row.opportunity_score === "number" ? row.opportunity_score : 0;
+    const demandIndex = Math.round(trend * 0.6 + Math.min(100, opp) * 0.4);
+    map.set(k, {
+      demandIndex,
+      confidence: row.volume_confidence || (trend > 0 ? "medium" : "low"),
+      method: "keyword_opportunity",
+    });
+  }
+
+  const missing = keywords
+    .map((k) => k.trim().toLowerCase())
+    .filter((k) => k && !map.has(k))
+    .slice(0, 8);
+
+  if (missing.length) {
+    const { measurePromptDemandBatch } = await import("@/lib/engines/prompt-demand");
+    const signals = await measurePromptDemandBatch(missing, { max: missing.length });
+    for (const s of signals) {
+      map.set(s.prompt.toLowerCase(), {
+        demandIndex: s.demandIndex,
+        confidence: s.confidence,
+        method: "prompt_demand",
+      });
+    }
+  }
+
+  return map;
 }
 
 export function estimatePseoMatrixSize(input: PseoCampaignInput): number {

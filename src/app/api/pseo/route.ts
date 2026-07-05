@@ -7,6 +7,8 @@ import {
   parsePseoMatrixCsv,
   assessContentQuality,
   planGradualIndexation,
+  buildPseoEvidenceMap,
+  countPseoMatrixCells,
   type PseoTemplateType,
 } from "@/lib/engines/programmatic-seo";
 import { generateContent } from "@/lib/engines/content-generator";
@@ -102,12 +104,24 @@ export async function POST(request: NextRequest) {
   if (!keywordList.length && seedFromKeywords) {
     const { data: opportunities } = await supabase
       .from("keyword_opportunities")
-      .select("keyword")
+      .select("keyword, trend_index, volume_confidence, opportunity_score")
       .eq("project_id", projectId)
       .order("opportunity_score", { ascending: false })
       .limit(30);
     keywordList = (opportunities || []).map((o) => o.keyword);
   }
+
+  const { data: storedKw } = await supabase
+    .from("keyword_opportunities")
+    .select("keyword, trend_index, volume_confidence, opportunity_score")
+    .eq("project_id", projectId)
+    .order("opportunity_score", { ascending: false })
+    .limit(100);
+
+  const evidence = await buildPseoEvidenceMap(
+    [...keywordList, ...services, ...locations],
+    storedKw || []
+  );
 
   const input = {
     name,
@@ -120,10 +134,18 @@ export async function POST(request: NextRequest) {
   };
 
   const estimated = estimatePseoMatrixSize(input);
-  const specs = expandPseoMatrix(input, project.domain);
+  const potentialCells = countPseoMatrixCells(input);
+  const specs = expandPseoMatrix(input, project.domain, evidence);
+  const skippedLowEvidence = Math.max(0, potentialCells - specs.length);
 
   if (previewOnly) {
-    return NextResponse.json({ estimated, preview: specs.slice(0, 20), total: specs.length });
+    return NextResponse.json({
+      estimated,
+      preview: specs.slice(0, 20),
+      total: specs.length,
+      skipped_low_evidence: skippedLowEvidence,
+      evidence_gated: evidence.size > 0,
+    });
   }
 
   const { data: campaign, error } = await supabase
@@ -207,5 +229,13 @@ export async function POST(request: NextRequest) {
       .eq("id", campaign.id);
   }
 
-  return NextResponse.json({ campaign, specs: specs.length, generated, held, qualityReport });
+  return NextResponse.json({
+    campaign,
+    specs: specs.length,
+    generated,
+    held,
+    qualityReport,
+    skipped_low_evidence: skippedLowEvidence,
+    evidence_gated: evidence.size > 0,
+  });
 }

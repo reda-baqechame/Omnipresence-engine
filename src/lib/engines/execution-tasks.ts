@@ -156,7 +156,13 @@ export async function syncExecutionTasks(
   }
 
   for (const c of coverage.data || []) {
-    if (c.data_quality === "unavailable") continue; // unknown, not a confirmed gap
+    if (c.data_quality === "unavailable") continue;
+    const surface = (c.surface || "").toLowerCase();
+    const name = (c.platform_name || "").toLowerCase();
+    // SERP profile presence on social/community is not the same as an AI citation gap.
+    if (surface === "social" || surface === "community" || /reddit|quora|facebook|instagram|tiktok/.test(name)) {
+      continue;
+    }
     seeds.push({
       source_module: "coverage_gap",
       source_id: String(c.id),

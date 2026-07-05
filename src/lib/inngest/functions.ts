@@ -7,7 +7,9 @@ import {
   stepVisibilityScan,
   stepScoreAndRoadmap,
 } from "@/lib/engines/scan-steps";
-import { resolveScanDemoMode } from "@/lib/demo/scan-data";
+import { prepareVisibilityScan, runVisibilityEngineBatch, finalizeVisibilityScan } from "@/lib/engines/visibility-scan-batches";
+import { getActiveScanEngines } from "@/lib/config/scan-engines";
+import type { VisibilityScanResult } from "@/lib/engines/visibility-scanner";
 import { analyzePassageReadiness } from "@/lib/engines/passage-readiness";
 import { sendScoreDropAlert, sendCitationDropAlert } from "@/lib/email/reports";
 import { dispatchProjectAlerts } from "@/lib/engines/monitoring-alerts";
@@ -99,22 +101,27 @@ export const runFullScan = inngest.createFunction(
       return data as Project;
     });
 
-    // Refund-safety gate: paid orgs never receive demo data, even if no provider
-    // is configured (real engines return Unavailable instead of fabricated data).
-    const demo = await step.run("resolve-demo-mode", () =>
-      resolveScanDemoMode(supabase, organizationId)
-    );
-
     const technicalFindings = await step.run("technical-audit", () =>
       stepTechnicalAudit(supabase, projectId, project.domain)
     );
 
-    await step.run("brand-extract", () => stepBrandExtract(supabase, project, demo));
+    await step.run("brand-extract", () => stepBrandExtract(supabase, project));
 
-    await step.run("visibility-scan", () => stepVisibilityScan(supabase, project, demo));
+    const prep = await step.run("visibility-prep", () => prepareVisibilityScan(supabase, project));
+    const activeEngines = getActiveScanEngines();
+    const allVisibility: VisibilityScanResult[] = [];
+    for (const engine of activeEngines) {
+      const batch = await step.run(`visibility-${engine}`, () =>
+        runVisibilityEngineBatch(supabase, project, prep, engine)
+      );
+      allVisibility.push(...batch);
+    }
+    await step.run("visibility-finalize", () =>
+      finalizeVisibilityScan(supabase, project, prep.runId, allVisibility)
+    );
 
     const { score } = await step.run("score-roadmap", () =>
-      stepScoreAndRoadmap(supabase, project, technicalFindings, demo)
+      stepScoreAndRoadmap(supabase, project, technicalFindings)
     );
 
     await step.run("finalize", async () => {
@@ -956,8 +963,7 @@ export const geoRewriteLoop = inngest.createFunction(
     await step.sleep("await-propagation", `${days}d`);
 
     const reprobeStart = new Date().toISOString();
-    const demo = await step.run("resolve-demo", () => resolveScanDemoMode(supabase, organizationId));
-    await step.run("re-probe", () => stepVisibilityScan(supabase, project, demo));
+    await step.run("re-probe", () => stepVisibilityScan(supabase, project));
 
     const after = await step.run("after-citation-rate", () =>
       measureCitationRate(supabase, projectId, { sinceISO: reprobeStart })
@@ -1003,10 +1009,25 @@ export const weeklyIntelligenceSync = inngest.createFunction(
 
         const competitors = (project.competitors || []) as string[];
         if (competitors.length) {
+          const [{ data: corpus }, { data: prompts }] = await Promise.all([
+            supabase
+              .from("keyword_opportunities")
+              .select("keyword")
+              .eq("project_id", project.id)
+              .order("opportunity_score", { ascending: false })
+              .limit(100),
+            supabase.from("prompts").select("text").eq("project_id", project.id).limit(20),
+          ]);
+          const seeds = [
+            seed,
+            ...(prompts || []).map((p) => p.text).slice(0, 10),
+          ];
+          const keywordUniverse = (corpus || []).map((k) => k.keyword).filter(Boolean);
           const { gaps, live: gapsLive } = await analyzeContentGaps(
             project.domain,
             competitors,
-            [seed]
+            seeds,
+            keywordUniverse.length ? keywordUniverse : undefined
           );
           if (gapsLive && gaps.length) {
             await supabase.from("content_gap_findings").upsert(

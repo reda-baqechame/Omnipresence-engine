@@ -7,9 +7,9 @@ import { buildSourceGraph, enrichSourceDomainAuthority } from "@/lib/engines/sou
 import { createTopInfluenceOutreachTasks, scoreSourceInfluenceV2 } from "@/lib/engines/source-influence";
 import { analyzePassageReadiness } from "@/lib/engines/passage-readiness";
 import { extractBrandProfile } from "@/lib/engines/brand-extraction";
-import { generatePromptUniverse, generateTemplatePrompts } from "@/lib/engines/prompt-generator";
+import { generatePromptUniverse } from "@/lib/engines/prompt-generator";
 import { runVisibilityScan, extractCitationSources, persistProbeTraces } from "@/lib/engines/visibility-scanner";
-import { SCAN_ENGINES } from "@/lib/config/scan-engines";
+import { getActiveScanEngines } from "@/lib/config/scan-engines";
 import { checkPlatformCoverage } from "@/lib/engines/coverage-checker";
 import { findAuthorityOpportunities } from "@/lib/engines/authority-finder";
 import { generateRoadmap } from "@/lib/engines/roadmap-generator";
@@ -24,16 +24,14 @@ import { attachEvidenceToResults, recordMeasurementEvidence } from "@/lib/engine
 import { MIN_PANEL_SAMPLE } from "@/lib/engines/prompt-panel-runner";
 import { lockGuaranteeBaseline } from "@/lib/engines/guarantee";
 import { syncTechnicalFindingsToOpsQueue } from "@/lib/engines/on-page-queue";
-import {
-  generateDemoPrompts,
-  generateDemoVisibilityResults,
-  generateDemoBrandProfile,
-  generateDemoAuthorityOpportunities,
-} from "@/lib/demo/scan-data";
 import { getPromptGenerationLimit, getVisibilityScanPromptLimit, getOrganizationPlan } from "@/lib/plans/limits";
 import { resolveAndPersistCompetitors } from "@/lib/engines/competitor-resolver";
 import { syncExecutionTasks, verifyTaskResolution } from "@/lib/engines/execution-tasks";
 import { syncFastestPathTasks } from "@/lib/engines/fastest-path-service";
+import {
+  assessVisibilityRunQuality,
+  visibilityRunStatusFromQuality,
+} from "@/lib/engines/visibility-run-quality";
 import { computeAndRecordFindingDiff } from "@/lib/engines/finding-diff";
 import type { Project, AuthorityOpportunity } from "@/types/database";
 
@@ -93,10 +91,8 @@ export async function stepTechnicalAudit(supabase: SupabaseClient, projectId: st
   return findings;
 }
 
-export async function stepBrandExtract(supabase: SupabaseClient, project: Project, demo: boolean) {
-  const brandProfile = demo
-    ? generateDemoBrandProfile(project.name, project.industry || "business")
-    : await extractBrandProfile(project.domain, project.name, project.industry);
+export async function stepBrandExtract(supabase: SupabaseClient, project: Project) {
+  const brandProfile = await extractBrandProfile(project.domain, project.name, project.industry);
 
   await supabase.from("brand_profiles").upsert(
     { project_id: project.id, ...brandProfile },
@@ -105,7 +101,7 @@ export async function stepBrandExtract(supabase: SupabaseClient, project: Projec
   return brandProfile;
 }
 
-export async function stepVisibilityScan(supabase: SupabaseClient, project: Project, demo: boolean) {
+export async function stepVisibilityScan(supabase: SupabaseClient, project: Project) {
   const plan = await getOrganizationPlan(supabase, project.organization_id);
   const promptCount = getPromptGenerationLimit(plan);
   const maxScanPrompts = getVisibilityScanPromptLimit(plan);
@@ -113,29 +109,16 @@ export async function stepVisibilityScan(supabase: SupabaseClient, project: Proj
   const { data: brand } = await supabase.from("brand_profiles").select("*").eq("project_id", project.id).single();
   const services = (brand?.products_services || []).map((s: { name: string }) => s.name);
 
-  const prompts = demo
-    ? generateDemoPrompts(project.id, project.name, project.industry || "", project.location || "", project.competitors || [])
-    : await generatePromptUniverse(
-        project.id,
-        project.name,
-        project.industry || "",
-        project.location || "",
-        project.competitors || [],
-        project.target_buyer || "",
-        services,
-        promptCount
-      ).then((p) =>
-        p.length > 0
-          ? p
-          : generateTemplatePrompts(
-              project.id,
-              project.name,
-              project.industry || "",
-              project.location || "",
-              project.competitors || [],
-              services
-            )
-      );
+  const prompts = await generatePromptUniverse(
+    project.id,
+    project.name,
+    project.industry || "",
+    project.location || "",
+    project.competitors || [],
+    project.target_buyer || "",
+    services,
+    promptCount
+  );
 
   await supabase.from("prompts").delete().eq("project_id", project.id);
   if (prompts.length) await supabase.from("prompts").insert(prompts);
@@ -145,47 +128,39 @@ export async function stepVisibilityScan(supabase: SupabaseClient, project: Proj
     .insert({
       project_id: project.id,
       status: "running",
-      engines: SCAN_ENGINES,
+      engines: getActiveScanEngines(),
       prompt_count: prompts.length,
       started_at: new Date().toISOString(),
     })
     .select()
     .single();
 
-  const visibilityResults = demo
-    ? generateDemoVisibilityResults(
-        project.id,
-        run!.id,
-        project.name,
-        project.domain,
-        project.competitors || [],
-        prompts.map((pr) => ({ text: pr.text }))
-      )
-    : await runVisibilityScan({
-        projectId: project.id,
-        runId: run!.id,
-        brandName: project.name,
-        brandDomain: project.domain,
-        competitors: project.competitors || [],
-        location: project.location || "United States",
-        prompts: prompts.map((pr) => ({ text: pr.text, priority: pr.priority })),
-        maxPrompts: maxScanPrompts,
-      });
+  await supabase.from("visibility_results").delete().eq("project_id", project.id);
+  await supabase.from("ai_probe_traces").delete().eq("project_id", project.id);
+
+  const visibilityResults = await runVisibilityScan({
+    projectId: project.id,
+    runId: run!.id,
+    brandName: project.name,
+    brandDomain: project.domain,
+    competitors: project.competitors || [],
+    location: project.location || "United States",
+    prompts: prompts.map((pr) => ({ text: pr.text, priority: pr.priority })),
+    maxPrompts: maxScanPrompts,
+  });
 
   if (visibilityResults.length) {
     const now = new Date().toISOString();
     // Evidence spine: persist tamper-evident evidence for measured probes and
-    // stamp evidence_url back onto each row (real scans only, never demo).
-    if (!demo) {
-      await attachEvidenceToResults(
-        supabase,
-        project.id,
-        run!.id,
-        visibilityResults as unknown as Parameters<typeof attachEvidenceToResults>[3]
-      ).catch(() => 0);
-    }
-    const rows = (visibilityResults as Array<Record<string, unknown>>).map((r) => {
-      const ds = (r.data_source as string | undefined) ?? (demo ? "simulated" : undefined);
+    // stamp evidence_url back onto each row.
+    await attachEvidenceToResults(
+      supabase,
+      project.id,
+      run!.id,
+      visibilityResults as unknown as Parameters<typeof attachEvidenceToResults>[3]
+    ).catch(() => 0);
+    const rows = (visibilityResults as unknown as Array<Record<string, unknown>>).map((r) => {
+      const ds = (r.data_source as string | undefined) ?? "unavailable";
       return {
         ...r,
         data_source: ds,
@@ -196,45 +171,43 @@ export async function stepVisibilityScan(supabase: SupabaseClient, project: Proj
     await supabase.from("visibility_results").insert(rows as never[]);
   }
 
-  if (!demo && visibilityResults.length) {
+  if (visibilityResults.length) {
     await persistProbeTraces(
       supabase,
       visibilityResults as import("@/lib/engines/visibility-scanner").VisibilityScanResult[]
     );
   }
 
-  const measuredCount = visibilityResults.filter(
-    (r) => (r as { data_source?: string }).data_source === "measured"
-  ).length;
-  const runStatus = demo ? "completed" : measuredCount === 0 ? "failed" : "completed";
+  const quality = assessVisibilityRunQuality(
+    visibilityResults as import("@/lib/engines/visibility-scanner").VisibilityScanResult[]
+  );
+  const runStatus = visibilityRunStatusFromQuality(quality);
 
-  if (!demo) {
-    const citationRows = extractCitationSources(
-      visibilityResults as import("@/lib/engines/visibility-scanner").VisibilityScanResult[],
-      project.competitors || [],
-      project.domain
-    ).map((row) => ({ ...row, project_id: project.id, run_id: run!.id }));
-    await supabase.from("citation_sources").delete().eq("project_id", project.id);
-    if (citationRows.length) await supabase.from("citation_sources").insert(citationRows);
+  const citationRows = extractCitationSources(
+    visibilityResults as import("@/lib/engines/visibility-scanner").VisibilityScanResult[],
+    project.competitors || [],
+    project.domain
+  ).map((row) => ({ ...row, project_id: project.id, run_id: run!.id }));
+  await supabase.from("citation_sources").delete().eq("project_id", project.id);
+  if (citationRows.length) await supabase.from("citation_sources").insert(citationRows);
 
-    // Rebuild the market Source/Citation Graph from the fresh citations on the
-    // Inngest path too (P1) — previously only the legacy sync path did this, so
-    // scheduled rescans left the graph stale. Then enrich domain authority from
-    // the sovereign webgraph/Tranco instead of leaving it null.
-    await buildSourceGraph(project.id).catch(() => undefined);
-    await enrichSourceDomainAuthority(supabase, project.id).catch(() => undefined);
-    // Re-score opportunities with the full v2 signal set now that authority is
-    // enriched, so "win these 3 sources" reflects real authority + intent (P2).
-    await scoreSourceInfluenceV2(supabase, project.id).catch(() => undefined);
-    await createTopInfluenceOutreachTasks(supabase, project.id, 3).catch(() => undefined);
-  }
+  // Rebuild the market Source/Citation Graph from the fresh citations on the
+  // Inngest path too (P1) — previously only the legacy sync path did this, so
+  // scheduled rescans left the graph stale. Then enrich domain authority from
+  // the sovereign webgraph/Tranco instead of leaving it null.
+  await buildSourceGraph(project.id).catch(() => undefined);
+  await enrichSourceDomainAuthority(supabase, project.id).catch(() => undefined);
+  // Re-score opportunities with the full v2 signal set now that authority is
+  // enriched, so "win these 3 sources" reflects real authority + intent (P2).
+  await scoreSourceInfluenceV2(supabase, project.id).catch(() => undefined);
+  await createTopInfluenceOutreachTasks(supabase, project.id, 3).catch(() => undefined);
 
   await supabase
     .from("visibility_runs")
     .update({
       status: runStatus,
       completed_at: new Date().toISOString(),
-      error_message: runStatus === "failed" ? "No live visibility measurements — check API keys (SERP + LLM)" : null,
+      error_message: quality.message,
     })
     .eq("id", run!.id);
 
@@ -244,8 +217,7 @@ export async function stepVisibilityScan(supabase: SupabaseClient, project: Proj
 export async function stepScoreAndRoadmap(
   supabase: SupabaseClient,
   project: Project,
-  technicalFindings: Awaited<ReturnType<typeof stepTechnicalAudit>>,
-  demo: boolean
+  technicalFindings: Awaited<ReturnType<typeof stepTechnicalAudit>>
 ) {
   const coverageItems = await checkPlatformCoverage(
     project.id,
@@ -261,26 +233,22 @@ export async function stepScoreAndRoadmap(
   // Resolve competitor names to real domains (SERP, confidence-scored) and
   // persist them so backlink/citation gaps use confirmed domains — never a
   // name+".com" guess.
-  const resolvedCompetitors = demo
-    ? []
-    : await resolveAndPersistCompetitors(
-        supabase,
-        project.id,
-        project.competitors || [],
-        project.industry || ""
-      );
+  const resolvedCompetitors = await resolveAndPersistCompetitors(
+    supabase,
+    project.id,
+    project.competitors || [],
+    project.industry || ""
+  );
 
-  const authorityOpportunities = demo
-    ? generateDemoAuthorityOpportunities(project.id, project.industry || "", project.competitors || [])
-    : await findAuthorityOpportunities(
-        project.id,
-        project.name,
-        project.domain,
-        project.industry || "",
-        project.competitors || [],
-        (prompts || []).map((p) => p.text),
-        resolvedCompetitors
-      );
+  const authorityOpportunities = await findAuthorityOpportunities(
+    project.id,
+    project.name,
+    project.domain,
+    project.industry || "",
+    project.competitors || [],
+    (prompts || []).map((p) => p.text),
+    resolvedCompetitors
+  );
 
   await supabase.from("authority_opportunities").delete().eq("project_id", project.id);
   if (authorityOpportunities.length) {
@@ -292,9 +260,9 @@ export async function stepScoreAndRoadmap(
       const oo = o as AuthorityOpportunity;
       return {
         ...o,
-        data_source: oo.data_source ?? (demo ? "simulated" : oo.measured ? "measured" : "estimated"),
-        provider: oo.provider ?? (demo ? "demo" : oo.measured ? "serp" : "ai_suggested"),
-        is_estimated: oo.is_estimated ?? (demo ? true : !oo.measured),
+        data_source: oo.data_source ?? (oo.measured ? "measured" : "unavailable"),
+        provider: oo.provider ?? (oo.measured ? "serp" : "unavailable"),
+        is_estimated: oo.is_estimated ?? false,
         last_checked_at: oo.last_checked_at ?? nowIso,
       };
     });
@@ -308,14 +276,12 @@ export async function stepScoreAndRoadmap(
 
   // Free authority + page-speed signals (graceful when unreachable). Authority
   // is the unified Authority Rating (Tranco + Common Crawl + OpenPageRank + age).
-  const [authRes, psRes, wikiPresence, wikidataPresence] = demo
-    ? [null, null, false, false]
-    : await Promise.all([
-        getAuthorityRating(project.domain).catch(() => null),
-        getPageSpeed(project.domain, "mobile"),
-        hasWikipediaPresence(project.name).catch(() => false),
-        hasWikidataEntity(project.name).catch(() => false),
-      ]);
+  const [authRes, psRes, wikiPresence, wikidataPresence] = await Promise.all([
+    getAuthorityRating(project.domain).catch(() => null),
+    getPageSpeed(project.domain, "mobile"),
+    hasWikipediaPresence(project.name).catch(() => false),
+    hasWikidataEntity(project.name).catch(() => false),
+  ]);
   const domainAuthority = authRes?.rating;
   const pageSpeedScore = psRes?.success && psRes.data ? pageSpeedToRetrievalScore(psRes.data) : undefined;
 
@@ -323,21 +289,19 @@ export async function stepScoreAndRoadmap(
   // has persisted per-URL metrics — recomputed from the same formula as the
   // weekly cron so the conversion signal actually moves the score.
   let behaviorSignal: number | undefined;
-  if (!demo) {
-    const { data: behaviorRows } = await supabase
-      .from("behavior_metrics")
-      .select("sessions, rage_clicks, quickbacks, scroll_depth_pct")
-      .eq("project_id", project.id);
-    if (behaviorRows && behaviorRows.length) {
-      behaviorSignal = conversionSignalFromRows(
-        behaviorRows.map((r) => ({
-          sessions: r.sessions ?? 0,
-          rageClicks: r.rage_clicks ?? 0,
-          quickbacks: r.quickbacks ?? 0,
-          scrollDepthPct: r.scroll_depth_pct,
-        }))
-      );
-    }
+  const { data: behaviorRows } = await supabase
+    .from("behavior_metrics")
+    .select("sessions, rage_clicks, quickbacks, scroll_depth_pct")
+    .eq("project_id", project.id);
+  if (behaviorRows && behaviorRows.length) {
+    behaviorSignal = conversionSignalFromRows(
+      behaviorRows.map((r) => ({
+        sessions: r.sessions ?? 0,
+        rageClicks: r.rage_clicks ?? 0,
+        quickbacks: r.quickbacks ?? 0,
+        scrollDepthPct: r.scroll_depth_pct,
+      }))
+    );
   }
 
   const score = calculateOmniPresenceScore({

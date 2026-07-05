@@ -56,8 +56,11 @@ async function crawlLocal(
   if (!robotsAllowed) {
     return { pages: [], duplicate_clusters: [] };
   }
+
+  // Seed queue from sitemap when available (deeper, sitemap-driven crawl).
+  const sitemapUrls = await discoverSitemapUrls(start.toString(), domain, maxPages);
   const visited = new Set<string>();
-  const queue = [start.toString()];
+  const queue = sitemapUrls.length ? sitemapUrls : [start.toString()];
   const pages: CrawlPageResult[] = [];
 
   while (queue.length > 0 && pages.length < maxPages) {
@@ -126,7 +129,7 @@ async function crawlLocal(
 
 export async function runSiteCrawl(
   domain: string,
-  maxPages = 25
+  maxPages = 100
 ): Promise<{
   pages: CrawlPageResult[];
   duplicate_clusters: Array<{ simhash: string; urls: string[] }>;
@@ -197,4 +200,36 @@ export function crawlFindingsToTechnical(
   }
 
   return findings;
+}
+
+async function discoverSitemapUrls(startUrl: string, domain: string, max: number): Promise<string[]> {
+  const candidates = [
+    new URL("/sitemap.xml", startUrl).toString(),
+    new URL("/sitemap_index.xml", startUrl).toString(),
+  ];
+  const out: string[] = [];
+  for (const sm of candidates) {
+    try {
+      const allowed = await isCrawlAllowed(sm, domain);
+      if (!allowed) continue;
+      const res = await fetch(sm, { signal: AbortSignal.timeout(10000) });
+      if (!res.ok) continue;
+      const xml = await res.text();
+      const locRe = /<loc>([^<]+)<\/loc>/gi;
+      let m: RegExpExecArray | null;
+      while ((m = locRe.exec(xml)) && out.length < max) {
+        const u = m[1].trim();
+        try {
+          const h = new URL(u).hostname.replace(/^www\./, "");
+          if (h === domain || h.endsWith(`.${domain}`)) out.push(u);
+        } catch {
+          /* skip */
+        }
+      }
+      if (out.length) break;
+    } catch {
+      /* try next */
+    }
+  }
+  return [...new Set(out)].slice(0, max);
 }

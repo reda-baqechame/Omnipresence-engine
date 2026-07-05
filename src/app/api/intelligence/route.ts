@@ -1,7 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { calculateAeoMetrics, compareAeoRuns } from "@/lib/engines/aeo-metrics";
-import type { VisibilityResult } from "@/types/database";
+import {
+  loadProjectVisibilitySnapshot,
+  groundedVisibilityResults,
+} from "@/lib/engines/visibility-scope";
 import { verifyProjectAccess } from "@/lib/security/project-access";
 import { apiError, apiForbidden, apiUnauthorized } from "@/lib/security/api-response";
 
@@ -23,39 +26,37 @@ export async function GET(request: NextRequest) {
     .single();
   if (!project) return apiError("Project not found", 404);
 
-  const [{ data: visibility }, { data: runs }, { data: gaps }, { data: keywords }] =
-    await Promise.all([
-      supabase.from("visibility_results").select("*").eq("project_id", projectId),
-      supabase
-        .from("visibility_runs")
-        .select("id, completed_at, created_at, status")
-        .eq("project_id", projectId)
-        .eq("status", "completed")
-        .order("created_at", { ascending: false })
-        .limit(2),
-      supabase
-        .from("content_gap_findings")
-        .select("*")
-        .eq("project_id", projectId)
-        .order("opportunity_score", { ascending: false })
-        .limit(20),
-      supabase
-        .from("keyword_opportunities")
-        .select("keyword, opportunity_score, difficulty, our_position")
-        .eq("project_id", projectId)
-        .order("opportunity_score", { ascending: false })
-        .limit(10),
-    ]);
+  const [{ data: gaps }, { data: keywords }, visibility] = await Promise.all([
+    supabase
+      .from("content_gap_findings")
+      .select("*")
+      .eq("project_id", projectId)
+      .order("opportunity_score", { ascending: false })
+      .limit(20),
+    supabase
+      .from("keyword_opportunities")
+      .select("keyword, opportunity_score, difficulty, our_position")
+      .eq("project_id", projectId)
+      .order("opportunity_score", { ascending: false })
+      .limit(10),
+    loadProjectVisibilitySnapshot(supabase, projectId, project.name, project.competitors || []),
+  ]);
 
-  const results = (visibility || []) as VisibilityResult[];
-  const aeo = calculateAeoMetrics(results, project.name, project.competitors || []);
+  const { groundedResults, allResults, runs } = visibility;
+  const aeo = calculateAeoMetrics(groundedResults, project.name, project.competitors || []);
 
   let runComparison = null;
-  if (runs && runs.length >= 2) {
-    const current = results.filter((r) => r.run_id === runs[0].id);
-    const previous = results.filter((r) => r.run_id === runs[1].id);
+  const completed = runs.filter((r) => r.status === "completed");
+  if (completed.length >= 2) {
+    const current = allResults.filter((r) => r.run_id === completed[0].id);
+    const previous = allResults.filter((r) => r.run_id === completed[1].id);
     if (current.length && previous.length) {
-      runComparison = compareAeoRuns(current, previous, project.name, project.competitors || []);
+      runComparison = compareAeoRuns(
+        groundedVisibilityResults(current),
+        groundedVisibilityResults(previous),
+        project.name,
+        project.competitors || []
+      );
     }
   }
 
@@ -67,7 +68,8 @@ export async function GET(request: NextRequest) {
     dataQuality: {
       measuredRate: aeo.measuredRate,
       totalProbes: aeo.totalProbes,
-      live: aeo.measuredRate > 0.5,
+      groundedProbes: groundedResults.length,
+      live: groundedResults.length >= 10,
     },
   });
 }

@@ -12,7 +12,7 @@ import { logProviderError } from "@/lib/observability/log";
 import { makeBrandMatcher, makeCompetitorMatcher, sameRegistrableDomain, type EntityMatcher } from "@/lib/engines/brand-matcher";
 import type { VisibilityEngine, VisibilityResult } from "@/types/database";
 import type { DataSource, DataQuality } from "@/types/database";
-import { SCAN_ENGINES } from "@/lib/config/scan-engines";
+import { getActiveScanEngines, isEngineConfigured } from "@/lib/config/scan-engines";
 import { hasLangfuse, mirrorTracesToLangfuse } from "@/lib/providers/langfuse";
 
 export interface VisibilityScanConfig {
@@ -37,19 +37,10 @@ export interface VisibilityScanResult extends Omit<VisibilityResult, "id" | "cre
   data_source: DataQuality;
 }
 
-const DEFAULT_ENGINES: VisibilityEngine[] = SCAN_ENGINES;
 // Samples per LLM prompt (majority-voted to tame AI response volatility).
-// Clamped to 1-10 and NaN-safe so a bad env value can never silently disable
-// LLM visibility (0 runs) or blow the budget with a runaway value.
 const AI_SAMPLE_RUNS = Math.min(10, Math.max(1, Math.floor(Number(process.env.VISIBILITY_SAMPLE_RUNS) || 3)));
-
-// Ground the first LLM sample with a live web-search tool (real cited URLs)
-// unless explicitly disabled. The cost firewall: only ONE grounded call per
-// prompt/engine; the rest sample parametrically for mention-rate stability.
 const AI_GROUNDED_SEARCH_ON = process.env.AI_GROUNDED_SEARCH !== "false";
-
 const LLM_ENGINES = new Set<VisibilityEngine>(["chatgpt", "claude", "gemini"]);
-
 const LLM_PLATFORM_MAP: Partial<Record<VisibilityEngine, LLMPlatform>> = {
   chatgpt: "chat_gpt",
   google_ai_overview: "google",
@@ -58,7 +49,7 @@ const LLM_PLATFORM_MAP: Partial<Record<VisibilityEngine, LLMPlatform>> = {
 export async function runVisibilityScan(
   config: VisibilityScanConfig
 ): Promise<VisibilityScanResult[]> {
-  const engines = config.engines || DEFAULT_ENGINES;
+  const engines = config.engines ?? getActiveScanEngines();
   const results: VisibilityScanResult[] = [];
   const scanLimit = config.maxPrompts ?? 30;
 
@@ -71,8 +62,8 @@ export async function runVisibilityScan(
   // and leave the run wedged). When the budget is exhausted we stop probing and
   // return what we measured so far — a partial-but-honest result beats a kill.
   const VISIBILITY_SCAN_BUDGET_MS = Math.max(
-    60000,
-    Number(process.env.VISIBILITY_SCAN_BUDGET_MS) || 240000
+    120000,
+    Number(process.env.VISIBILITY_SCAN_BUDGET_MS) || 600000
   );
   const deadline = Date.now() + VISIBILITY_SCAN_BUDGET_MS;
 
@@ -133,6 +124,10 @@ async function scanSinglePrompt(
   const domainLower = config.brandDomain.replace(/^www\./, "").toLowerCase();
   const brandToken = domainLower.split(".")[0];
   const brandMatcher = makeBrandMatcher(config.brandName, config.brandDomain);
+
+  if (!isEngineConfigured(engine)) {
+    return unavailableRow(base, "provider_not_configured");
+  }
 
   // Preferred (when enabled): grounded UI-surface capture for AI engines —
   // the real surface a user sees, not just the model's parametric knowledge.
@@ -356,6 +351,7 @@ async function sampleLLMVisibility(
 ): Promise<VisibilityScanResult | null> {
   const provider: "openai" | "gemini" | "claude" = engine === "chatgpt" ? "openai" : engine === "gemini" ? "gemini" : "claude";
   const runs: Array<ReturnType<typeof mapAIResult> & { text: string }> = [];
+  let lastError: string | undefined;
 
   // Cost-bounded grounding: the FIRST sample uses a live web-search tool (real
   // cited URLs → grounded measurement); the remaining samples are cheap
@@ -373,6 +369,8 @@ async function sampleLLMVisibility(
     );
     if (res.success && res.data) {
       runs.push({ ...mapAIResult(res.data), text: res.data.rawResponse || "" });
+    } else if (res.error) {
+      lastError = res.error;
     }
   }
 
@@ -396,7 +394,27 @@ async function sampleLLMVisibility(
     }
   }
 
-  if (runs.length === 0) return null;
+  if (runs.length === 0) {
+    const reason = lastError?.toLowerCase().includes("quota") ? "llm_quota_exceeded" : "llm_probe_failed";
+    return unavailableRow(
+      {
+        run_id: config.runId,
+        project_id: config.projectId,
+        prompt_id: prompt.id,
+        engine,
+        prompt_text: prompt.text,
+        brand_mentioned: false,
+        brand_cited: false,
+        competitor_mentions: {},
+        competitor_citations: {},
+        source_domains: [],
+        cited_urls: [],
+        data_source: "unavailable",
+      },
+      reason,
+      lastError?.slice(0, 200)
+    );
+  }
 
   // Did any sample actually run grounded (real citations)? That decides whether
   // this probe is honestly "grounded/measured" vs "model_knowledge".

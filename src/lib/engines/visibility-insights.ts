@@ -8,10 +8,16 @@
  */
 
 import type { VisibilityResult } from "@/types/database";
+import { resultDataQuality, isCountableVisibility } from "@/lib/engines/provenance";
 
 /** A probe counts as measured unless the engine explicitly couldn't be read. */
 export function isMeasured(r: VisibilityResult): boolean {
-  return r.data_source !== "unavailable" && r.measurement_mode !== "unavailable";
+  return isCountableVisibility(resultDataQuality(r)) && r.measurement_mode !== "unavailable";
+}
+
+/** Grounded = live SERP or web-search citations — the only pool for citation rates. */
+export function isGrounded(r: VisibilityResult): boolean {
+  return resultDataQuality(r) === "measured";
 }
 
 /**
@@ -42,36 +48,62 @@ function winningEntities(r: VisibilityResult): string[] {
 
 export interface EngineStat {
   engine: string;
-  measured: number;
+  grounded: number;
+  modelKnowledge: number;
   unavailable: number;
   mentioned: number;
   cited: number;
-  mentionRate: number | null; // null = not measured this run
+  mentionRate: number | null;
   citationRate: number | null;
 }
 
-/** Per-engine stats that keep measured and unavailable strictly separate. */
+/** Per-engine stats — citations from grounded probes only; mentions include model-knowledge reads. */
 export function measuredEngineStats(results: VisibilityResult[]): EngineStat[] {
-  const map = new Map<string, EngineStat>();
+  const map = new Map<string, EngineStat & { mentionHits: number; citeHits: number; grounded: number }>();
   for (const r of results) {
     let s = map.get(r.engine);
     if (!s) {
-      s = { engine: r.engine, measured: 0, unavailable: 0, mentioned: 0, cited: 0, mentionRate: null, citationRate: null };
+      s = {
+        engine: r.engine,
+        grounded: 0,
+        modelKnowledge: 0,
+        unavailable: 0,
+        mentioned: 0,
+        cited: 0,
+        mentionRate: null,
+        citationRate: null,
+        mentionHits: 0,
+        citeHits: 0,
+      };
       map.set(r.engine, s);
     }
-    if (isMeasured(r)) {
-      s.measured += 1;
-      if (r.brand_mentioned) s.mentioned += 1;
-      if (r.brand_cited) s.cited += 1;
+    const q = resultDataQuality(r);
+    if (isGrounded(r)) {
+      s.grounded += 1;
+      if (r.brand_mentioned) s.mentionHits += 1;
+      if (r.brand_cited) s.citeHits += 1;
+    } else if (isCountableVisibility(q)) {
+      s.modelKnowledge += 1;
+      if (r.brand_mentioned) s.mentionHits += 1;
     } else {
       s.unavailable += 1;
     }
   }
-  for (const s of map.values()) {
-    s.mentionRate = s.measured > 0 ? s.mentioned / s.measured : null;
-    s.citationRate = s.measured > 0 ? s.cited / s.measured : null;
-  }
-  return [...map.values()].sort((a, b) => b.measured - a.measured);
+  return [...map.values()]
+    .map((s) => {
+      const countable = s.grounded + s.modelKnowledge;
+      return {
+        engine: s.engine,
+        grounded: s.grounded,
+        modelKnowledge: s.modelKnowledge,
+        unavailable: s.unavailable,
+        mentioned: s.mentionHits,
+        cited: s.citeHits,
+        mentionRate: countable > 0 ? s.mentionHits / countable : null,
+        citationRate: s.grounded > 0 ? s.citeHits / s.grounded : null,
+      };
+    })
+    .sort((a, b) => b.grounded + b.modelKnowledge - (a.grounded + a.modelKnowledge));
 }
 
 export interface CompetitorWin {

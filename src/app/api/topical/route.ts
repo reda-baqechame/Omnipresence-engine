@@ -60,7 +60,12 @@ export async function POST(request: NextRequest) {
       .limit(150);
     const keywords = (kws || []).map((k) => k.keyword as string).filter(Boolean);
 
-    const result = await buildTopicalMap({ brand, industry: project.industry || undefined, keywords });
+    const result = await buildTopicalMap({
+      brand,
+      industry: project.industry || undefined,
+      keywords,
+      domain: project.domain,
+    });
     if (result.available && result.map) {
       const spokeCount = result.map.hubs.reduce((s, h) => s + h.spokes.length, 0);
       await supabase.from("topical_maps").insert({

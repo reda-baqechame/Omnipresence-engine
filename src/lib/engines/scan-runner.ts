@@ -5,7 +5,7 @@ import { computeAndRecordFindingDiff } from "@/lib/engines/finding-diff";
 import { extractBrandProfile } from "@/lib/engines/brand-extraction";
 import { generatePromptUniverse } from "@/lib/engines/prompt-generator";
 import { runVisibilityScan, extractCitationSources, persistProbeTraces } from "@/lib/engines/visibility-scanner";
-import { SCAN_ENGINES } from "@/lib/config/scan-engines";
+import { getActiveScanEngines } from "@/lib/config/scan-engines";
 import { checkPlatformCoverage } from "@/lib/engines/coverage-checker";
 import { findAuthorityOpportunities } from "@/lib/engines/authority-finder";
 import { generateRoadmap } from "@/lib/engines/roadmap-generator";
@@ -17,16 +17,13 @@ import {
   getVisibilityScanPromptLimit,
   getOrganizationPlan,
 } from "@/lib/plans/limits";
-import {
-  resolveScanDemoMode,
-  generateDemoPrompts,
-  generateDemoVisibilityResults,
-  generateDemoBrandProfile,
-  generateDemoAuthorityOpportunities,
-} from "@/lib/demo/scan-data";
 import { resolveAndPersistCompetitors } from "@/lib/engines/competitor-resolver";
 import { syncExecutionTasks, verifyTaskResolution } from "@/lib/engines/execution-tasks";
 import { syncFastestPathTasks } from "@/lib/engines/fastest-path-service";
+import {
+  assessVisibilityRunQuality,
+  visibilityRunStatusFromQuality,
+} from "@/lib/engines/visibility-run-quality";
 import { emitWebhookEvent } from "@/lib/notifications/webhooks";
 import { buildSourceGraph } from "@/lib/engines/source-graph";
 import type {
@@ -59,7 +56,6 @@ export async function runProjectScan(
   if (!project) throw new Error("Project not found");
 
   const p = project as Project;
-  const demo = await resolveScanDemoMode(supabase, p.organization_id);
   const plan = await getOrganizationPlan(supabase, p.organization_id);
   const promptCount = getPromptGenerationLimit(plan);
   const maxScanPrompts = getVisibilityScanPromptLimit(plan);
@@ -87,9 +83,7 @@ export async function runProjectScan(
   await supabase.from("technical_findings").delete().eq("project_id", projectId);
   if (findingRows.length > 0) await supabase.from("technical_findings").insert(findingRows);
 
-  const brandProfile = demo
-    ? generateDemoBrandProfile(p.name, p.industry || "business")
-    : await extractBrandProfile(p.domain, p.name, p.industry);
+  const brandProfile = await extractBrandProfile(p.domain, p.name, p.industry);
 
   await supabase.from("brand_profiles").upsert(
     { project_id: projectId, ...brandProfile },
@@ -97,18 +91,16 @@ export async function runProjectScan(
   );
 
   const services = (brandProfile.products_services || []).map((s) => s.name);
-  const prompts = demo
-    ? generateDemoPrompts(projectId, p.name, p.industry || "", p.location || "", p.competitors || [])
-    : await generatePromptUniverse(
-        projectId,
-        p.name,
-        p.industry || "",
-        p.location || "",
-        p.competitors || [],
-        p.target_buyer || "",
-        services,
-        promptCount
-      );
+  const prompts = await generatePromptUniverse(
+    projectId,
+    p.name,
+    p.industry || "",
+    p.location || "",
+    p.competitors || [],
+    p.target_buyer || "",
+    services,
+    promptCount
+  );
 
   await supabase.from("prompts").delete().eq("project_id", projectId);
   if (prompts.length > 0) await supabase.from("prompts").insert(prompts);
@@ -118,78 +110,68 @@ export async function runProjectScan(
     .insert({
       project_id: projectId,
       status: "running",
-      engines: SCAN_ENGINES,
+      engines: getActiveScanEngines(),
       prompt_count: prompts.length,
       started_at: new Date().toISOString(),
     })
     .select()
     .single();
 
-  const visibilityResults = demo
-    ? generateDemoVisibilityResults(
-        projectId,
-        run!.id,
-        p.name,
-        p.domain,
-        p.competitors || [],
-        prompts.map((pr) => ({ text: pr.text }))
-      )
-    : await runVisibilityScan({
-        projectId,
-        runId: run!.id,
-        brandName: p.name,
-        brandDomain: p.domain,
-        competitors: p.competitors || [],
-        location: p.location || "United States",
-        prompts: prompts.map((pr) => ({ text: pr.text, priority: pr.priority })),
-        maxPrompts: maxScanPrompts,
-      });
+  // Replace stale probes so headline metrics always reflect the latest run only.
+  await supabase.from("visibility_results").delete().eq("project_id", projectId);
+  await supabase.from("ai_probe_traces").delete().eq("project_id", projectId);
+
+  const visibilityResults = await runVisibilityScan({
+    projectId,
+    runId: run!.id,
+    brandName: p.name,
+    brandDomain: p.domain,
+    competitors: p.competitors || [],
+    location: p.location || "United States",
+    prompts: prompts.map((pr) => ({ text: pr.text, priority: pr.priority })),
+    maxPrompts: maxScanPrompts,
+  });
 
   if (visibilityResults.length > 0) {
     const now = new Date().toISOString();
-    const rows = (visibilityResults as Array<Record<string, unknown>>).map((r) => {
-      const ds = (r.data_source as string | undefined) ?? (demo ? "simulated" : undefined);
+    const rows = (visibilityResults as unknown as Array<Record<string, unknown>>).map((r) => {
+      const ds = (r.data_source as string | undefined) ?? "unavailable";
       return { ...r, data_source: ds, is_estimated: ds !== "measured", last_checked_at: now };
     });
     await supabase.from("visibility_results").insert(rows as never[]);
   }
 
-  if (!demo && visibilityResults.length > 0) {
+  if (visibilityResults.length > 0) {
     await persistProbeTraces(
       supabase,
       visibilityResults as import("@/lib/engines/visibility-scanner").VisibilityScanResult[]
     );
   }
 
-  if (!demo) {
-    const citationRows = extractCitationSources(
-      visibilityResults as import("@/lib/engines/visibility-scanner").VisibilityScanResult[],
-      p.competitors || [],
-      p.domain
-    ).map((row) => ({ ...row, project_id: projectId, run_id: run!.id }));
-    await supabase.from("citation_sources").delete().eq("project_id", projectId);
-    if (citationRows.length > 0) {
-      await supabase.from("citation_sources").insert(citationRows);
-    }
-    // Rebuild the market-specific Source/Citation Graph from the fresh citations.
-    await buildSourceGraph(projectId);
+  const citationRows = extractCitationSources(
+    visibilityResults as import("@/lib/engines/visibility-scanner").VisibilityScanResult[],
+    p.competitors || [],
+    p.domain
+  ).map((row) => ({ ...row, project_id: projectId, run_id: run!.id }));
+  await supabase.from("citation_sources").delete().eq("project_id", projectId);
+  if (citationRows.length > 0) {
+    await supabase.from("citation_sources").insert(citationRows);
   }
+  // Rebuild the market-specific Source/Citation Graph from the fresh citations.
+  await buildSourceGraph(projectId);
 
-  // Unify the failure gate with the step-based pipeline: a live scan that
-  // produced zero measured results is a failed run, not a silent "completed 0".
-  const measuredCount = visibilityResults.filter(
-    (r) => (r as { data_source?: string }).data_source === "measured"
-  ).length;
-  const runStatus = demo ? "completed" : measuredCount === 0 ? "failed" : "completed";
+  // A scan with only a handful of SERP hits while every AI engine is unavailable
+  // is not a professional result — mark the run failed so the UI prompts re-scan.
+  const quality = assessVisibilityRunQuality(
+    visibilityResults as import("@/lib/engines/visibility-scanner").VisibilityScanResult[]
+  );
+  const runStatus = visibilityRunStatusFromQuality(quality);
   await supabase
     .from("visibility_runs")
     .update({
       status: runStatus,
       completed_at: new Date().toISOString(),
-      error_message:
-        runStatus === "failed"
-          ? "No live visibility measurements — check API keys (SERP + LLM)"
-          : null,
+      error_message: quality.message,
     })
     .eq("id", run!.id);
 
@@ -202,29 +184,30 @@ export async function runProjectScan(
   await supabase.from("coverage_items").delete().eq("project_id", projectId);
   if (coverageItems.length > 0) await supabase.from("coverage_items").insert(coverageItems);
 
-  const resolvedCompetitors = demo
-    ? []
-    : await resolveAndPersistCompetitors(supabase, projectId, p.competitors || [], p.industry || "");
+  const resolvedCompetitors = await resolveAndPersistCompetitors(
+    supabase,
+    projectId,
+    p.competitors || [],
+    p.industry || ""
+  );
 
-  const authorityOpportunities = demo
-    ? generateDemoAuthorityOpportunities(projectId, p.industry || "", p.competitors || [])
-    : await findAuthorityOpportunities(
-        projectId,
-        p.name,
-        p.domain,
-        p.industry || "",
-        p.competitors || [],
-        prompts.map((pr) => pr.text),
-        resolvedCompetitors
-      );
+  const authorityOpportunities = await findAuthorityOpportunities(
+    projectId,
+    p.name,
+    p.domain,
+    p.industry || "",
+    p.competitors || [],
+    prompts.map((pr) => pr.text),
+    resolvedCompetitors
+  );
 
   await supabase.from("authority_opportunities").delete().eq("project_id", projectId);
   if (authorityOpportunities.length > 0) {
     const authRows = (authorityOpportunities as Array<Record<string, unknown>>).map((o) => ({
       ...o,
-      data_source: o.data_source ?? (demo ? "simulated" : "measured"),
-      provider: o.provider ?? (demo ? "demo" : "serp"),
-      is_estimated: o.is_estimated ?? demo,
+      data_source: o.data_source ?? ((o as { measured?: boolean }).measured ? "measured" : "unavailable"),
+      provider: o.provider ?? ((o as { measured?: boolean }).measured ? "serp" : "unavailable"),
+      is_estimated: o.is_estimated ?? false,
       last_checked_at: o.last_checked_at ?? scanAuditedAt,
     }));
     await supabase.from("authority_opportunities").insert(authRows as never[]);
@@ -298,7 +281,7 @@ export async function runProjectScan(
     }
   }
 
-  if (!demo && p.organization_id) {
+  if (p.organization_id) {
     const providerCredits: Record<string, number> = {};
     for (const r of visibilityResults) {
       const detail =
@@ -313,7 +296,7 @@ export async function runProjectScan(
     await trackApiUsage(supabase, p.organization_id, "presenceos", "full_scan", credits);
   }
 
-  return { projectId, score: score.omnipresence_score, demo };
+  return { projectId, score: score.omnipresence_score, demo: false };
 }
 
 export async function getOwnerEmail(

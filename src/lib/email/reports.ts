@@ -143,7 +143,13 @@ export async function sendCitationDropAlert(
 }
 
 export interface MonitoringAlertItem {
-  type: "rank_drop" | "finding_regression" | "serp_feature";
+  type:
+    | "rank_drop"
+    | "finding_regression"
+    | "serp_feature"
+    | "sov_delta"
+    | "coverage_gap"
+    | "competitor_win";
   message: string;
 }
 

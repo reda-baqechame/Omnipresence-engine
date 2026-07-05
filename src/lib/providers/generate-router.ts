@@ -144,7 +144,8 @@ async function runAnthropic(system: string, user: string): Promise<ProviderResul
     await assertWithinBudget("anthropic");
     const { generateText } = await import("ai");
     const { anthropic } = await import("@ai-sdk/anthropic");
-    const modelId = "claude-3-5-haiku-latest";
+    const { defaultModelId } = await import("@/lib/providers/ai-gateway");
+    const modelId = defaultModelId("anthropic");
     const result = await generateText({
       model: anthropic(modelId),
       system,

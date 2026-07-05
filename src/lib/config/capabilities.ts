@@ -2,6 +2,9 @@
  * OmniPresence Engine v2 — capability registry.
  * All engines are enabled by default; live data is used whenever credentials exist.
  */
+import { hasCcWebGraphCapability } from "@/lib/providers/ccwebgraph";
+import { hasOpenPageRankCapability } from "@/lib/providers/openpagerank";
+import { hasCloudflareRadarCapability } from "@/lib/providers/cloudflare-radar";
 
 export type ProviderId =
   | "openai"
@@ -299,6 +302,9 @@ export function getCapabilitiesSummary() {
     freeSignals: {
       pageSpeed: true,
       trancoAuthority: true,
+      ccWebGraph: hasCcWebGraphCapability(),
+      openPageRank: hasOpenPageRankCapability(),
+      cloudflareRadar: hasCloudflareRadarCapability(),
       aeoReadiness: true,
       // Phase 11 - the Free Data Moat (all keyless / open-source).
       googleTrends: true,

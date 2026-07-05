@@ -14,7 +14,8 @@ import { apiError, apiForbidden, apiUnauthorized, validateBody } from "@/lib/sec
 import { KeywordsSchema } from "@/lib/validation/schemas";
 import { getValidOAuthToken } from "@/lib/oauth/tokens";
 import { fetchGscTopQueries } from "@/lib/engines/gsc-queries";
-import { deriveGscAnchor, type VolumeAnchor } from "@/lib/engines/keyword-volume";
+import { deriveGscAnchor, deriveBingAnchor, type VolumeAnchor } from "@/lib/engines/keyword-volume";
+import { fetchBingQueryKeywords } from "@/lib/providers/bing-query-stats";
 import { buildKeywordUniverse } from "@/lib/engines/keyword-universe";
 
 export async function GET(request: NextRequest) {
@@ -88,7 +89,7 @@ export async function POST(request: NextRequest) {
       .single();
 
     try {
-      const anchor = await deriveVolumeAnchorFromGsc(supabase, projectId, project.domain);
+      const anchor = await deriveVolumeAnchor(supabase, projectId, project.domain);
       const plannerOptions = await loadPlannerOptions(supabase, projectId, geo);
       const { opportunities, live, processed } = await runBulkKeywordResearch(
         seedList,
@@ -138,16 +139,21 @@ export async function POST(request: NextRequest) {
   }
 
   if (action === "content_gaps") {
-    const { data: prompts } = await supabase
-      .from("prompts")
-      .select("text")
-      .eq("project_id", projectId)
-      .limit(20);
+    const [{ data: prompts }, { data: corpus }] = await Promise.all([
+      supabase.from("prompts").select("text").eq("project_id", projectId).limit(20),
+      supabase.from("keyword_opportunities").select("keyword").eq("project_id", projectId).order("opportunity_score", { ascending: false }).limit(100),
+    ]);
     const seeds = [
       project.industry || project.domain.split(".")[0],
       ...(prompts || []).map((p) => p.text).slice(0, 10),
     ];
-    const { gaps, live } = await analyzeContentGaps(project.domain, competitors, seeds);
+    const keywordUniverse = (corpus || []).map((k) => k.keyword).filter(Boolean);
+    const { gaps, live } = await analyzeContentGaps(
+      project.domain,
+      competitors,
+      seeds,
+      keywordUniverse.length ? keywordUniverse : undefined
+    );
 
     if (gaps.length) {
       await supabase.from("content_gap_findings").upsert(
@@ -183,7 +189,7 @@ export async function POST(request: NextRequest) {
   // Build a real volume anchor from Google Search Console when connected: a
   // query the site ranks top-10 for, where impressions ≈ monthly searches.
   // Lets us extrapolate absolute volume for other keywords via Google Trends.
-  const anchor = await deriveVolumeAnchorFromGsc(supabase, projectId, project.domain);
+  const anchor = await deriveVolumeAnchor(supabase, projectId, project.domain);
   const plannerOptions = await loadPlannerOptions(supabase, projectId, geo);
 
   const { opportunities, live } = await runKeywordResearch(researchSeed, project.domain, anchor, 20, plannerOptions);
@@ -198,19 +204,28 @@ export async function POST(request: NextRequest) {
   });
 }
 
-async function deriveVolumeAnchorFromGsc(
+async function deriveVolumeAnchor(
   supabase: Awaited<ReturnType<typeof createClient>>,
   projectId: string,
   domain: string
 ): Promise<VolumeAnchor | null> {
   try {
-    const token = await getValidOAuthToken(supabase, projectId, "google_search_console");
-    if (!token) return null;
-    const end = new Date();
-    const start = new Date(end.getTime() - 30 * 24 * 60 * 60 * 1000);
-    const fmt = (d: Date) => d.toISOString().slice(0, 10);
-    const rows = await fetchGscTopQueries(token, domain, fmt(start), fmt(end), 200);
-    return deriveGscAnchor(rows);
+    const gscToken = await getValidOAuthToken(supabase, projectId, "google_search_console");
+    if (gscToken) {
+      const end = new Date();
+      const start = new Date(end.getTime() - 30 * 24 * 60 * 60 * 1000);
+      const fmt = (d: Date) => d.toISOString().slice(0, 10);
+      const rows = await fetchGscTopQueries(gscToken, domain, fmt(start), fmt(end), 200);
+      const gscAnchor = deriveGscAnchor(rows);
+      if (gscAnchor) return gscAnchor;
+    }
+    const bingToken = await getValidOAuthToken(supabase, projectId, "bing_webmaster");
+    if (bingToken) {
+      const siteUrl = domain.startsWith("http") ? domain : `https://${domain}/`;
+      const bing = await fetchBingQueryKeywords(bingToken, siteUrl, 100);
+      if (bing.available) return deriveBingAnchor(bing.rows);
+    }
+    return null;
   } catch {
     return null;
   }

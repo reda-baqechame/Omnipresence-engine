@@ -1,8 +1,9 @@
 import { notFound } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
-import { calculateVisibilityMetrics } from "@/lib/engines/visibility-scanner";
-import { calculateShareOfVoice, calculateShareOfVoiceByEngine, calculateSovTrend, compareShareOfVoice } from "@/lib/engines/share-of-voice";
-import { measuredEngineStats, competitorWinPrompts, topCitedSources, missingCitationSources, pageOpportunities } from "@/lib/engines/visibility-insights";
+import { calculateShareOfVoiceByEngine, calculateSovTrend, compareShareOfVoice } from "@/lib/engines/share-of-voice";
+import { measuredEngineStats, competitorWinPrompts, topCitedSources, missingCitationSources, pageOpportunities, isMeasured } from "@/lib/engines/visibility-insights";
+import { loadProjectVisibilitySnapshot } from "@/lib/engines/visibility-scope";
+import { VisibilityHonestyBanner, VisibilityMetricTiles } from "@/components/visibility-honesty-banner";
 import { SovLeaderboard } from "@/components/sov-leaderboard";
 import { SovByEngineBreakdown } from "@/components/sov-by-engine";
 import { SovTrendChart } from "@/components/sov-trend-chart";
@@ -30,29 +31,23 @@ export default async function VisibilityPage({
 
   const supabase = await createClient();
 
-  const [{ data: visibility }, { data: prompts }, { data: runs }] = await Promise.all([
-    supabase.from("visibility_results").select("*").eq("project_id", id).order("created_at", { ascending: false }),
+  const [{ data: prompts }, snapshot] = await Promise.all([
     supabase.from("prompts").select("*").eq("project_id", id).order("priority", { ascending: false }),
-    supabase.from("visibility_runs").select("*").eq("project_id", id).order("created_at", { ascending: false }).limit(5),
+    loadProjectVisibilitySnapshot(supabase, id, project.name, project.competitors || []),
   ]);
 
-  const results = (visibility || []) as VisibilityResult[];
-  const metrics = calculateVisibilityMetrics(results);
+  const { scopedResults, groundedResults, allResults, runs } = snapshot;
+  const results = scopedResults;
+  const metrics = snapshot.metrics;
+  const vis = snapshot;
   const liveMode = preferLiveData();
 
   const completedRuns = (runs || []).filter((r) => r.status === "completed");
-
-  // Share of Voice reflects the CURRENT competitive standing, so scope it to the
-  // latest completed run (fall back to all results if no run is tagged).
-  const latestRunId = completedRuns[0]?.id;
-  const sovResults = latestRunId ? results.filter((r) => r.run_id === latestRunId) : results;
-  const sov = calculateShareOfVoice(
-    sovResults.length ? sovResults : results,
-    project.name,
-    project.competitors || []
-  );
+  const latestRunId = vis.latestRun?.id ?? completedRuns[0]?.id;
+  const sovResults = results;
+  const sov = vis.sov;
   const sovByEngine = calculateShareOfVoiceByEngine(
-    sovResults.length ? sovResults : results,
+    sovResults,
     project.name,
     project.competitors || []
   );
@@ -60,7 +55,7 @@ export default async function VisibilityPage({
     completedRuns.map((r) => ({
       runId: r.id,
       date: r.completed_at || r.created_at,
-      results: results.filter((x) => x.run_id === r.id),
+      results: allResults.filter((x) => x.run_id === r.id),
     })),
     project.name,
     project.competitors || []
@@ -68,8 +63,8 @@ export default async function VisibilityPage({
   const sovComparison =
     completedRuns.length >= 2
       ? compareShareOfVoice(
-          results.filter((x) => x.run_id === completedRuns[0].id),
-          results.filter((x) => x.run_id === completedRuns[1].id),
+          allResults.filter((x) => x.run_id === completedRuns[0].id),
+          allResults.filter((x) => x.run_id === completedRuns[1].id),
           project.name,
           project.competitors || []
         )
@@ -79,8 +74,8 @@ export default async function VisibilityPage({
   if (completedRuns.length >= 2) {
     const currentRun = completedRuns[0];
     const previousRun = completedRuns[1];
-    const currentResults = results.filter((r) => r.run_id === currentRun.id);
-    const previousResults = results.filter((r) => r.run_id === previousRun.id);
+    const currentResults = allResults.filter((r) => r.run_id === currentRun.id);
+    const previousResults = allResults.filter((r) => r.run_id === previousRun.id);
 
     if (currentResults.length > 0 && previousResults.length > 0) {
       runDelta = {
@@ -96,7 +91,7 @@ export default async function VisibilityPage({
   const engineStats = measuredEngineStats(results);
 
   // Actionable gaps, scoped to the current competitive snapshot (latest run).
-  const insightResults = sovResults.length ? sovResults : results;
+  const insightResults = sovResults;
   const competitorWins = competitorWinPrompts(insightResults);
   const citedSources = topCitedSources(insightResults, project.domain || "");
   const missingSources = citedSources.filter((s) => !s.ownsBrand);
@@ -111,6 +106,7 @@ export default async function VisibilityPage({
       byCat[p.category].prompts++;
     }
     for (const r of results) {
+      if (!isMeasured(r)) continue;
       const cat = r.prompt_id ? promptMap.get(r.prompt_id) : null;
       if (!cat) continue;
       byCat[cat].total++;
@@ -130,33 +126,22 @@ export default async function VisibilityPage({
       <div className="flex flex-wrap items-center justify-between gap-3 text-sm">
         <div className="flex items-center gap-3">
           <span className={`px-2 py-1 rounded-full text-xs font-medium ${liveMode ? "bg-green-500/10 text-green-400 border border-green-500/30" : "bg-yellow-500/10 text-yellow-400 border border-yellow-500/30"}`}>
-            {liveMode ? "Live DIY stack" : "Demo mode"}
+            {liveMode ? "Live DIY stack" : "Providers not configured"}
           </span>
           <span className="text-muted-foreground">
-            {Math.round(metrics.measuredRate * 100)}% measured citations
+            {vis.groundedCount} grounded probes · {Math.round(vis.groundedRate * 100)}% coverage
           </span>
-          {metrics.sampleSize > 0 && (
-            <span className="text-muted-foreground" title="95% Wilson confidence interval on the mention rate across measured probes. A narrower band means a more certain measurement.">
-              Mention rate 95% CI: {Math.round(metrics.mentionRateCI.low * 100)}–{Math.round(metrics.mentionRateCI.high * 100)}% · {Math.round(metrics.confidence * 100)}% confidence
+          {vis.ratesReliable && metrics.sampleSize > 0 && (
+            <span className="text-muted-foreground" title="95% Wilson confidence interval on grounded mention rate">
+              Mention 95% CI: {Math.round(metrics.mentionRateCI.low * 100)}–{Math.round(metrics.mentionRateCI.high * 100)}% · n={metrics.sampleSize}
             </span>
           )}
         </div>
         <ExportButtons projectId={id} types={["visibility"]} />
       </div>
 
-      <div className="grid md:grid-cols-4 gap-4">
-        {[
-          { label: "Mention Rate", value: `${Math.round(metrics.mentionRate * 100)}%` },
-          { label: "Citation Rate", value: `${Math.round(metrics.citationRate * 100)}%` },
-          { label: "Share of Voice", value: `${Math.round(metrics.shareOfVoice * 100)}%` },
-          { label: "Win Rate", value: `${Math.round(metrics.winRate * 100)}%` },
-        ].map((m) => (
-          <div key={m.label} className="bg-card border border-border rounded-xl p-4 text-center">
-            <div className="text-2xl font-bold text-primary">{m.value}</div>
-            <div className="text-sm text-muted-foreground">{m.label}</div>
-          </div>
-        ))}
-      </div>
+      <VisibilityHonestyBanner snapshot={vis} />
+      <VisibilityMetricTiles snapshot={vis} />
 
       <SovLeaderboard sov={sov} />
 
@@ -179,7 +164,7 @@ export default async function VisibilityPage({
           {engineStats.map((stats) => (
             <div key={stats.engine} className="bg-card border border-border rounded-xl p-4">
               <div className="text-sm font-medium capitalize mb-2">{stats.engine.replace(/_/g, " ")}</div>
-              {stats.measured === 0 ? (
+              {stats.grounded + stats.modelKnowledge === 0 ? (
                 <div className="text-xs text-yellow-400/90 space-y-1">
                   <div>Not measured this run</div>
                   {stats.unavailable > 0 && (
@@ -188,9 +173,9 @@ export default async function VisibilityPage({
                 </div>
               ) : (
                 <div className="text-xs text-muted-foreground space-y-1">
-                  <div>Measured probes: {stats.measured}</div>
-                  <div className="text-green-400">Mentioned: {stats.mentioned} ({Math.round((stats.mentionRate || 0) * 100)}%)</div>
-                  <div className="text-cyan-400">Cited: {stats.cited} ({Math.round((stats.citationRate || 0) * 100)}%)</div>
+                  <div>Grounded: {stats.grounded} · Model: {stats.modelKnowledge}</div>
+                  <div className="text-green-400">Mentioned: {stats.mentioned} ({stats.mentionRate != null ? `${Math.round(stats.mentionRate * 100)}%` : "—"})</div>
+                  <div className="text-cyan-400">Cited (grounded): {stats.cited} ({stats.citationRate != null ? `${Math.round(stats.citationRate * 100)}%` : "—"})</div>
                   {stats.unavailable > 0 && (
                     <div className="text-yellow-400/70">{stats.unavailable} unavailable (excluded)</div>
                   )}
@@ -328,7 +313,9 @@ export default async function VisibilityPage({
             {runs.map((run) => (
               <div key={run.id} className="flex items-center justify-between bg-card border border-border rounded-lg px-4 py-3 text-sm">
                 <span>{new Date(run.created_at).toLocaleString()}</span>
-                <span className="text-muted-foreground">{run.prompt_count} prompts · {run.engines?.join(", ")}</span>
+                <span className="text-muted-foreground">
+                  {run.prompt_count ?? "—"} prompts · {(run.engines || []).join(", ") || "—"}
+                </span>
                 <span className={run.status === "completed" ? "text-green-400" : run.status === "running" ? "text-yellow-400" : "text-red-400"}>
                   {run.status}
                 </span>

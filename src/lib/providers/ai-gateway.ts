@@ -33,8 +33,8 @@ export function defaultModelId(provider: "openai" | "gemini" | "anthropic"): str
     return v && v.trim() ? v.trim() : dflt;
   };
   if (provider === "openai") return env("AI_OPENAI_MODEL", "gpt-4o-mini");
-  if (provider === "gemini") return env("AI_GEMINI_MODEL", "gemini-2.0-flash");
-  return env("AI_ANTHROPIC_MODEL", "claude-3-5-haiku-latest");
+  if (provider === "gemini") return env("AI_GEMINI_MODEL", "gemini-2.5-flash");
+  return env("AI_ANTHROPIC_MODEL", "claude-haiku-4-5");
 }
 
 export interface VisibilityQueryOptions {

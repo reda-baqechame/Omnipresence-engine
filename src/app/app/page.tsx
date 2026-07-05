@@ -12,8 +12,7 @@ export default async function DashboardPage() {
   const { data: memberships } = await supabase
     .from("memberships")
     .select("organization_id")
-    .eq("user_id", user!.id)
-    .limit(1);
+    .eq("user_id", user!.id);
 
   if (!memberships || memberships.length === 0) {
     return (

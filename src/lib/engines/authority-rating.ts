@@ -22,7 +22,7 @@ export interface AuthorityRating {
     /** Base authority score (Common Crawl centrality, Tranco, or rank.to-derived). */
     tranco: number;
     /** Where the base authority came from. */
-    authoritySource: "commoncrawl" | "tranco" | "rank.to" | "unlisted";
+    authoritySource: "commoncrawl" | "ccwebgraph" | "openpagerank" | "tranco" | "rank.to" | "unlisted";
     referringDomains: number;
     openPageRank?: number;
     ageYears: number;

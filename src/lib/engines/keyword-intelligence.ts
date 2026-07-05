@@ -17,6 +17,8 @@ import {
   type VolumeConfidence,
 } from "@/lib/engines/keyword-volume";
 import { scoreKeywordsKeyless, hasKeylessDifficulty } from "@/lib/engines/keyword-difficulty";
+import { researchKeywordsKeyless } from "@/lib/engines/keyword-research-keyless";
+import { classifyKeywordIntents } from "@/lib/engines/llm-intent";
 import { loadProjectIntegration } from "@/lib/integrations/store";
 import { recordMeasurementEvidence } from "@/lib/engines/evidence";
 
@@ -84,11 +86,16 @@ export async function runKeywordResearch(
   maxKeywords = 20,
   plannerOptions?: KeywordResearchOptions
 ): Promise<{ opportunities: KeywordOpportunityRow[]; live: boolean }> {
-  if (!preferLiveData() || !hasIntelligenceApi()) {
-    return { opportunities: [], live: false };
+  let research = null as Awaited<ReturnType<typeof researchKeywordsLive>> | null;
+
+  if (preferLiveData()) {
+    if (hasIntelligenceApi()) {
+      research = await researchKeywordsLive(seed, plannerOptions);
+    } else {
+      research = await researchKeywordsKeyless(seed);
+    }
   }
 
-  const research = await researchKeywordsLive(seed, plannerOptions);
   if (!research) return { opportunities: [], live: false };
 
   const allKeywords = [
@@ -110,11 +117,9 @@ export async function runKeywordResearch(
     if (raw) scored = raw as typeof scored;
   }
 
-  // No OmniData/DataForSEO opportunity scoring? Compute REAL keyword difficulty
-  // keylessly from the Tranco authority of the domains actually ranking (the
-  // technique behind Ahrefs/Semrush KD), so app-only users still get real KD.
+  // When no SERP-based difficulty resolved, try keyless KD before flat heuristic.
   if (scored.length === 0 && domain && allKeywords.length && hasKeylessDifficulty()) {
-    const keyless = await scoreKeywordsKeyless(domain, allKeywords);
+    const keyless = await scoreKeywordsKeyless(domain, allKeywords, { max: maxKeywords });
     if (keyless.length) {
       scored = keyless.map((k) => ({
         keyword: k.keyword,
@@ -149,13 +154,15 @@ export async function runKeywordResearch(
         opportunity_score: 40,
       }))
     : scored;
+
+  const intentMap = await classifyKeywordIntents(baseRows.map((r) => r.keyword));
   const opportunities: KeywordOpportunityRow[] = baseRows.map((row) => ({
     keyword: row.keyword,
     volume_estimate: volumeMap.get(row.keyword),
     trend_index: trendMap.get(row.keyword),
     difficulty: row.difficulty,
     difficulty_method: row.difficulty_method,
-    intent: row.intent,
+    intent: intentMap.get(row.keyword.toLowerCase()) || row.intent,
     our_position: row.our_position,
     opportunity_score: row.opportunity_score,
     source: usingHeuristicFallback
@@ -291,8 +298,10 @@ export async function persistKeywordOpportunities(
       opportunity_score: r.opportunity_score,
       source: r.source,
       status: "identified",
-      // Volume is exact only from Keyword Planner; everything else is an honest estimate.
-      data_source: r.volume_confidence === "high" ? "measured" : "estimated",
+      // Volume is product-grade only when a real provider returned a high-confidence
+      // value. Lower-confidence buckets stay visible as unavailable, never as a
+      // claim worth acting on.
+      data_source: r.volume_confidence === "high" ? "measured" : "unavailable",
       confidence: confidenceFor(r.volume_confidence),
       last_checked_at: new Date().toISOString(),
       updated_at: new Date().toISOString(),
@@ -308,7 +317,7 @@ export async function persistKeywordOpportunities(
           capability: "keyword",
           target: r.keyword,
           provider: r.source,
-          dataSource: r.volume_confidence === "high" ? "measured" : "estimated",
+          dataSource: r.volume_confidence === "high" ? "measured" : "unavailable",
           confidence: confidenceFor(r.volume_confidence),
           rawPayload: r,
           excerpt: {
@@ -357,17 +366,28 @@ export async function persistKeywordCorpus(
   return error ? 0 : rows.length;
 }
 
+import type { ContentGapRow } from "@/lib/engines/serp-content-gaps";
+
 export async function analyzeContentGaps(
   domain: string,
   competitors: string[],
-  seeds: string[]
-) {
-  if (!preferLiveData()) return { gaps: [], live: false };
-  const gaps = await contentGapsLive(domain, competitors, seeds);
-  if (gaps?.length) return { gaps, live: true };
+  seeds: string[],
+  keywordUniverse?: string[]
+): Promise<{ gaps: ContentGapRow[]; live: boolean; reason?: string }> {
+  if (!preferLiveData()) return { gaps: [], live: false, reason: "live_data_disabled" };
+  const universe = keywordUniverse?.length ? keywordUniverse : seeds;
+  const { normalizeContentGaps } = await import("@/lib/engines/serp-content-gaps");
+  const gaps = await contentGapsLive(domain, competitors, universe);
+  if (gaps?.length) {
+    return { gaps: normalizeContentGaps(gaps, "omnidata_serp"), live: true };
+  }
   const { contentGapsFromSerp } = await import("@/lib/engines/serp-content-gaps");
-  const serpGaps = await contentGapsFromSerp(domain, competitors, seeds);
-  return { gaps: serpGaps, live: serpGaps.length > 0 };
+  const serpGaps = await contentGapsFromSerp(domain, competitors, universe, 50);
+  return {
+    gaps: serpGaps,
+    live: serpGaps.length > 0,
+    reason: serpGaps.length === 0 ? "no_serp_gaps_found" : undefined,
+  };
 }
 
 export async function analyzeBacklinkGaps(domain: string, competitors: string[]) {

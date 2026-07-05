@@ -15,14 +15,17 @@
 import { getDomainAuthority } from "@/lib/providers/tranco";
 import { getRankToRank, rankToPopularityScore } from "@/lib/providers/rankto";
 import { isOmniDataActive, getOmniDataAuthority } from "@/lib/providers/dataforseo";
+import { getCcWebGraphAuthority, hasCcWebGraphCapability } from "@/lib/providers/ccwebgraph";
+import { getOpenPageRank, hasOpenPageRankCapability, oprToAuthorityScore } from "@/lib/providers/openpagerank";
 
 export interface ResolvedAuthority {
   domain: string;
   /** 0-100 authority score. */
   score: number;
-  source: "commoncrawl" | "tranco" | "rank.to" | "unlisted";
+  source: "commoncrawl" | "ccwebgraph" | "openpagerank" | "tranco" | "rank.to" | "unlisted";
   trancoRank?: number;
   globalRank?: number;
+  pageRankNorm?: number;
   /** Real distinct referring-domain count (only when source="commoncrawl"). */
   referringDomains?: number;
 }
@@ -53,6 +56,32 @@ export async function resolveDomainAuthority(
         score: cc.authority,
         source: "commoncrawl",
         referringDomains: cc.referringDomains ?? undefined,
+      };
+    }
+  }
+
+  // 2) Free keyless CC WebGraph API (no OmniData ingest required).
+  if (hasCcWebGraphCapability()) {
+    const ccwg = await getCcWebGraphAuthority(d).catch(() => null);
+    if (ccwg && ccwg.pageRankNorm > 0) {
+      return {
+        domain: d,
+        score: ccwg.pageRankNorm,
+        source: "ccwebgraph",
+        pageRankNorm: ccwg.pageRankNorm,
+      };
+    }
+  }
+
+  // 3) Open PageRank (free API key, Common Crawl derived).
+  if (hasOpenPageRankCapability()) {
+    const opr = await getOpenPageRank(d).catch(() => null);
+    if (opr?.success && opr.data && opr.data.pageRankInteger > 0) {
+      return {
+        domain: d,
+        score: oprToAuthorityScore(opr.data.pageRankInteger),
+        source: "openpagerank",
+        globalRank: opr.data.globalRank ?? undefined,
       };
     }
   }

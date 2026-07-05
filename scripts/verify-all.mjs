@@ -19,6 +19,7 @@ const steps = [
   { name: "column-coverage", ok: () => run("node", ["scripts/verify-column-coverage.mjs"]) },
   { name: "route-auth", ok: () => run("node", ["scripts/verify-route-auth.mjs"]) },
   { name: "claims-benchmark", ok: () => run("node", ["scripts/benchmark.mjs"]) },
+  { name: "output-quality", ok: () => run("node", ["scripts/verify-output-quality.mjs"]) },
   { name: "zero-paid-keys", ok: () => run("node", ["scripts/audit-zero-paid-keys.mjs"]) },
   { name: "superiority-strict", ok: () => run("node", ["scripts/provider-superiority.mjs", "--strict"]) },
   {

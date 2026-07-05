@@ -78,6 +78,18 @@ export default async function RoadmapPage({
                           <span className="text-xs text-muted-foreground">{item.category}</span>
                         </div>
                         <p className="text-sm text-muted-foreground">{item.description}</p>
+                        {item.evidence_label && (
+                          <p className="mt-2 text-xs text-muted-foreground">
+                            Evidence:{" "}
+                            {item.evidence_url ? (
+                              <a href={item.evidence_url} target="_blank" rel="noreferrer" className="text-primary hover:underline">
+                                {item.evidence_label}
+                              </a>
+                            ) : (
+                              item.evidence_label
+                            )}
+                          </p>
+                        )}
                       </div>
                       {item.estimated_hours && (
                         <div className="text-sm text-muted-foreground whitespace-nowrap">

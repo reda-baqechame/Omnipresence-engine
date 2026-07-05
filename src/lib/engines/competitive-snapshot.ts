@@ -10,6 +10,10 @@
  * Shared signals are fetched ONCE per domain (no duplicate network across the
  * popularity/authority engines) so the matrix stays fast for several domains.
  */
+import { getCcWebGraphAuthority } from "@/lib/providers/ccwebgraph";
+import { getOpenPageRank, hasOpenPageRankCapability } from "@/lib/providers/openpagerank";
+import { getRadarDomainRank, hasCloudflareRadarCapability } from "@/lib/providers/cloudflare-radar";
+import { resolveDomainAuthority } from "@/lib/providers/domain-authority";
 import { getDomainAuthority } from "@/lib/providers/tranco";
 import { getBacklinksFree } from "@/lib/providers/backlinks-free";
 import { getDomainAge } from "@/lib/providers/domain-age";
@@ -48,7 +52,7 @@ export async function getCompetitiveSnapshot(
   opts: { name?: string; includeWiki?: boolean; includeCwv?: boolean } = {}
 ): Promise<CompetitiveSnapshot> {
   const domain = clean(target);
-  const [authorityRes, backlinks, age, rankto, wiki, tech, ps] = await Promise.all([
+  const [authorityRes, backlinks, age, rankto, wiki, tech, ps, ccwg, opr, radar, resolved] = await Promise.all([
     getDomainAuthority(domain).catch(() => null),
     getBacklinksFree(domain, 100).catch(() => null),
     getDomainAge(domain).catch(() => null),
@@ -56,6 +60,10 @@ export async function getCompetitiveSnapshot(
     opts.includeWiki && opts.name ? getWikiInterest(opts.name).catch(() => null) : Promise.resolve(null),
     detectTechStack(domain).catch(() => null),
     opts.includeCwv ? getPageSpeed(domain, "mobile").catch(() => null) : Promise.resolve(null),
+    getCcWebGraphAuthority(domain).catch(() => null),
+    hasOpenPageRankCapability() ? getOpenPageRank(domain).catch(() => null) : Promise.resolve(null),
+    hasCloudflareRadarCapability() ? getRadarDomainRank(domain).catch(() => null) : Promise.resolve(null),
+    resolveDomainAuthority(domain).catch(() => null),
   ]);
 
   const tranco = authorityRes?.success && authorityRes.data ? authorityRes.data.authorityScore : 0;
@@ -70,7 +78,9 @@ export async function getCompetitiveSnapshot(
   const popParts: Array<{ value: number; weight: number }> = [];
   const popSignals: string[] = [];
   if (typeof globalRank === "number") { popParts.push({ value: rankToPopularityScore(globalRank), weight: 0.4 }); popSignals.push("rank.to"); }
+  if (ccwg && ccwg.pageRankNorm > 0) { popParts.push({ value: ccwg.pageRankNorm, weight: 0.35 }); popSignals.push("cc_webgraph"); }
   if (tranco > 0) { popParts.push({ value: tranco, weight: 0.4 }); popSignals.push("tranco"); }
+  if (radar && radar.popularityScore > 0) { popParts.push({ value: radar.popularityScore, weight: 0.15 }); popSignals.push("cloudflare_radar"); }
   if (referringDomains > 0) { popParts.push({ value: logScore(referringDomains, 33), weight: 0.3 }); popSignals.push("common_crawl"); }
   if (wikiViews > 0) { popParts.push({ value: logScore(wikiViews, 16.6), weight: 0.15 }); popSignals.push("wikipedia"); }
   if (ageYears > 0) { popParts.push({ value: Math.min(100, ageYears * 5), weight: 0.1 }); popSignals.push("domain_age"); }
@@ -80,11 +90,21 @@ export async function getCompetitiveSnapshot(
   // Authority Rating (DR-style). When Tranco is unlisted (domain outside the
   // top-1M), fall back to the rank.to-derived score so smaller real domains
   // still get a non-zero authority instead of "unranked".
-  const authBase = tranco > 0 ? tranco : typeof globalRank === "number" ? rankToPopularityScore(globalRank) : 0;
-  const authBaseSource = tranco > 0 ? "tranco" : typeof globalRank === "number" ? "rank.to" : "unlisted";
+  const authBase = resolved && resolved.score > 0
+    ? resolved.score
+    : tranco > 0
+      ? tranco
+      : typeof globalRank === "number"
+        ? rankToPopularityScore(globalRank)
+        : 0;
+  const authBaseSource = resolved?.source ?? (tranco > 0 ? "tranco" : typeof globalRank === "number" ? "rank.to" : "unlisted");
   const authParts: Array<{ value: number; weight: number }> = [];
   const authSources: string[] = [];
   if (authBase > 0) { authParts.push({ value: authBase, weight: authBaseSource === "tranco" ? 0.45 : 0.36 }); authSources.push(authBaseSource); }
+  if (opr?.success && opr.data && opr.data.pageRankInteger > 0) {
+    authParts.push({ value: Math.min(100, opr.data.pageRankInteger * 10), weight: 0.2 });
+    authSources.push("openpagerank");
+  }
   if (referringDomains > 0) { authParts.push({ value: logScore(referringDomains, 33), weight: 0.35 }); authSources.push("common_crawl"); }
   if (ageYears > 0) { authParts.push({ value: Math.min(100, ageYears * 5), weight: 0.2 }); authSources.push("domain_age"); }
   const authWeight = authParts.reduce((s, p) => s + p.weight, 0);

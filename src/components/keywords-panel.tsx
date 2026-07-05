@@ -19,6 +19,9 @@ interface KeywordRow {
   intent?: string;
   our_position?: number | null;
   opportunity_score: number;
+  data_source?: "measured" | "unavailable" | "estimated" | "model_knowledge" | "simulated";
+  confidence?: number;
+  last_checked_at?: string;
 }
 
 const CONFIDENCE_STYLE: Record<string, string> = {
@@ -282,7 +285,7 @@ export function KeywordsPanel({ projectId, industry = "" }: KeywordsPanelProps) 
               <tr>
                 <th className="text-left p-3">Keyword</th>
                 <th className="text-right p-3">Score</th>
-                <th className="text-left p-3" title="Estimated monthly searches (log bucket). Confidence: high=Keyword Planner, medium=Trends-extrapolated, low=relative/heuristic">Volume (est.)</th>
+                <th className="text-left p-3" title="Monthly search volume is shown only when a provider returned high-confidence measured data. Otherwise the field is unavailable, not estimated.">Volume</th>
                 <th className="text-right p-3" title="Relative Google Trends demand (0-100), not absolute volume">Demand</th>
                 <th className="text-right p-3">Difficulty</th>
                 <th className="text-right p-3">Position</th>
@@ -297,14 +300,16 @@ export function KeywordsPanel({ projectId, industry = "" }: KeywordsPanelProps) 
                     <EvidenceDrawer projectId={projectId} capability="keyword" target={row.keyword} className="ml-1" />
                     {row.volume_confidence && (
                       <ProvenanceBadge
-                        quality={row.volume_confidence === "high" ? "measured" : "estimated"}
+                        quality={row.data_source ?? (row.volume_confidence === "high" ? "measured" : "unavailable")}
+                        confidence={row.confidence}
+                        lastCheckedAt={row.last_checked_at}
                         className="ml-1"
                       />
                     )}
                   </td>
                   <td className="p-3 text-right text-primary">{row.opportunity_score}</td>
                   <td className="p-3">
-                    {row.volume_range && row.volume_range !== "n/a" ? (
+                    {row.volume_confidence === "high" && row.volume_range && row.volume_range !== "n/a" ? (
                       <span className="inline-flex items-center gap-1.5">
                         <span>{row.volume_range}</span>
                         {row.volume_confidence && (
@@ -314,7 +319,7 @@ export function KeywordsPanel({ projectId, industry = "" }: KeywordsPanelProps) 
                         )}
                       </span>
                     ) : (
-                      <span className="text-muted-foreground">—</span>
+                      <span className="text-muted-foreground">Not measured</span>
                     )}
                   </td>
                   <td className="p-3 text-right">

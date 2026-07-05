@@ -37,7 +37,7 @@ export async function GET(req: NextRequest) {
 
   let aiQ = supabase
     .from("ai_capture_evidence")
-    .select("id, engine, prompt, response_hash, cited_urls, source_domains, evidence_url, created_at")
+    .select("id, engine, prompt, raw_answer, response_hash, cited_urls, source_domains, evidence_url, created_at")
     .eq("project_id", projectId)
     .order("created_at", { ascending: false })
     .limit(limit);

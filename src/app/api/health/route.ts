@@ -5,6 +5,10 @@ import { getProductionReadiness } from "@/lib/config/production";
 import { hasIntelligenceApi } from "@/lib/providers/intelligence-api";
 import { hasIntegrationEncryptionKey } from "@/lib/security/credential-vault";
 import { getSpendSnapshot } from "@/lib/providers/cost-guard";
+import { SCAN_ENGINES, getActiveScanEngines, isEngineConfigured } from "@/lib/config/scan-engines";
+import { hasCcWebGraphCapability } from "@/lib/providers/ccwebgraph";
+import { hasOpenPageRankCapability } from "@/lib/providers/openpagerank";
+import { hasCloudflareRadarCapability } from "@/lib/providers/cloudflare-radar";
 
 export async function GET() {
   const caps = getCapabilitiesSummary();
@@ -91,6 +95,11 @@ export async function GET() {
 
   const spend = await getSpendSnapshot().catch(() => null);
 
+  const scanEngineStatus = Object.fromEntries(
+    SCAN_ENGINES.map((e) => [e, isEngineConfigured(e) ? "active" : "unavailable"])
+  );
+  const activeEngines = getActiveScanEngines();
+
   const healthy =
     checks.supabase !== "error" &&
     checks.intelligence_schema !== "error" &&
@@ -104,6 +113,21 @@ export async function GET() {
       status: healthy ? "healthy" : "degraded",
       version: caps.version,
       engines: caps.engines,
+      scanEngines: {
+        configured: activeEngines,
+        all: scanEngineStatus,
+        budgetMs: Number(process.env.VISIBILITY_SCAN_BUDGET_MS) || 120000,
+        models: {
+          openai: process.env.AI_OPENAI_MODEL || "gpt-4o-mini",
+          anthropic: process.env.AI_ANTHROPIC_MODEL || "claude-haiku-4-5",
+          gemini: process.env.AI_GEMINI_MODEL || "gemini-2.5-flash",
+        },
+      },
+      freeAuthority: {
+        ccWebGraph: hasCcWebGraphCapability(),
+        openPageRank: hasOpenPageRankCapability(),
+        cloudflareRadar: hasCloudflareRadarCapability(),
+      },
       providersConfigured: caps.configuredCount,
       activeSerpProvider: caps.activeSerpProvider,
       diyStack: caps.diyStack,

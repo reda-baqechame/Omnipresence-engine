@@ -73,3 +73,15 @@ export async function calibrateWithAnchor(
   });
   return out;
 }
+
+/** Bing WMT anchor: top query impressions as volume proxy for connected sites. */
+export async function deriveBingAnchor(
+  rows: Array<{ query: string; impressions: number }>
+): Promise<VolumeAnchor | null> {
+  const top = rows.find((r) => r.impressions >= 50);
+  if (!top) return null;
+  return {
+    keyword: top.query,
+    volume: top.impressions,
+  };
+}

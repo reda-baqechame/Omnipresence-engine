@@ -47,7 +47,13 @@ export function VisibilityTable({ results, brandName, competitors, projectId }: 
               <td className="p-3 max-w-xs truncate" title={r.prompt_text}>{r.prompt_text}</td>
               <td className="p-3 text-muted-foreground capitalize">{r.engine.replace(/_/g, " ")}</td>
               <td className="p-3 text-xs">
-                <ProvenanceBadge quality={resultDataQuality(r)} confidence={r.confidence} />
+                <ProvenanceBadge
+                  quality={resultDataQuality(r)}
+                  confidence={r.confidence}
+                  provider={(r.raw_response as { data_source_detail?: string } | undefined)?.data_source_detail ?? r.engine}
+                  lastCheckedAt={r.last_checked_at}
+                  evidenceUrl={r.evidence_url}
+                />
                 {projectId && r.data_source === "measured" && (
                   <EvidenceDrawer
                     projectId={projectId}

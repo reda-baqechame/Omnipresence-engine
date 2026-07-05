@@ -19,8 +19,11 @@ interface CompetitorChartProps {
 }
 
 export function CompetitorChart({ results, brandName, competitors }: CompetitorChartProps) {
-  const brandMentions = results.filter((r) => r.brand_mentioned).length;
-  const brandCitations = results.filter((r) => r.brand_cited).length;
+  const measured = results.filter(
+    (r) => r.data_source !== "simulated" && r.data_source !== "unavailable" && r.measurement_mode !== "unavailable"
+  );
+  const brandMentions = measured.filter((r) => r.brand_mentioned).length;
+  const brandCitations = measured.filter((r) => r.brand_cited).length;
 
   const chartData = [
     {
@@ -30,8 +33,8 @@ export function CompetitorChart({ results, brandName, competitors }: CompetitorC
     },
     ...competitors.slice(0, 5).map((comp) => ({
       name: comp,
-      mentions: results.filter((r) => r.competitor_mentions?.[comp]).length,
-      citations: results.filter((r) => r.competitor_citations?.[comp]).length,
+      mentions: measured.filter((r) => r.competitor_mentions?.[comp]).length,
+      citations: measured.filter((r) => r.competitor_citations?.[comp]).length,
     })),
   ];
 

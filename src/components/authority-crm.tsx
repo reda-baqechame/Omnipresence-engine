@@ -82,8 +82,11 @@ export function AuthorityCRM({ projectId, opportunities: initial }: AuthorityCRM
                     <span className="text-xs bg-orange-500/10 text-orange-400 px-2 py-0.5 rounded">Competitor gap</span>
                   )}
                   <ProvenanceBadge
-                    quality={opp.data_source ?? (opp.measured ? "measured" : "estimated")}
+                    quality={opp.data_source ?? (opp.measured ? "measured" : "unavailable")}
                     confidence={opp.confidence}
+                    provider={opp.provider}
+                    lastCheckedAt={opp.last_checked_at}
+                    evidenceUrl={opp.evidence_url || opp.target_url}
                   />
                 </div>
                 <p className="text-sm text-muted-foreground">{opp.pitch_angle}</p>
@@ -97,6 +100,7 @@ export function AuthorityCRM({ projectId, opportunities: initial }: AuthorityCRM
                 <select
                   value={opp.status}
                   onChange={(e) => updateStatus(opp.id, e.target.value)}
+                  title={`Update status for ${opp.target_site}`}
                   className="bg-background border border-input rounded-lg px-2 py-1 text-xs"
                 >
                   {STATUS_FLOW.map((s) => (

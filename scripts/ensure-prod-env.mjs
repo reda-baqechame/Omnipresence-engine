@@ -126,6 +126,26 @@ if (needs("RESEND_API_KEY")) {
   }
 }
 
+if (needs("VISIBILITY_SCAN_BUDGET_MS")) {
+  fixes.push(["VISIBILITY_SCAN_BUDGET_MS", "900000"]);
+}
+
+const providerKeys = [
+  "PERPLEXITY_API_KEY",
+  "OPEN_PAGERANK_API_KEY",
+  "CLOUDFLARE_RADAR_API_TOKEN",
+  "OPENAI_API_KEY",
+  "ANTHROPIC_API_KEY",
+  "GOOGLE_GENERATIVE_AI_API_KEY",
+  "SERPER_API_KEY",
+];
+for (const key of providerKeys) {
+  if (needs(key)) {
+    const v = localProviders.get(key) || env.get(key);
+    if (v && !v.startsWith("your-")) fixes.push([key, v]);
+  }
+}
+
 if (fixes.length) {
   console.log("Applying auto-fixes on Vercel:\n");
   for (const [key, value] of fixes) {

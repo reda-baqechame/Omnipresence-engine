@@ -20,6 +20,9 @@ export interface ActionItem {
   roi: number;
   surface: string;
   href: string | null;
+  /** Measured finding this action addresses (Peec Actions style). */
+  evidenceCitation?: string | null;
+  ownedEarned?: "owned" | "earned" | "unknown";
 }
 
 export interface ActionPlan {
@@ -37,6 +40,18 @@ const PRIORITY_MULT: Record<TaskPriority, number> = {
 };
 
 const OPEN_STATUSES = new Set(["todo", "in_progress", "blocked"]);
+
+const GENERIC_FASTEST_PATH = new Set(["reddit_quora", "directory", "review_site"]);
+
+function isEvidenceBackedTask(task: ExecutionTask): boolean {
+  if (task.source_module === "fastest_path" && task.category && GENERIC_FASTEST_PATH.has(task.category)) {
+    return false;
+  }
+  if (task.source_module === "coverage_gap" && /reddit|quora|facebook|instagram|tiktok/i.test(task.title)) {
+    return false;
+  }
+  return true;
+}
 
 /** Human label + the in-app surface where this action is executed. */
 export function actionSurface(
@@ -78,11 +93,22 @@ function roiScore(task: Pick<ExecutionTask, "impact" | "effort" | "priority">): 
 }
 
 export function buildActionPlan(projectId: string, tasks: ExecutionTask[], limit = 6): ActionPlan {
-  const open = tasks.filter((t) => OPEN_STATUSES.has(t.status));
+  const open = tasks.filter((t) => OPEN_STATUSES.has(t.status) && isEvidenceBackedTask(t));
 
   const ranked: ActionItem[] = open
     .map((t) => {
       const { surface, href } = actionSurface(projectId, t);
+      const meta = (t.evidence || {}) as Record<string, unknown>;
+      const evidenceCitation =
+        (typeof meta.evidence_excerpt === "string" && meta.evidence_excerpt) ||
+        (typeof meta.finding === "string" && meta.finding) ||
+        t.description;
+      const ownedEarned: ActionItem["ownedEarned"] =
+        t.source_module === "authority" || t.source_module === "coverage_gap"
+          ? "earned"
+          : t.source_module === "technical_finding" || t.source_module === "content_gap"
+            ? "owned"
+            : "unknown";
       return {
         id: t.id,
         title: t.title,
@@ -94,6 +120,8 @@ export function buildActionPlan(projectId: string, tasks: ExecutionTask[], limit
         roi: roiScore(t),
         surface,
         href,
+        evidenceCitation,
+        ownedEarned,
       };
     })
     .sort((a, b) => b.roi - a.roi);

@@ -17,27 +17,9 @@ import {
   getTopCitedDomainsFromStored,
   getDataForSEOTopDomains,
 } from "@/lib/engines/citation-intelligence";
-import { generateStructured } from "@/lib/providers/ai-gateway";
 import { searchGoogleOrganicRouter } from "@/lib/providers/serp-router";
 import { z } from "zod";
-import type { AuthorityOpportunity, AuthorityType } from "@/types/database";
-
-const OpportunitySchema = z.object({
-  opportunities: z.array(
-    z.object({
-      type: z.enum([
-        "backlink", "listicle", "podcast", "journalist", "directory",
-        "partner_page", "affiliate_page", "guest_post", "reddit_mention", "quora_mention",
-      ]),
-      target_site: z.string(),
-      target_url: z.string().optional(),
-      pitch_angle: z.string(),
-      estimated_impact: z.number().min(1).max(100),
-      difficulty_score: z.number().min(1).max(100),
-      competitor_present: z.boolean(),
-    })
-  ),
-});
+import type { AuthorityOpportunity } from "@/types/database";
 
 export async function findAuthorityOpportunities(
   projectId: string,
@@ -207,69 +189,9 @@ export async function findAuthorityOpportunities(
     }
   }
 
-  // Reddit/Quora monitoring suggestions (human-review queue)
-  for (const prompt of buyerPrompts.slice(0, 5)) {
-    addOpp({
-      project_id: projectId,
-      type: "reddit_mention",
-      target_site: "reddit.com",
-      target_url: `https://www.reddit.com/search/?q=${encodeURIComponent(prompt)}`,
-      pitch_angle: `Educational answer opportunity for: "${prompt}". Draft for human review before posting.`,
-      status: "identified",
-      estimated_impact: 70,
-      difficulty_score: 60,
-      competitor_present: false,
-      measured: false,
-    });
-    addOpp({
-      project_id: projectId,
-      type: "quora_mention",
-      target_site: "quora.com",
-      target_url: `https://www.quora.com/search?q=${encodeURIComponent(prompt)}`,
-      pitch_angle: `Quora answer opportunity for: "${prompt}". Draft for human review.`,
-      status: "identified",
-      estimated_impact: 65,
-      difficulty_score: 55,
-      competitor_present: false,
-      measured: false,
-    });
-  }
-
   // HARO / journalist source-request finder (real, via SERP)
   for (const opp of await findJournalistOpportunities(projectId, brandName, industry)) {
     addOpp(opp);
-  }
-
-  // AI supplement for directories/podcasts when measured data is thin
-  if (opportunities.length < 10) {
-    const aiResult = await generateStructured(
-      `You are an authority building strategist. Identify high-value opportunities for a brand.`,
-      `Find authority opportunities for:
-Brand: ${brandName}
-Domain: ${domain}
-Industry: ${industry}
-Competitors: ${competitors.join(", ")}
-
-Find 10 opportunities: directories, podcasts, journalist pitches, guest posts.`,
-      OpportunitySchema
-    );
-
-    if (aiResult.success && aiResult.data) {
-      for (const opp of aiResult.data.opportunities) {
-        addOpp({
-          project_id: projectId,
-          type: opp.type as AuthorityType,
-          target_site: opp.target_site,
-          target_url: opp.target_url,
-          pitch_angle: opp.pitch_angle,
-          status: "identified",
-          estimated_impact: opp.estimated_impact,
-          difficulty_score: opp.difficulty_score,
-          competitor_present: opp.competitor_present,
-          measured: false,
-        });
-      }
-    }
   }
 
   return opportunities.slice(0, 50);

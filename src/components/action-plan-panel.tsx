@@ -52,10 +52,24 @@ export function ActionPlanPanel({ projectId, plan }: { projectId: string; plan: 
                 </span>
                 <p className="text-sm font-medium leading-snug">{item.title}</p>
               </div>
-              {item.description && (
+              {item.evidenceCitation && (
+                <p className="text-xs text-muted-foreground mt-1 italic line-clamp-2" title={item.evidenceCitation}>
+                  Evidence: {item.evidenceCitation}
+                </p>
+              )}
+              {item.description && !item.evidenceCitation && (
                 <p className="text-xs text-muted-foreground mt-1 line-clamp-2">{item.description}</p>
               )}
+              {item.description && item.evidenceCitation && item.description !== item.evidenceCitation && (
+                <p className="text-xs text-muted-foreground/80 mt-0.5 line-clamp-1">{item.description}</p>
+              )}
               <div className="mt-1.5 flex items-center gap-3 text-[11px] text-muted-foreground">
+                {item.ownedEarned && item.ownedEarned !== "unknown" && (
+                  <>
+                    <span className="capitalize">{item.ownedEarned}</span>
+                    <span>·</span>
+                  </>
+                )}
                 <span>Impact {Math.round(item.impact)}/100</span>
                 <span>·</span>
                 <span>{effortLabel(item.effort)}</span>

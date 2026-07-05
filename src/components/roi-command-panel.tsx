@@ -129,7 +129,20 @@ export function RoiCommandPanel({ projectId }: { projectId: string }) {
   if (!summary) return <p className="text-sm text-muted-foreground">Loading…</p>;
 
   if (!summary.available) {
-    return <p className="text-sm text-yellow-400">{summary.reason}</p>;
+    return (
+      <div className="rounded-xl border border-border bg-card p-6 space-y-4">
+        <p className="text-sm text-yellow-400">{summary.reason || "Attribution data unavailable."}</p>
+        <p className="text-sm text-muted-foreground">
+          Connect Google Analytics 4 to unlock first-party revenue, leads, and AI referral attribution.
+        </p>
+        <a
+          href={`/api/oauth?provider=google_analytics&projectId=${projectId}`}
+          className="inline-flex bg-primary text-primary-foreground px-4 py-2 rounded-lg text-sm font-medium"
+        >
+          Connect GA4
+        </a>
+      </div>
+    );
   }
 
   const t = summary.totals!;

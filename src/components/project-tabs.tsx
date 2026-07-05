@@ -6,51 +6,12 @@ import { cn } from "@/lib/utils";
 
 const TABS = [
   { href: "", label: "Overview" },
-  { href: "/war-room", label: "War Room" },
-  { href: "/proof", label: "Proof" },
-  { href: "/proof-ledger", label: "Proof Ledger" },
-  { href: "/geo-lift", label: "GEO Lift" },
-  { href: "/visibility", label: "Visibility" },
-  { href: "/crawlers", label: "AI Crawlers" },
-  { href: "/aeo-readiness", label: "AEO Readiness" },
-  { href: "/frontier", label: "Frontier" },
-  { href: "/source-graph", label: "Source Graph" },
-  { href: "/prompts", label: "Prompts" },
-  { href: "/panels", label: "Prompt Panels" },
-  { href: "/intelligence", label: "AEO Intel" },
+  { href: "/ai-visibility", label: "AI Visibility" },
+  { href: "/search-performance", label: "Search Performance" },
+  { href: "/content-site", label: "Content & Site" },
+  { href: "/authority-presence", label: "Authority & Presence" },
   { href: "/competitors", label: "Competitors" },
-  { href: "/gate", label: "Presence Gate" },
-  { href: "/fastest-path", label: "Fastest Path" },
-  { href: "/cannibalization", label: "Cannibalization" },
-  { href: "/keywords", label: "Keywords" },
-  { href: "/technical", label: "Technical" },
-  { href: "/entity", label: "Entity" },
-  { href: "/content", label: "Content" },
-  { href: "/topical", label: "Topical Map" },
-  { href: "/pseo", label: "pSEO" },
-  { href: "/ranks", label: "Rankings" },
-  { href: "/serp-capture", label: "SERP Capture" },
-  { href: "/local", label: "Local SEO" },
-  { href: "/gsc", label: "Search Console" },
-  { href: "/traffic", label: "Traffic Intel" },
-  { href: "/backlinks", label: "Backlinks" },
-  { href: "/merchant", label: "Merchant" },
-  { href: "/behavior", label: "Behavior" },
-  { href: "/reputation", label: "Reputation" },
-  { href: "/community", label: "Social" },
-  { href: "/trends", label: "Trends" },
-  { href: "/internal-links", label: "Internal Links" },
-  { href: "/indexation", label: "Indexation" },
-  { href: "/coverage", label: "Coverage" },
-  { href: "/distribution", label: "Distribution" },
-  { href: "/authority", label: "Authority" },
-  { href: "/roadmap", label: "Roadmap" },
-  { href: "/tasks", label: "Tasks" },
-  { href: "/attribution", label: "Attribution" },
-  { href: "/ppc", label: "PPC Intel" },
-  { href: "/roi", label: "ROI Center" },
-  { href: "/operating", label: "Operating OS" },
-  { href: "/guarantee", label: "Guarantee" },
+  { href: "/action-proof", label: "Action Plan & Proof" },
 ];
 
 export function ProjectTabs({ projectId }: { projectId: string }) {
@@ -58,7 +19,7 @@ export function ProjectTabs({ projectId }: { projectId: string }) {
   const base = `/app/projects/${projectId}`;
 
   return (
-    <nav className="flex gap-1 border-b border-border mb-8 overflow-x-auto">
+    <nav className="flex flex-wrap gap-1 border-b border-border mb-8">
       {TABS.map((tab) => {
         const href = `${base}${tab.href}`;
         const isActive =

@@ -490,6 +490,9 @@ export interface RoadmapItem {
   impact: "critical" | "high" | "medium" | "low";
   category: string;
   estimated_hours?: number;
+  evidence_label?: string;
+  evidence_url?: string;
+  source_type?: "technical_finding" | "coverage_gap" | "authority_opportunity" | "aeo_readiness";
 }
 
 export type ExecutionTaskSource =

@@ -7,9 +7,13 @@ export async function POST(request: NextRequest) {
   const limited = await guardPublicEndpoint(request, "tools-roi", 20, 60 * 60 * 1000);
   if (limited) return limited;
 
-  let organicSessions: unknown, aiReferralSessions: unknown, monthlyAdSpend: unknown, industry: unknown;
+  let organicSessions: unknown;
+  let aiReferralSessions: unknown;
+  let monthlyAdSpend: unknown;
+  let industry: unknown;
+  let customCpc: unknown;
   try {
-    ({ organicSessions, aiReferralSessions, monthlyAdSpend, industry } = await readJsonBody(request));
+    ({ organicSessions, aiReferralSessions, monthlyAdSpend, industry, customCpc } = await readJsonBody(request));
   } catch {
     return apiError("Invalid JSON body");
   }
@@ -23,7 +27,14 @@ export async function POST(request: NextRequest) {
     aiReferralSessions: Number(aiReferralSessions) || 0,
     monthlyAdSpend: Number(monthlyAdSpend) || 0,
     industry: industry ? String(industry) : undefined,
+    customCpc: customCpc !== undefined && customCpc !== null ? Number(customCpc) : undefined,
   });
 
-  return NextResponse.json(result);
+  return NextResponse.json({
+    ...result,
+    methodology:
+      result.cpcSource === "real"
+        ? "ROI uses your supplied CPC (real Keyword Planner or custom CPC)."
+        : "ROI uses industry-benchmark CPC estimates — not measured auction data. Pass customCpc for real Keyword Planner CPC.",
+  });
 }

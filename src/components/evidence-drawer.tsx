@@ -30,6 +30,7 @@ interface AiCaptureRow {
   id: string;
   engine: string;
   prompt: string;
+  raw_answer: string | null;
   response_hash: string;
   cited_urls: string[];
   source_domains: string[];
@@ -127,9 +128,15 @@ export function EvidenceDrawer({ projectId, capability, target, label = "View pr
                     </pre>
                   )}
                   {row.evidence_url && (
-                    <p className="text-muted-foreground truncate" title={row.evidence_url}>
-                      Artifact: {row.evidence_url}
-                    </p>
+                    <a
+                      href={row.evidence_url}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="block truncate text-primary hover:underline"
+                      title={row.evidence_url}
+                    >
+                      Open artifact
+                    </a>
                   )}
                 </div>
               ))}
@@ -142,8 +149,31 @@ export function EvidenceDrawer({ projectId, capability, target, label = "View pr
                   </div>
                   <p className="text-muted-foreground line-clamp-2">{row.prompt}</p>
                   <p className="font-mono text-[10px] break-all text-muted-foreground">sha256:{row.response_hash.slice(0, 16)}…</p>
+                  {row.raw_answer && (
+                    <pre className="mt-1 max-h-40 overflow-auto rounded bg-muted p-2 text-[10px] whitespace-pre-wrap">
+                      {row.raw_answer.slice(0, 2000)}
+                    </pre>
+                  )}
                   {row.cited_urls?.length > 0 && (
-                    <p className="text-muted-foreground">{row.cited_urls.length} cited URL(s)</p>
+                    <div className="space-y-1">
+                      <p className="text-muted-foreground">{row.cited_urls.length} cited URL(s)</p>
+                      {row.cited_urls.slice(0, 5).map((url) => (
+                        <a key={url} href={url} target="_blank" rel="noreferrer" className="block truncate text-primary hover:underline">
+                          {url}
+                        </a>
+                      ))}
+                    </div>
+                  )}
+                  {row.evidence_url && (
+                    <a
+                      href={row.evidence_url}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="block truncate text-primary hover:underline"
+                      title={row.evidence_url}
+                    >
+                      Open artifact
+                    </a>
                   )}
                 </div>
               ))}

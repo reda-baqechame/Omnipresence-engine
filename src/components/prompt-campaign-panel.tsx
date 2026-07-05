@@ -2,6 +2,8 @@
 
 import { useState } from "react";
 import type { PromptCategory } from "@/types/database";
+import { MetricGlossary } from "@/components/metric-glossary";
+import type { PromptDemandSignal } from "@/lib/engines/prompt-demand";
 
 const CATEGORY_LABELS: Record<PromptCategory, string> = {
   best_of: "Best of",
@@ -28,12 +30,14 @@ interface PromptCampaignPanelProps {
   projectId: string;
   hasGscConnection: boolean;
   initialPrompts: PromptRow[];
+  demandSignals?: PromptDemandSignal[];
 }
 
 export function PromptCampaignPanel({
   projectId,
   hasGscConnection,
   initialPrompts,
+  demandSignals = [],
 }: PromptCampaignPanelProps) {
   const [prompts, setPrompts] = useState<PromptRow[]>(initialPrompts);
   const [csv, setCsv] = useState("");
@@ -118,6 +122,38 @@ export function PromptCampaignPanel({
           </div>
         </div>
       </div>
+
+      {demandSignals.length > 0 && (
+        <div className="bg-card border border-border rounded-xl p-4">
+          <h3 className="font-semibold mb-2">Prompt demand (Profound-style)</h3>
+          <p className="text-xs text-muted-foreground mb-3">
+            Relative query interest from Autocomplete breadth + Google Trends momentum — not absolute volume.
+          </p>
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="text-left text-muted-foreground border-b border-border">
+                  <th className="p-2">Prompt</th>
+                  <th className="p-2 text-right">Demand</th>
+                  <th className="p-2 text-right">Momentum</th>
+                  <th className="p-2">Confidence</th>
+                </tr>
+              </thead>
+              <tbody>
+                {demandSignals.slice(0, 10).map((d) => (
+                  <tr key={d.prompt} className="border-b border-border/40">
+                    <td className="p-2 max-w-xs truncate" title={d.prompt}>{d.prompt}</td>
+                    <td className="p-2 text-right tabular-nums">{d.demandIndex}/100</td>
+                    <td className="p-2 text-right tabular-nums">{d.trendMomentum > 0 ? `+${d.trendMomentum}` : d.trendMomentum}</td>
+                    <td className="p-2 capitalize text-xs">{d.confidence}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+          <MetricGlossary keys={["prompt_demand"]} className="mt-3 pt-3 border-t border-border" />
+        </div>
+      )}
 
       <div className="bg-card border border-border rounded-xl p-4 space-y-3">
         <h3 className="font-semibold">Bulk CSV import</h3>
