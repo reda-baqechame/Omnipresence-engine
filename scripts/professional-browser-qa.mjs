@@ -13,7 +13,8 @@ const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 const base = process.argv.find((a) => a.startsWith("http")) || "https://omnipresence-engine.vercel.app";
 
 const TABS = [
-  "", "/war-room", "/proof", "/proof-ledger", "/geo-lift", "/visibility", "/crawlers",
+  "", "/ai-visibility", "/search-performance", "/content-site", "/authority-presence", "/action-proof",
+  "/war-room", "/proof", "/proof-ledger", "/geo-lift", "/visibility", "/crawlers",
   "/aeo-readiness", "/frontier", "/source-graph", "/prompts", "/panels", "/intelligence",
   "/competitors", "/gate", "/fastest-path", "/cannibalization", "/keywords", "/technical",
   "/entity", "/content", "/topical", "/pseo", "/ranks", "/serp-capture", "/local", "/gsc",

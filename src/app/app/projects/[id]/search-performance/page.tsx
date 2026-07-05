@@ -22,6 +22,7 @@ export default async function SearchPerformanceHub({ params }: { params: Promise
         { href: "/traffic", title: "Traffic intelligence", description: "Traffic and referral metrics from connected analytics sources.", status: "needs-setup" },
         { href: "/indexation", title: "Indexation", description: "Indexing status and crawl gaps that explain why pages cannot rank.", status: "measured" },
         { href: "/cannibalization", title: "Cannibalization", description: "Queries where multiple pages compete against each other.", status: "workflow" },
+        { href: "/ppc", title: "Competitor ad intel", description: "Paid search patterns and auction signals for competitor domains.", status: "workflow" },
       ]}
     >
       <div className="flex flex-wrap items-start justify-between gap-3">

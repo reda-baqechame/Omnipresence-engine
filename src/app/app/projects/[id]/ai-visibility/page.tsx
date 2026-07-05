@@ -42,6 +42,7 @@ export default async function AiVisibilityHub({ params }: { params: Promise<{ id
         { href: "/intelligence", title: "AEO intelligence", description: "Research signals and strategic context that explain why visibility is moving.", status: "workflow" },
         { href: "/geo-lift", title: "GEO lift experiments", description: "Before/after measurement for content changes intended to improve AI citations.", status: "workflow" },
         { href: "/frontier", title: "Frontier opportunities", description: "Experimental surfaces kept separate from measured scorecards.", status: "workflow" },
+        { href: "/source-graph", title: "Citation source graph", description: "Which domains influence AI answers — Profound-class source influence map.", status: "measured" },
       ]}
     >
       <div className="flex flex-wrap items-center gap-3 text-sm">

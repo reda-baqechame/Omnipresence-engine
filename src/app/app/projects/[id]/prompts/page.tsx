@@ -27,7 +27,7 @@ export default async function PromptsPage({
 
   const trackedTexts = (prompts || []).filter((p) => p.is_tracked).map((p) => p.text);
   const demandSignals = trackedTexts.length
-    ? await measurePromptDemandBatch(trackedTexts, { max: 15 })
+    ? await measurePromptDemandBatch(trackedTexts, { max: 30 })
     : [];
 
   return (

@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { EvidenceDrawer } from "@/components/evidence-drawer";
 import { ProvenanceBadge } from "@/components/provenance-badge";
+import { MetricGlossary } from "@/components/metric-glossary";
 
 interface KeywordRow {
   id?: string;
@@ -360,6 +361,7 @@ export function KeywordsPanel({ projectId, industry = "" }: KeywordsPanelProps) 
               ))}
             </tbody>
           </table>
+          <MetricGlossary keys={["volume_confidence", "difficulty_real"]} className="p-4 border-t border-border" />
         </div>
       )}
 

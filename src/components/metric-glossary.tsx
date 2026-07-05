@@ -47,6 +47,11 @@ export const METRIC_GLOSSARY: Record<
     short: "Relative 0–100 from Tranco, rank.to, and Common Crawl PageRank — not visit counts.",
     competitor: "SimilarWeb relative rank",
   },
+  ads_equivalent: {
+    label: "Paid search equivalent",
+    short: "Organic + AI referral sessions valued at industry or custom CPC — not measured auction spend.",
+    competitor: "Semrush traffic value",
+  },
 };
 
 export function MetricGlossary({

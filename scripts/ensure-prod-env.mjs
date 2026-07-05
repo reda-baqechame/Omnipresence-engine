@@ -140,6 +140,8 @@ const providerKeys = [
   "ANTHROPIC_API_KEY",
   "GOOGLE_GENERATIVE_AI_API_KEY",
   "SERPER_API_KEY",
+  "GOOGLE_CLIENT_ID",
+  "GOOGLE_CLIENT_SECRET",
 ];
 for (const key of providerKeys) {
   if (needs(key)) {

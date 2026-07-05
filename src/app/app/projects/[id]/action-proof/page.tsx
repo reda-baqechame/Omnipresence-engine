@@ -49,6 +49,7 @@ export default async function ActionProofHub({ params }: { params: Promise<{ id:
         { href: "/proof-ledger", title: "Proof ledger", description: "Tamper-evident ledger of claims, evidence, and verification artifacts.", status: "measured" },
         { href: "/roi", title: "ROI center", description: "Revenue and paid-ad-equivalent reporting only when attribution is connected.", status: "needs-setup" },
         { href: "/attribution", title: "Attribution", description: "Connect analytics and first-party conversion data.", status: "needs-setup" },
+        { href: "/behavior", title: "Behavior analytics", description: "On-site conversion and engagement signals from connected analytics.", status: "needs-setup" },
         { href: "/guarantee", title: "Guarantee controls", description: "Outcome guarantee checks and eligibility signals.", status: "workflow" },
         { href: "/operating", title: "Operating OS", description: "Recurring operating cadence and delivery management.", status: "workflow" },
       ]}

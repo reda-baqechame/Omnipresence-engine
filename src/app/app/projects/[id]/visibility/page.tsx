@@ -4,6 +4,9 @@ import { calculateShareOfVoiceByEngine, calculateSovTrend, compareShareOfVoice }
 import { measuredEngineStats, competitorWinPrompts, topCitedSources, missingCitationSources, pageOpportunities, isMeasured } from "@/lib/engines/visibility-insights";
 import { loadProjectVisibilitySnapshot } from "@/lib/engines/visibility-scope";
 import { VisibilityHonestyBanner, VisibilityMetricTiles } from "@/components/visibility-honesty-banner";
+import { ShareOfAiVoiceKpi } from "@/components/share-of-ai-voice-kpi";
+import { VisibilityTripleTable } from "@/components/visibility-triple-table";
+import { buildPromptTripleMetrics } from "@/lib/engines/visibility-triple-metric";
 import { SovLeaderboard } from "@/components/sov-leaderboard";
 import { SovByEngineBreakdown } from "@/components/sov-by-engine";
 import { SovTrendChart } from "@/components/sov-trend-chart";
@@ -89,6 +92,7 @@ export default async function VisibilityPage({
   // Claim discipline: keep measured probes strictly separate from "unavailable"
   // so an engine we couldn't read is never shown as a fake 0% result.
   const engineStats = measuredEngineStats(results);
+  const tripleMetrics = buildPromptTripleMetrics(results);
 
   // Actionable gaps, scoped to the current competitive snapshot (latest run).
   const insightResults = sovResults;
@@ -142,6 +146,18 @@ export default async function VisibilityPage({
 
       <VisibilityHonestyBanner snapshot={vis} />
       <VisibilityMetricTiles snapshot={vis} />
+
+      <ShareOfAiVoiceKpi sov={sov} />
+
+      {tripleMetrics.length > 0 && (
+        <div>
+          <h2 className="text-xl font-semibold mb-1">Visibility · Position · Sentiment</h2>
+          <p className="text-sm text-muted-foreground mb-4 max-w-3xl">
+            Peec-style triple metric from grounded probes — mention rate, answer slot, and sentiment per engine.
+          </p>
+          <VisibilityTripleTable rows={tripleMetrics} />
+        </div>
+      )}
 
       <SovLeaderboard sov={sov} />
 

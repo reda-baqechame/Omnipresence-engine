@@ -4,6 +4,7 @@ import { getProject } from "@/lib/projects";
 import { CompetitorIntel } from "@/components/competitor-intel";
 import { ShareOfAiVoiceKpi } from "@/components/share-of-ai-voice-kpi";
 import { PopularityPanel } from "@/components/popularity-panel";
+import { ProjectHubPage } from "@/components/project-hub-page";
 import { buildPopularityPanelRows } from "@/lib/engines/popularity-panel-data";
 import {
   competitorVisibilityRates,
@@ -53,26 +54,25 @@ export default async function CompetitorsPage({ params }: { params: Promise<{ id
   const intersection = ((graph?.intersection as IntersectionRow[] | null) || []).filter((r) => r.brand_gap);
 
   return (
-    <div className="space-y-6">
-      <div>
-        <h2 className="text-xl font-semibold">Competitor Research Hub</h2>
-        <p className="text-sm text-muted-foreground mt-1">
-          One head-to-head view: popularity/authority/tech matrix, prominence-weighted AI Share of Voice, the prompts
-          competitors win that you don&apos;t, and the referring domains linking to rivals but not you. Every number is
-          measured or honestly labeled — never fabricated.
-        </p>
-      </div>
-
-      {/* Share of Voice headline KPI */}
+    <ProjectHubPage
+      title="Competitors"
+      description="Head-to-head popularity, AI Share of Voice, competitive matrix, citation source graph, and backlink gaps — measured or honestly labeled."
+      projectId={id}
+      tools={[
+        { href: "/competitors", title: "Competitor hub", description: "Share of AI Voice, popularity index, and win/loss prompts in one view.", status: "measured" },
+        { href: "/source-graph", title: "Citation source graph", description: "Profound-class map of which domains influence AI answers for your prompts.", status: "measured" },
+        { href: "/ppc", title: "Competitor ad intel", description: "Paid search signals and ad-copy patterns when ad connectors are configured.", status: "workflow" },
+        { href: "/visibility", title: "AI visibility drill-down", description: "Full prompt-by-engine visibility with Peec triple metrics and SoV trends.", status: "measured" },
+        { href: "/backlinks", title: "Backlink gaps", description: "Domains linking to rivals but not your brand.", status: "measured" },
+      ]}
+    >
       <ShareOfAiVoiceKpi sov={sovLeaderboard} />
 
       <PopularityPanel rows={popularityRows} />
 
-      {/* Competitive matrix (existing engine) */}
       <CompetitorIntel domain={project.domain} competitors={competitors} brandName={project.name} aiRates={aiRates} />
 
       <div className="grid gap-6 lg:grid-cols-2">
-        {/* Prompts competitors win */}
         <div className="rounded-xl border border-border p-4">
           <h3 className="font-semibold">Prompts competitors win (you don&apos;t)</h3>
           <p className="text-xs text-muted-foreground mt-1 mb-3">
@@ -80,7 +80,7 @@ export default async function CompetitorsPage({ params }: { params: Promise<{ id
             content/AEO targets.
           </p>
           {winPrompts.length === 0 ? (
-            <p className="text-sm text-muted-foreground">No competitor-win gaps in measured probes. 🎉</p>
+            <p className="text-sm text-muted-foreground">No competitor-win gaps in measured probes.</p>
           ) : (
             <ul className="space-y-2 text-sm max-h-96 overflow-y-auto">
               {winPrompts.map((w, i) => (
@@ -95,7 +95,6 @@ export default async function CompetitorsPage({ params }: { params: Promise<{ id
           )}
         </div>
 
-        {/* Backlink intersection gap */}
         <div className="rounded-xl border border-border p-4">
           <h3 className="font-semibold">Backlink gap — domains linking to rivals, not you</h3>
           <p className="text-xs text-muted-foreground mt-1 mb-3">
@@ -120,6 +119,6 @@ export default async function CompetitorsPage({ params }: { params: Promise<{ id
           )}
         </div>
       </div>
-    </div>
+    </ProjectHubPage>
   );
 }

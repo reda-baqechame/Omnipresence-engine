@@ -140,7 +140,7 @@ export function PromptCampaignPanel({
                 </tr>
               </thead>
               <tbody>
-                {demandSignals.slice(0, 10).map((d) => (
+                {demandSignals.slice(0, 30).map((d) => (
                   <tr key={d.prompt} className="border-b border-border/40">
                     <td className="p-2 max-w-xs truncate" title={d.prompt}>{d.prompt}</td>
                     <td className="p-2 text-right tabular-nums">{d.demandIndex}/100</td>

@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { MetricGlossary } from "@/components/metric-glossary";
 
 interface Summary {
   available: boolean;
@@ -257,6 +258,8 @@ export function RoiCommandPanel({ projectId }: { projectId: string }) {
           </ul>
         )}
       </div>
+
+      <MetricGlossary keys={["ads_equivalent"]} className="text-xs" />
     </div>
   );
 }
