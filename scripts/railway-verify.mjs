@@ -146,30 +146,34 @@ if (omnidataUrl && !/localhost|127\.0\.0\.1|0\.0\.0\.0/.test(omnidataUrl)) {
   console.log("\nWebgraph (Common Crawl backlinks)");
   const apiKey = process.env.OMNIDATA_API_KEY || "";
   const requireFull = process.env.WEBGRAPH_REQUIRE_FULL !== "0";
-  try {
-    const headers = apiKey ? { "x-api-key": apiKey } : {};
-    const { ok: healthy, status, json } = await fetchJson(`${omnidataUrl}/v3/backlinks/webgraph/status`, {
-      headers,
-    });
-    if (!healthy || !json) {
-      bad(`/v3/backlinks/webgraph/status returned ${status}`);
-    } else {
-      const row = json?.tasks?.[0]?.result?.[0] || {};
-      const mode = row.ingest_mode || "?";
-      const edges = Number(row.edge_count ?? 0);
-      const vertices = Number(row.vertex_count ?? 0);
-      if (row.ingest_in_progress) {
-        warn(`ingest in progress (mode=${mode}, edges=${edges.toLocaleString()})`);
-      } else if (row.edges_ready && edges > 0) {
-        ok(`edges_ready (mode=${mode}, ${vertices.toLocaleString()} vertices, ${edges.toLocaleString()} edges)`);
-      } else if (requireFull) {
-        bad(`edges not ready (mode=${mode}, vertices=${vertices}, edges=${edges}) — resize volume 20GB+ and run full ingest`);
+  if (!apiKey) {
+    warn("OMNIDATA_API_KEY not set locally — skipping authenticated webgraph probe (set env or run with key)");
+  } else {
+    try {
+      const headers = { "x-api-key": apiKey };
+      const { ok: healthy, status, json } = await fetchJson(`${omnidataUrl}/v3/backlinks/webgraph/status`, {
+        headers,
+      });
+      if (!healthy || !json) {
+        bad(`/v3/backlinks/webgraph/status returned ${status}`);
       } else {
-        warn(`edges not ready (mode=${mode}) — authority may work, backlinks use fallback`);
+        const row = json?.tasks?.[0]?.result?.[0] || {};
+        const mode = row.ingest_mode || "?";
+        const edges = Number(row.edge_count ?? 0);
+        const vertices = Number(row.vertex_count ?? 0);
+        if (row.ingest_in_progress) {
+          warn(`ingest in progress (mode=${mode}, edges=${edges.toLocaleString()})`);
+        } else if (row.edges_ready && edges > 0) {
+          ok(`edges_ready (mode=${mode}, ${vertices.toLocaleString()} vertices, ${edges.toLocaleString()} edges)`);
+        } else if (requireFull) {
+          bad(`edges not ready (mode=${mode}, vertices=${vertices}, edges=${edges}) — resize volume 20GB+ and run full ingest`);
+        } else {
+          warn(`edges not ready (mode=${mode}) — authority may work, backlinks use fallback`);
+        }
       }
+    } catch (e) {
+      bad(`webgraph status failed: ${e instanceof Error ? e.message : e}`);
     }
-  } catch (e) {
-    bad(`webgraph status failed: ${e instanceof Error ? e.message : e}`);
   }
 }
 

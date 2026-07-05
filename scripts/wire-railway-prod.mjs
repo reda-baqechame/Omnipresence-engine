@@ -43,11 +43,39 @@ const omnidataKey = process.env.OMNIDATA_API_KEY || randomBytes(32).toString("he
 const signingSecret = process.env.OMNIDATA_SIGNING_SECRET || randomBytes(32).toString("hex");
 const captureKey = process.env.AI_UI_CAPTURE_KEY || randomBytes(32).toString("hex");
 
-if (!process.env.OMNIDATA_API_KEY || !process.env.OMNIDATA_SIGNING_SECRET) {
-  console.warn(
-    "\n⚠ Set OMNIDATA_API_KEY + OMNIDATA_SIGNING_SECRET in env to avoid rotating Railway secrets on Vercel.\n"
-  );
+function readRailwaySecrets() {
+  const omnidataDir = join(root, "services", "omnidata");
+  const railwayBin = process.platform === "win32" ? "npx" : "railway";
+  const railwayPrefix = process.platform === "win32" ? ["@railway/cli"] : [];
+  const list = spawnSync(railwayBin, [...railwayPrefix, "variable", "list", "--service", "omnipresence-engine", "--json"], {
+    cwd: omnidataDir,
+    encoding: "utf8",
+    shell: process.platform === "win32",
+  });
+  if (list.status !== 0) return {};
+  try {
+    return JSON.parse(list.stdout.trim());
+  } catch {
+    return {};
+  }
 }
+
+if (!process.env.OMNIDATA_API_KEY || !process.env.OMNIDATA_SIGNING_SECRET) {
+  const existing = readRailwaySecrets();
+  if (existing.OMNIDATA_API_KEY && existing.OMNIDATA_SIGNING_SECRET) {
+    process.env.OMNIDATA_API_KEY = existing.OMNIDATA_API_KEY;
+    process.env.OMNIDATA_SIGNING_SECRET = existing.OMNIDATA_SIGNING_SECRET;
+    console.log("\nUsing existing Railway OmniData secrets (no rotation).\n");
+  } else {
+    console.warn(
+      "\n⚠ No OMNIDATA_API_KEY in env or Railway — generating new secrets (will sync to Railway + Vercel).\n"
+    );
+  }
+}
+
+const resolvedOmnidataKey = process.env.OMNIDATA_API_KEY || omnidataKey;
+const resolvedSigningSecret = process.env.OMNIDATA_SIGNING_SECRET || signingSecret;
+const resolvedCaptureKey = process.env.AI_UI_CAPTURE_KEY || captureKey;
 
 function vercelSet(key, value, targets = ["production", "preview"]) {
   for (const env of targets) {
@@ -77,26 +105,53 @@ console.log(`AI capture: ${captureUrl}\n`);
 
 const pairs = [
   ["OMNIDATA_BASE_URL", omnidataUrl],
-  ["OMNIDATA_API_KEY", omnidataKey],
-  ["OMNIDATA_SIGNING_SECRET", signingSecret],
+  ["OMNIDATA_API_KEY", resolvedOmnidataKey],
+  ["OMNIDATA_SIGNING_SECRET", resolvedSigningSecret],
   ["ENABLE_AI_UI_CAPTURE", "true"],
   ["AI_UI_CAPTURE_URL", `${captureUrl}/capture`],
-  ["AI_UI_CAPTURE_KEY", captureKey],
+  ["AI_UI_CAPTURE_KEY", resolvedCaptureKey],
   ["NEXT_PUBLIC_APP_URL", "https://omnipresence-engine.vercel.app"],
   ["COMMONCRAWL_WEBGRAPH_RELEASE", process.env.COMMONCRAWL_WEBGRAPH_RELEASE || "cc-main-2024-aug-sep-oct"],
 ];
 
 for (const [k, v] of pairs) vercelSet(k, v);
 
-console.log("\nSet these SAME secrets on Railway services:\n");
-console.log("  omnidata-api / worker:");
-console.log(`    OMNIDATA_API_KEY=${omnidataKey}`);
-console.log(`    OMNIDATA_SIGNING_SECRET=${signingSecret}`);
-console.log("    REDIS_URL=<Railway Redis plugin URL>");
-console.log("    SERPER_API_KEY=<optional — copy from Vercel for real SERP>");
-console.log("\n  ai-ui-capture:");
-console.log(`    AI_UI_CAPTURE_KEY=${captureKey}`);
-console.log(`    PORT=8788`);
+const omnidataDir = join(root, "services", "omnidata");
+const railwayBin = process.platform === "win32" ? "npx" : "railway";
+const railwayPrefix = process.platform === "win32" ? ["@railway/cli"] : [];
+
+function railwayCmd(args, opts = {}) {
+  return spawnSync(railwayBin, [...railwayPrefix, ...args], {
+    cwd: opts.cwd || root,
+    encoding: "utf8",
+    stdio: opts.capture ? ["pipe", "pipe", "pipe"] : "inherit",
+    shell: process.platform === "win32",
+  });
+}
+
+if (!existsSync(join(root, ".railway"))) {
+  railwayCmd(["link", "--project", process.env.RAILWAY_PROJECT || "omnipresence-engine"], { capture: true });
+}
+
+console.log("\nSyncing secrets to Railway services…");
+for (const [service, vars] of [
+  [
+    "omnipresence-engine",
+    {
+      OMNIDATA_API_KEY: resolvedOmnidataKey,
+      OMNIDATA_SIGNING_SECRET: resolvedSigningSecret,
+    },
+  ],
+  ["ai-ui-capture", { AI_UI_CAPTURE_KEY: resolvedCaptureKey }],
+]) {
+  for (const [k, v] of Object.entries(vars)) {
+    const set = railwayCmd(["variable", "set", `${k}=${v}`, "--service", service], { capture: true });
+    if (set.status === 0) console.log(`  ✓ Railway ${service}.${k}`);
+    else console.warn(`  ⚠ Failed Railway ${service}.${k}`);
+  }
+}
+
+console.log("\nRailway secrets synced (same values as Vercel).\n");
 
 if (deploy) {
   console.log("\nDeploying Vercel production…\n");

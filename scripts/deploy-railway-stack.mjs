@@ -183,12 +183,14 @@ let omnidataUrl = parseDomain(omnidataDomain.out);
 let captureUrl = parseDomain(captureDomain.out);
 
 if (!omnidataUrl) {
-  omnidataUrl = process.env.OMNIDATA_PUBLIC_URL || "";
-  console.warn("Could not auto-detect OmniData URL — set OMNIDATA_PUBLIC_URL or assign domain in Railway UI.");
+  omnidataUrl =
+    process.env.OMNIDATA_PUBLIC_URL || "https://omnipresence-engine-production.up.railway.app";
+  console.warn(`Using fallback OmniData URL: ${omnidataUrl}`);
 }
 if (!captureUrl) {
-  captureUrl = process.env.AI_CAPTURE_PUBLIC_URL || "";
-  console.warn("Could not auto-detect capture URL — set AI_CAPTURE_PUBLIC_URL or assign domain in Railway UI.");
+  captureUrl =
+    process.env.AI_CAPTURE_PUBLIC_URL || "https://ai-ui-capture-production.up.railway.app";
+  console.warn(`Using fallback capture URL: ${captureUrl}`);
 }
 
 if (!omnidataUrl || !captureUrl) {
