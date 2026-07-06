@@ -3,6 +3,8 @@
  * Verify live/public endpoints return measured (not demo) data when keys exist.
  * Usage: node scripts/audit-live-results.mjs [baseUrl]
  */
+import { fetchHealth } from "./health-fetch.mjs";
+
 const base = process.argv[2] || process.env.SMOKE_BASE_URL || "https://omnipresence-engine.vercel.app";
 
 let failed = 0;
@@ -11,25 +13,22 @@ let liveData = false;
 console.log("\n=== Live Results Audit ===\n");
 
 try {
-  // /api/capabilities is auth-gated; /api/health exposes the same live-data signals.
-  const health = await fetch(`${base}/api/health`, {
-    headers: { connection: "close" },
-    signal: AbortSignal.timeout(15_000),
-  }).then((r) => {
-    if (!r.ok) throw new Error(`health → ${r.status}`);
-    return r.json();
-  });
-  liveData = health.checks?.live_data === "ok";
-  const citationOn = health.checks?.citation_tracking === "ok";
-  const serpOn = health.checks?.serp === "ok";
-  console.log(`Live data: ${liveData ? "ON" : "OFF"}`);
-  console.log(`Citation tracking: ${citationOn ? "ON" : "OFF"}`);
-  console.log(`SERP: ${serpOn ? "on" : "none"} (${health.activeSerpProvider || "n/a"})`);
-  if (!liveData) {
-    console.log("  ✗ Production should have live data ON");
-    failed++;
+  const { health, mode } = await fetchHealth(base, { timeout: 15_000 });
+  if (mode === "public") {
+    console.log("  ○ detailed live-data checks skipped (set HEALTH_ADMIN_SECRET)");
   } else {
-    console.log("  ✓ Live data enabled");
+    liveData = health.checks?.live_data === "ok";
+    const citationOn = health.checks?.citation_tracking === "ok";
+    const serpOn = health.checks?.serp === "ok";
+    console.log(`Live data: ${liveData ? "ON" : "OFF"}`);
+    console.log(`Citation tracking: ${citationOn ? "ON" : "OFF"}`);
+    console.log(`SERP: ${serpOn ? "on" : "none"} (${health.activeSerpProvider || "n/a"})`);
+    if (!liveData) {
+      console.log("  ✗ Production should have live data ON");
+      failed++;
+    } else {
+      console.log("  ✓ Live data enabled");
+    }
   }
 } catch (e) {
   console.log("  ✗ health unreachable", e instanceof Error ? e.message : "");

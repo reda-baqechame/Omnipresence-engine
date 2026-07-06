@@ -15,6 +15,7 @@ debug.log
 
 # testing
 /coverage
+/reports/
 
 # next.js
 /.next/

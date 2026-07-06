@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { createServiceClient } from "@/lib/supabase/server";
 import { authenticateApiKey } from "@/lib/security/api-keys";
 import { EXPORTS, EXPORT_TYPES, toCsv, type ExportType } from "@/lib/export/datasets";
+import { guardApiKeyEndpoint } from "@/lib/security/api-v1-guard";
 
 /**
  * Public, API-key-authenticated export (Phase 16). Powers the Looker Studio
@@ -13,6 +14,9 @@ export async function GET(request: NextRequest) {
   const supabase = await createServiceClient();
   const ctx = await authenticateApiKey(supabase, request);
   if (!ctx) return NextResponse.json({ error: "Invalid or missing API key" }, { status: 401 });
+
+  const limited = await guardApiKeyEndpoint(request, ctx.organizationId, "export", 60, 60 * 60 * 1000);
+  if (limited) return limited;
 
   const projectId = request.nextUrl.searchParams.get("projectId");
   const type = request.nextUrl.searchParams.get("type") as ExportType | null;

@@ -1,7 +1,21 @@
 "use client";
 
-import { Fragment, useEffect, useState } from "react";
+import { Fragment, useEffect, useMemo, useState } from "react";
 import { EvidenceDrawer } from "@/components/evidence-drawer";
+import { DataTableToolbar } from "@/components/data-table-toolbar";
+
+const RANK_COLUMNS = [
+  { id: "keyword" as const, label: "Keyword" },
+  { id: "position" as const, label: "Position" },
+  { id: "source" as const, label: "Source" },
+  { id: "delta" as const, label: "Delta" },
+  { id: "device" as const, label: "Device" },
+  { id: "sov" as const, label: "SoV" },
+  { id: "aio" as const, label: "AIO" },
+  { id: "features" as const, label: "Features" },
+  { id: "history" as const, label: "History" },
+];
+type RankCol = (typeof RANK_COLUMNS)[number]["id"];
 
 interface CompetitorOverlayEntry {
   domain: string;
@@ -53,6 +67,19 @@ export function RankPanel({ projectId }: RankPanelProps) {
   const [location, setLocation] = useState("United States");
   const [device, setDevice] = useState<"desktop" | "mobile">("desktop");
   const [loading, setLoading] = useState(false);
+  const [searchQ, setSearchQ] = useState("");
+  const [rankFilter, setRankFilter] = useState("all");
+  const [visibleCols, setVisibleCols] = useState<RankCol[]>(RANK_COLUMNS.map((c) => c.id));
+
+  const filteredKeywords = useMemo(() => {
+    return keywords.filter((k) => {
+      if (searchQ && !k.keyword.toLowerCase().includes(searchQ.toLowerCase())) return false;
+      if (rankFilter === "striking" && !k.is_striking_distance) return false;
+      if (rankFilter === "top10" && (k.last_position == null || k.last_position > 10)) return false;
+      if (rankFilter === "unranked" && k.last_position != null) return false;
+      return true;
+    });
+  }, [keywords, searchQ, rankFilter]);
 
   async function load() {
     const res = await fetch(`/api/ranks?projectId=${projectId}`);
@@ -173,38 +200,57 @@ export function RankPanel({ projectId }: RankPanelProps) {
       </div>
 
       <div className="bg-card border border-border rounded-xl overflow-x-auto">
+        <div className="p-4 border-b border-border">
+          <DataTableToolbar
+            storageKey={`rank-cols-${projectId}`}
+            columns={RANK_COLUMNS}
+            filters={[
+              { id: "all", label: "All keywords" },
+              { id: "striking", label: "Striking distance" },
+              { id: "top10", label: "Top 10" },
+              { id: "unranked", label: "Unranked" },
+            ]}
+            onColumnsChange={setVisibleCols}
+            onFilterChange={setRankFilter}
+            searchPlaceholder="Filter keywords…"
+            onSearchChange={setSearchQ}
+          />
+        </div>
         <table className="w-full text-sm">
           <thead className="bg-secondary/50">
             <tr>
-              <th className="text-left p-3">Keyword</th>
-              <th className="text-left p-3">Pos.</th>
-              <th className="text-left p-3">Source</th>
-              <th className="text-left p-3">Δ</th>
-              <th className="text-left p-3">Device</th>
-              <th className="text-left p-3">SoV</th>
-              <th className="text-left p-3">AIO</th>
-              <th className="text-left p-3">Features</th>
-              <th className="text-left p-3">History</th>
+              {visibleCols.includes("keyword") && <th className="text-left p-3">Keyword</th>}
+              {visibleCols.includes("position") && <th className="text-left p-3">Pos.</th>}
+              {visibleCols.includes("source") && <th className="text-left p-3">Source</th>}
+              {visibleCols.includes("delta") && <th className="text-left p-3">Δ</th>}
+              {visibleCols.includes("device") && <th className="text-left p-3">Device</th>}
+              {visibleCols.includes("sov") && <th className="text-left p-3">SoV</th>}
+              {visibleCols.includes("aio") && <th className="text-left p-3">AIO</th>}
+              {visibleCols.includes("features") && <th className="text-left p-3">Features</th>}
+              {visibleCols.includes("history") && <th className="text-left p-3">History</th>}
             </tr>
           </thead>
           <tbody>
-            {keywords.length === 0 ? (
+            {filteredKeywords.length === 0 ? (
               <tr>
-                <td colSpan={9} className="p-4 text-muted-foreground">No keywords tracked yet.</td>
+                <td colSpan={visibleCols.length} className="p-4 text-muted-foreground">No keywords match this filter.</td>
               </tr>
             ) : (
-              keywords.map((k) => {
+              filteredKeywords.map((k) => {
                 const delta = positionDelta(k.id);
                 const hist = historyFor(k.id);
                 return (
                   <Fragment key={k.id}>
                     <tr className="border-t border-border">
+                      {visibleCols.includes("keyword") && (
                       <td className="p-3">
                         {k.keyword}
                         <EvidenceDrawer projectId={projectId} capability="rank" target={k.keyword} className="ml-1" />
                         <span className="block text-xs text-muted-foreground">{k.location}</span>
                       </td>
-                      <td className="p-3">{k.last_position ?? "—"}</td>
+                      )}
+                      {visibleCols.includes("position") && <td className="p-3">{k.last_position ?? "—"}</td>}
+                      {visibleCols.includes("source") && (
                       <td className="p-3">
                         {k.last_rank_source === "first_party" ? (
                           <span
@@ -224,6 +270,8 @@ export function RankPanel({ projectId }: RankPanelProps) {
                           <span className="text-xs text-muted-foreground">—</span>
                         )}
                       </td>
+                      )}
+                      {visibleCols.includes("delta") && (
                       <td className="p-3">
                         {delta == null ? "—" : (
                           <span className={delta < 0 ? "text-green-400" : delta > 0 ? "text-red-400" : ""}>
@@ -231,12 +279,16 @@ export function RankPanel({ projectId }: RankPanelProps) {
                           </span>
                         )}
                       </td>
-                      <td className="p-3 capitalize">{k.device || "desktop"}</td>
-                      <td className="p-3">{k.share_of_voice != null ? `${Math.round(k.share_of_voice * 100)}%` : "—"}</td>
-                      <td className="p-3">{k.brand_in_ai_overview == null ? "—" : k.brand_in_ai_overview ? "✓" : "✗"}</td>
+                      )}
+                      {visibleCols.includes("device") && <td className="p-3 capitalize">{k.device || "desktop"}</td>}
+                      {visibleCols.includes("sov") && <td className="p-3">{k.share_of_voice != null ? `${Math.round(k.share_of_voice * 100)}%` : "—"}</td>}
+                      {visibleCols.includes("aio") && <td className="p-3">{k.brand_in_ai_overview == null ? "—" : k.brand_in_ai_overview ? "✓" : "✗"}</td>}
+                      {visibleCols.includes("features") && (
                       <td className="p-3 text-xs text-muted-foreground">
                         {(k.last_serp_features || []).slice(0, 3).join(", ") || "—"}
                       </td>
+                      )}
+                      {visibleCols.includes("history") && (
                       <td className="p-3">
                         {hist.length > 0 ? (
                           <button type="button" className="text-primary text-xs" onClick={() => setExpanded(expanded === k.id ? null : k.id)}>
@@ -244,10 +296,11 @@ export function RankPanel({ projectId }: RankPanelProps) {
                           </button>
                         ) : "—"}
                       </td>
+                      )}
                     </tr>
                     {expanded === k.id && (
                       <tr className="border-t border-border bg-secondary/20">
-                        <td colSpan={9} className="p-3 text-xs space-y-2">
+                        <td colSpan={visibleCols.length} className="p-3 text-xs space-y-2">
                           <div>
                             <span className="text-muted-foreground">History: </span>
                             {hist.map((h) => (

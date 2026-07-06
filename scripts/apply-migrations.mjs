@@ -52,6 +52,9 @@ if (!connectionString) {
 }
 
 const { default: pg } = await import("pg");
+const { ensureSchemaMigrationsTable, getAppliedMigrations, markMigrationApplied } = await import(
+  "./schema-migrations-utils.mjs"
+);
 const client = new pg.Client({
   connectionString,
   // Managed Postgres (Supabase/Railway) requires TLS; allow self-signed chains.
@@ -60,15 +63,8 @@ const client = new pg.Client({
 
 async function main() {
   await client.connect();
-  await client.query(
-    `CREATE TABLE IF NOT EXISTS schema_migrations (
-       version text PRIMARY KEY,
-       applied_at timestamptz NOT NULL DEFAULT now()
-     )`
-  );
-
-  const { rows } = await client.query("SELECT version FROM schema_migrations");
-  const applied = new Set(rows.map((r) => r.version));
+  await ensureSchemaMigrationsTable(client);
+  const applied = await getAppliedMigrations(client);
 
   let count = 0;
   for (const file of files) {
@@ -78,7 +74,7 @@ async function main() {
     try {
       await client.query("BEGIN");
       await client.query(sql);
-      await client.query("INSERT INTO schema_migrations (version) VALUES ($1)", [file]);
+      await markMigrationApplied(client, file);
       await client.query("COMMIT");
       console.log("ok");
       count++;

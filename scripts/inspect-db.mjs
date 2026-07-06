@@ -2,6 +2,7 @@ import pg from "pg";
 import fs from "fs";
 import path from "path";
 import { fileURLToPath } from "url";
+import { ensureSchemaMigrationsTable, getAppliedMigrations } from "./schema-migrations-utils.mjs";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const migrationsDir = path.join(__dirname, "../supabase/migrations");
@@ -50,8 +51,9 @@ for (const [t, f] of missing) console.log(`  ✗ ${t}   (from ${f})`);
 
 let applied = [];
 if (live.has("schema_migrations")) {
-  const r = await client.query("SELECT id FROM schema_migrations ORDER BY id");
-  applied = r.rows.map((x) => x.id);
+  await ensureSchemaMigrationsTable(client);
+  const appliedSet = await getAppliedMigrations(client);
+  applied = [...appliedSet].sort();
 }
 const appliedSet = new Set(applied);
 const unapplied = files.filter((f) => !appliedSet.has(f));

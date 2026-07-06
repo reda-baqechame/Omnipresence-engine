@@ -2,6 +2,7 @@
 
 import { calculateAdsEquivalent, type AdsEquivalentResult } from "@/lib/engines/ads-equivalent";
 import { useState } from "react";
+import { ProjectionBadge } from "@/components/projection-badge";
 
 interface AdsEquivalentPanelProps {
   organicSessions?: number;
@@ -30,7 +31,10 @@ export function AdsEquivalentPanel({
 
   return (
     <div className="bg-card border border-border rounded-xl p-4">
-      <h3 className="font-semibold mb-2">Paid Ads Replacement Calculator</h3>
+      <h3 className="font-semibold mb-2 flex items-center gap-2">
+        Paid Ads Replacement Calculator
+        <ProjectionBadge detail="Uses industry CPC benchmarks — not measured ad spend replacement." />
+      </h3>
       <p className="text-sm text-muted-foreground mb-3">
         Estimates organic + AI referral value vs your monthly ad spend.
       </p>
@@ -50,13 +54,21 @@ export function AdsEquivalentPanel({
       </div>
       {result && (
         <dl className="grid grid-cols-2 gap-2 text-sm">
-          <dt className="text-muted-foreground">Organic value</dt>
+          <dt className="text-muted-foreground flex items-center gap-1">
+            Organic value <ProjectionBadge />
+          </dt>
           <dd>${result.organicValue.toLocaleString()}</dd>
-          <dt className="text-muted-foreground">AI referral value</dt>
+          <dt className="text-muted-foreground flex items-center gap-1">
+            AI referral value <ProjectionBadge />
+          </dt>
           <dd>${result.aiValue.toLocaleString()}</dd>
-          <dt className="text-muted-foreground">Total organic equivalent</dt>
+          <dt className="text-muted-foreground flex items-center gap-1">
+            Total organic equivalent <ProjectionBadge />
+          </dt>
           <dd className="font-semibold">${result.totalOrganicValue.toLocaleString()}</dd>
-          <dt className="text-muted-foreground">Replacement ratio</dt>
+          <dt className="text-muted-foreground flex items-center gap-1">
+            Replacement ratio <ProjectionBadge />
+          </dt>
           <dd>{Math.round(result.replacementRatio * 100)}%</dd>
         </dl>
       )}

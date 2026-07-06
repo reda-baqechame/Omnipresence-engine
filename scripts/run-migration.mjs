@@ -2,6 +2,11 @@ import pg from "pg";
 import fs from "fs";
 import path from "path";
 import { fileURLToPath } from "url";
+import {
+  ensureSchemaMigrationsTable,
+  getAppliedMigrations,
+  markMigrationApplied,
+} from "./schema-migrations-utils.mjs";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const migrationsDir = path.join(__dirname, "../supabase/migrations");
@@ -31,15 +36,8 @@ const client = new pg.Client({ connectionString: conn });
 try {
   await client.connect();
 
-  await client.query(`
-    CREATE TABLE IF NOT EXISTS schema_migrations (
-      id TEXT PRIMARY KEY,
-      applied_at TIMESTAMPTZ NOT NULL DEFAULT now()
-    )
-  `);
-
-  const { rows: applied } = await client.query("SELECT id FROM schema_migrations");
-  const appliedSet = new Set(applied.map((r) => r.id));
+  await ensureSchemaMigrationsTable(client);
+  const appliedSet = await getAppliedMigrations(client);
 
   const files = listMigrationFiles();
   if (!files.length) {
@@ -55,10 +53,7 @@ try {
   if (!appliedSet.size && tableNames.has("organizations")) {
     const pending = files.filter((f) => f < "0015_intelligence.sql");
     for (const file of pending) {
-      await client.query(
-        "INSERT INTO schema_migrations (id) VALUES ($1) ON CONFLICT DO NOTHING",
-        [file]
-      );
+      await markMigrationApplied(client, file);
       appliedSet.add(file);
     }
     console.log("Bootstrapped schema_migrations for existing database.");
@@ -76,10 +71,7 @@ try {
       let marked = 0;
       for (const file of files) {
         if (combinedSql.includes(`========== ${file} ==========`)) {
-          await client.query(
-            "INSERT INTO schema_migrations (id) VALUES ($1) ON CONFLICT DO NOTHING",
-            [file]
-          );
+          await markMigrationApplied(client, file);
           appliedSet.add(file);
           marked++;
         }
@@ -94,7 +86,7 @@ try {
     const sql = fs.readFileSync(path.join(migrationsDir, file), "utf8");
     console.log(`Applying ${file}…`);
     await client.query(sql);
-    await client.query("INSERT INTO schema_migrations (id) VALUES ($1)", [file]);
+    await markMigrationApplied(client, file);
     count++;
   }
 

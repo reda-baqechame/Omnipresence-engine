@@ -13,7 +13,7 @@ export async function GET(req: NextRequest) {
   if (secret) {
     const header = req.headers.get("x-traffic-panel-secret");
     if (header !== secret) {
-      // Public pixel path: allow without secret but only increment visits (no PII).
+      return transparentGif();
     }
   }
 

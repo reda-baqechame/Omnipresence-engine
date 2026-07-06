@@ -85,6 +85,73 @@ interface BreakerState {
 }
 
 const breakers = new Map<string, BreakerState>();
+const breakerCache = new Map<string, { state: BreakerState; fetchedAt: number }>();
+const BREAKER_CACHE_MS = 2_000;
+
+async function redisGetBreaker(key: string): Promise<BreakerState | null> {
+  const url = process.env.UPSTASH_REDIS_REST_URL?.replace(/\/$/, "");
+  const token = process.env.UPSTASH_REDIS_REST_TOKEN;
+  if (!url || !token) return null;
+  try {
+    const res = await fetch(`${url}/get/${encodeURIComponent(`cb:${key}`)}`, {
+      headers: { Authorization: `Bearer ${token}` },
+      signal: AbortSignal.timeout(1500),
+    });
+    if (!res.ok) return null;
+    const out = (await res.json()) as { result?: string | null };
+    if (!out.result) return null;
+    return JSON.parse(out.result) as BreakerState;
+  } catch {
+    return null;
+  }
+}
+
+async function redisSetBreaker(key: string, state: BreakerState | null): Promise<void> {
+  const url = process.env.UPSTASH_REDIS_REST_URL?.replace(/\/$/, "");
+  const token = process.env.UPSTASH_REDIS_REST_TOKEN;
+  if (!url || !token) return;
+  try {
+    if (!state) {
+      await fetch(`${url}/del/${encodeURIComponent(`cb:${key}`)}`, {
+        method: "POST",
+        headers: { Authorization: `Bearer ${token}` },
+        signal: AbortSignal.timeout(1500),
+      });
+      return;
+    }
+    await fetch(`${url}/set/${encodeURIComponent(`cb:${key}`)}/${encodeURIComponent(JSON.stringify(state))}`, {
+      method: "POST",
+      headers: { Authorization: `Bearer ${token}` },
+      signal: AbortSignal.timeout(1500),
+    });
+  } catch {
+    /* fail-open */
+  }
+}
+
+async function loadBreakerState(key: string): Promise<BreakerState> {
+  const cached = breakerCache.get(key);
+  if (cached && Date.now() - cached.fetchedAt < BREAKER_CACHE_MS) {
+    return cached.state;
+  }
+  const fromRedis = await redisGetBreaker(key);
+  const state = fromRedis ?? breakers.get(key) ?? { failures: 0, openedAt: 0 };
+  breakers.set(key, state);
+  breakerCache.set(key, { state, fetchedAt: Date.now() });
+  return state;
+}
+
+async function persistBreakerState(key: string, state: BreakerState | null): Promise<void> {
+  if (!state) {
+    breakers.delete(key);
+    breakerCache.delete(key);
+    await redisSetBreaker(key, null);
+    return;
+  }
+  breakers.set(key, state);
+  breakerCache.set(key, { state, fetchedAt: Date.now() });
+  await redisSetBreaker(key, state);
+}
 
 export interface BreakerOptions {
   /** Consecutive failures before the circuit opens (default 5). */
@@ -104,8 +171,14 @@ export function circuitStatus(key: string, options: BreakerOptions = {}): Circui
 
 /** Test/ops helper: clear breaker state for a key (or all keys). */
 export function resetBreaker(key?: string): void {
-  if (key) breakers.delete(key);
-  else breakers.clear();
+  if (key) {
+    breakers.delete(key);
+    breakerCache.delete(key);
+    void redisSetBreaker(key, null);
+  } else {
+    breakers.clear();
+    breakerCache.clear();
+  }
 }
 
 /**
@@ -120,18 +193,23 @@ export async function withBreaker<T>(
   options: BreakerOptions = {}
 ): Promise<T> {
   const { threshold = 5, cooldownMs = 30_000 } = options;
-  const status = circuitStatus(key, { threshold, cooldownMs });
+  const state = await loadBreakerState(key);
+  const status =
+    state.failures < threshold
+      ? "closed"
+      : Date.now() - state.openedAt < cooldownMs
+        ? "open"
+        : "half-open";
   if (status === "open") throw new CircuitOpenError(key);
 
   try {
     const result = await fn();
-    breakers.delete(key); // success closes the circuit
+    await persistBreakerState(key, null);
     return result;
   } catch (error) {
-    const state = breakers.get(key) ?? { failures: 0, openedAt: 0 };
-    state.failures += 1;
-    if (state.failures >= threshold) state.openedAt = Date.now();
-    breakers.set(key, state);
+    const next = { failures: state.failures + 1, openedAt: state.openedAt };
+    if (next.failures >= threshold) next.openedAt = Date.now();
+    await persistBreakerState(key, next);
     throw error;
   }
 }

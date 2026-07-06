@@ -6,6 +6,7 @@
 import { existsSync, readFileSync } from "fs";
 import { join, dirname } from "path";
 import { fileURLToPath } from "url";
+import { fetchHealth } from "./health-fetch.mjs";
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 const base = process.argv[2] || process.env.SMOKE_BASE_URL || "https://omnipresence-engine.vercel.app";
@@ -124,9 +125,11 @@ await smoke("podcast API", "/api/podcast/generate", {
 });
 
 try {
-  const healthRes = await fetch(`${base}/api/health`, { signal: AbortSignal.timeout(15_000) });
-  if (healthRes.ok) {
-    const health = await healthRes.json();
+  const { health, mode } = await fetchHealth(base, { timeout: 15_000 });
+  if (mode === "public") {
+    console.log("\n6. Production health checks");
+    console.log("  ○ detailed checks skipped (set HEALTH_ADMIN_SECRET for operator view)");
+  } else {
     const checks = [
       ["supabase", health.checks?.supabase],
       ["intelligence_schema", health.checks?.intelligence_schema],

@@ -1,8 +1,9 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { ProvenanceBadge } from "@/components/provenance-badge";
 import { EvidenceDrawer } from "@/components/evidence-drawer";
+import { DataTableToolbar } from "@/components/data-table-toolbar";
 
 interface BacklinkRow {
   url: string;
@@ -65,6 +66,23 @@ export function BacklinksPanel({ projectId }: BacklinksPanelProps) {
   const [prAssets, setPrAssets] = useState<PrAsset[] | null>(null);
   const [mentions, setMentions] = useState<UnlinkedMention[] | null>(null);
   const [quotes, setQuotes] = useState<{ quotes?: ExpertQuote[]; platforms: { name: string; url: string }[] } | null>(null);
+  const [searchQ, setSearchQ] = useState("");
+  const [linkFilter, setLinkFilter] = useState("all");
+
+  const filterLinks = (items: BacklinkRow[]) =>
+    items.filter((l) => {
+      if (searchQ && !l.domain.toLowerCase().includes(searchQ.toLowerCase()) && !l.url.toLowerCase().includes(searchQ.toLowerCase())) {
+        return false;
+      }
+      return true;
+    });
+
+  const filteredDiff = useMemo(() => {
+    if (!diff) return null;
+    if (linkFilter === "new") return { newLinks: filterLinks(diff.newLinks), lostLinks: [], totalCurrent: diff.totalCurrent, totalPrevious: diff.totalPrevious };
+    if (linkFilter === "lost") return { newLinks: [], lostLinks: filterLinks(diff.lostLinks), totalCurrent: diff.totalCurrent, totalPrevious: diff.totalPrevious };
+    return { ...diff, newLinks: filterLinks(diff.newLinks), lostLinks: filterLinks(diff.lostLinks) };
+  }, [diff, searchQ, linkFilter]);
 
   async function load() {
     const res = await fetch(`/api/backlinks?projectId=${projectId}`);
@@ -170,9 +188,28 @@ export function BacklinksPanel({ projectId }: BacklinksPanelProps) {
       )}
 
       {diff && (
-        <div className="grid md:grid-cols-2 gap-4">
-          <LinkList title="New links" items={diff.newLinks} empty="No new links since last snapshot." />
-          <LinkList title="Lost links" items={diff.lostLinks} empty="No lost links since last snapshot." />
+        <div className="space-y-3">
+          <DataTableToolbar
+            storageKey={`bl-cols-${projectId}`}
+            columns={[
+              { id: "domain", label: "Domain" },
+              { id: "url", label: "URL" },
+              { id: "rank", label: "Rank" },
+            ]}
+            filters={[
+              { id: "all", label: "All changes" },
+              { id: "new", label: "New links only" },
+              { id: "lost", label: "Lost links only" },
+            ]}
+            onColumnsChange={() => {}}
+            onFilterChange={setLinkFilter}
+            searchPlaceholder="Filter by domain or URL…"
+            onSearchChange={setSearchQ}
+          />
+          <div className="grid md:grid-cols-2 gap-4">
+          <LinkList title="New links" items={filteredDiff?.newLinks || []} empty="No new links since last snapshot." />
+          <LinkList title="Lost links" items={filteredDiff?.lostLinks || []} empty="No lost links since last snapshot." />
+          </div>
         </div>
       )}
 

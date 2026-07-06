@@ -2,6 +2,7 @@ import { notFound } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { getProject } from "@/lib/projects";
 import { CompetitorIntel } from "@/components/competitor-intel";
+import { CompetitorComparison } from "@/components/competitor-comparison";
 import { ShareOfAiVoiceKpi } from "@/components/share-of-ai-voice-kpi";
 import { PopularityPanel } from "@/components/popularity-panel";
 import { ProjectHubPage } from "@/components/project-hub-page";
@@ -69,6 +70,8 @@ export default async function CompetitorsPage({ params }: { params: Promise<{ id
       <ShareOfAiVoiceKpi sov={sovLeaderboard} />
 
       <PopularityPanel rows={popularityRows} />
+
+      <CompetitorComparison brandDomain={project.domain} brandName={project.name} competitors={competitors} />
 
       <CompetitorIntel domain={project.domain} competitors={competitors} brandName={project.name} aiRates={aiRates} />
 

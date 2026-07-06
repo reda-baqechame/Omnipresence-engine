@@ -104,11 +104,11 @@ const serpAdapters: Adapter<[string, string, string, string[]], SERPResult>[] = 
     id: "brave",
     capability: "serp",
     category: "fallback_only",
-    paid: false,
+    paid: true,
     selfHosted: false,
     confidence: 0.85,
     freshness: "live",
-    costPerCall: 0,
+    costPerCall: 0.001,
     enabled: () => hasEnv("BRAVE_SEARCH_API_KEY"),
     run: (kw, loc, brand, comp) => searchGoogleOrganicBrave(kw, loc, brand, comp),
   },
@@ -179,9 +179,8 @@ const serpAdapters: Adapter<[string, string, string, string[]], SERPResult>[] = 
 //   crawl/backlinks/enrich/email/social -> capability-runners.ts,
 //   generate -> generate-router.ts, serp -> serpAdapters (above).
 // Every adapter listed here has an executable runner attached at wiring time;
-// route() still defensively skips any without one. Catalog entries that had no
-// real implementation (Buffer/Ayrshare social, standalone Clearbit enrich) were
-// removed so adapterStatuses()/compareCapabilities() never advertise a dead path.
+// route() still defensively skips any without one. Buffer/Ayrshare are optional
+// paid social upgrades routed after direct X/LinkedIn posting.
 // Clearbit is still used as a paid upgrade INSIDE the ip-asn-enrich runner.
 const catalogAdapters: Adapter[] = [
   { id: "playwright-crawl", capability: "crawl", category: "surface_measurement", paid: false, selfHosted: true, confidence: 0.85, freshness: "live", costPerCall: 0, enabled: () => true },
@@ -198,6 +197,8 @@ const catalogAdapters: Adapter[] = [
   { id: "resend-email", capability: "email", category: "execution", paid: true, selfHosted: false, confidence: 0.9, freshness: "live", costPerCall: 0.0004, enabled: () => hasEnv("RESEND_API_KEY") },
 
   { id: "direct-social", capability: "social", category: "execution", paid: false, selfHosted: true, confidence: 0.75, freshness: "live", costPerCall: 0, enabled: () => hasEnv("X_ACCESS_TOKEN") || (hasEnv("LINKEDIN_ACCESS_TOKEN") && hasEnv("LINKEDIN_AUTHOR_URN")) },
+  { id: "buffer-social", capability: "social", category: "execution", paid: true, selfHosted: false, confidence: 0.85, freshness: "live", costPerCall: 0.002, enabled: () => hasEnv("BUFFER_ACCESS_TOKEN") },
+  { id: "ayrshare-social", capability: "social", category: "execution", paid: true, selfHosted: false, confidence: 0.9, freshness: "live", costPerCall: 0.003, enabled: () => hasEnv("AYRSHARE_API_KEY") },
 
   { id: "ip-asn-enrich", capability: "enrich", category: "surface_measurement", paid: false, selfHosted: true, confidence: 0.5, freshness: "recent", costPerCall: 0, enabled: () => true },
 ];

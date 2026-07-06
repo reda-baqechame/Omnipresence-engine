@@ -6,6 +6,7 @@
 import { existsSync, readFileSync } from "fs";
 import { join, dirname } from "path";
 import { fileURLToPath } from "url";
+import { fetchHealth } from "./health-fetch.mjs";
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 const base = process.argv[2] || process.env.SMOKE_BASE_URL || "https://omnipresence-engine.vercel.app";
@@ -77,18 +78,14 @@ if (scanSrc.includes("calculateAeoReadiness") && scanSrc.includes("aeo_readiness
 
 console.log("\n7. Production health (phase 10)");
 try {
-  const healthRes = await fetch(`${base}/api/health`, {
-    headers: { connection: "close" },
-    signal: AbortSignal.timeout(15_000),
-  });
-  if (healthRes.ok) {
-    const health = await healthRes.json();
+  const { health, mode } = await fetchHealth(base, { timeout: 15_000 });
+  if (mode === "public") {
+    console.log("  ○ detailed checks skipped (set HEALTH_ADMIN_SECRET for operator view)");
+  } else {
     const phase10 = health.checks?.phase10_schema;
     const ok = phase10 === "ok" || phase10 === "skipped";
     console.log(`  ${ok ? "✓" : "✗"} phase10_schema: ${phase10 || "unknown"}`);
     if (phase10 === "error") failed++;
-  } else {
-    console.log(`  ○ health ${healthRes.status}`);
   }
 } catch {
   console.log("  ○ health check skipped (unreachable)");

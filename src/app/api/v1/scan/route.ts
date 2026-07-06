@@ -3,6 +3,7 @@ import { readJsonBody } from "@/lib/security/api-response";
 import { createServiceClient } from "@/lib/supabase/server";
 import { authenticateApiKey } from "@/lib/security/api-keys";
 import { triggerProjectScan } from "@/lib/engines/trigger-scan";
+import { guardApiKeyEndpoint } from "@/lib/security/api-v1-guard";
 
 /**
  * Public API (Phase 11): batch-trigger scans for projects owned by the key's org.
@@ -14,6 +15,9 @@ export async function POST(request: NextRequest) {
   if (!ctx) {
     return NextResponse.json({ error: "Invalid or missing API key" }, { status: 401 });
   }
+
+  const limited = await guardApiKeyEndpoint(request, ctx.organizationId, "scan", 20, 60 * 60 * 1000);
+  if (limited) return limited;
 
   const body = await readJsonBody(request).catch(() => ({}));
   const all = body.all === true;

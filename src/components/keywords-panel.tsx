@@ -4,6 +4,18 @@ import { useEffect, useState } from "react";
 import { EvidenceDrawer } from "@/components/evidence-drawer";
 import { ProvenanceBadge } from "@/components/provenance-badge";
 import { MetricGlossary } from "@/components/metric-glossary";
+import { DataTableToolbar } from "@/components/data-table-toolbar";
+
+const KEYWORD_COLUMNS = [
+  { id: "keyword" as const, label: "Keyword" },
+  { id: "score" as const, label: "Score" },
+  { id: "volume" as const, label: "Volume" },
+  { id: "demand" as const, label: "Demand" },
+  { id: "difficulty" as const, label: "Difficulty" },
+  { id: "position" as const, label: "Position" },
+  { id: "intent" as const, label: "Intent" },
+];
+type KeywordCol = (typeof KEYWORD_COLUMNS)[number]["id"];
 
 interface KeywordRow {
   id?: string;
@@ -61,6 +73,15 @@ export function KeywordsPanel({ projectId, industry = "" }: KeywordsPanelProps) 
     questions: string[];
     keywords: Array<{ keyword: string; intent: string; sources: string[]; rising: boolean }>;
   } | null>(null);
+  const [visibleCols, setVisibleCols] = useState<KeywordCol[]>(KEYWORD_COLUMNS.map((c) => c.id));
+  const [searchQ, setSearchQ] = useState("");
+  const [intentFilter, setIntentFilter] = useState("all");
+
+  const filteredOpportunities = opportunities.filter((row) => {
+    if (searchQ && !row.keyword.toLowerCase().includes(searchQ.toLowerCase())) return false;
+    if (intentFilter !== "all" && row.intent !== intentFilter) return false;
+    return true;
+  });
 
   async function load() {
     const res = await fetch(`/api/keywords?projectId=${projectId}`);
@@ -281,21 +302,43 @@ export function KeywordsPanel({ projectId, industry = "" }: KeywordsPanelProps) 
       {opportunities.length > 0 && (
         <div className="bg-card border border-border rounded-xl overflow-hidden">
           <div className="p-4 border-b border-border font-semibold">Keyword opportunities</div>
+          <div className="px-4 pt-3">
+            <DataTableToolbar
+              storageKey={`kw-cols-${projectId}`}
+              columns={KEYWORD_COLUMNS}
+              filters={[
+                { id: "all", label: "All intents" },
+                { id: "informational", label: "Informational" },
+                { id: "commercial", label: "Commercial" },
+                { id: "transactional", label: "Transactional" },
+                { id: "navigational", label: "Navigational" },
+              ]}
+              onColumnsChange={setVisibleCols}
+              onFilterChange={setIntentFilter}
+              searchPlaceholder="Filter keywords…"
+              onSearchChange={setSearchQ}
+            />
+          </div>
           <table className="w-full text-sm">
             <thead className="bg-secondary/40 text-muted-foreground">
               <tr>
-                <th className="text-left p-3">Keyword</th>
-                <th className="text-right p-3">Score</th>
-                <th className="text-left p-3" title="Monthly search volume is shown only when a provider returned high-confidence measured data. Otherwise the field is unavailable, not estimated.">Volume</th>
-                <th className="text-right p-3" title="Relative Google Trends demand (0-100), not absolute volume">Demand</th>
-                <th className="text-right p-3">Difficulty</th>
-                <th className="text-right p-3">Position</th>
-                <th className="text-left p-3">Intent</th>
+                {visibleCols.includes("keyword") && <th className="text-left p-3">Keyword</th>}
+                {visibleCols.includes("score") && <th className="text-right p-3">Score</th>}
+                {visibleCols.includes("volume") && (
+                  <th className="text-left p-3" title="Monthly search volume is shown only when a provider returned high-confidence measured data. Otherwise the field is unavailable, not estimated.">Volume</th>
+                )}
+                {visibleCols.includes("demand") && (
+                  <th className="text-right p-3" title="Relative Google Trends demand (0-100), not absolute volume">Demand</th>
+                )}
+                {visibleCols.includes("difficulty") && <th className="text-right p-3">Difficulty</th>}
+                {visibleCols.includes("position") && <th className="text-right p-3">Position</th>}
+                {visibleCols.includes("intent") && <th className="text-left p-3">Intent</th>}
               </tr>
             </thead>
             <tbody>
-              {opportunities.slice(0, 25).map((row) => (
+              {filteredOpportunities.slice(0, 50).map((row) => (
                 <tr key={row.keyword} className="border-t border-border/50">
+                  {visibleCols.includes("keyword") && (
                   <td className="p-3">
                     {row.keyword}
                     <EvidenceDrawer projectId={projectId} capability="keyword" target={row.keyword} className="ml-1" />
@@ -308,7 +351,11 @@ export function KeywordsPanel({ projectId, industry = "" }: KeywordsPanelProps) 
                       />
                     )}
                   </td>
+                  )}
+                  {visibleCols.includes("score") && (
                   <td className="p-3 text-right text-primary">{row.opportunity_score}</td>
+                  )}
+                  {visibleCols.includes("volume") && (
                   <td className="p-3">
                     {row.volume_confidence === "high" && row.volume_range && row.volume_range !== "n/a" ? (
                       <span className="inline-flex items-center gap-1.5">
@@ -323,6 +370,8 @@ export function KeywordsPanel({ projectId, industry = "" }: KeywordsPanelProps) 
                       <span className="text-muted-foreground">Not measured</span>
                     )}
                   </td>
+                  )}
+                  {visibleCols.includes("demand") && (
                   <td className="p-3 text-right">
                     {typeof row.trend_index === "number" ? (
                       <span className="inline-flex items-center gap-1.5">
@@ -338,6 +387,8 @@ export function KeywordsPanel({ projectId, industry = "" }: KeywordsPanelProps) 
                       "—"
                     )}
                   </td>
+                  )}
+                  {visibleCols.includes("difficulty") && (
                   <td className="p-3 text-right">
                     {row.difficulty != null ? (
                       <span
@@ -355,8 +406,13 @@ export function KeywordsPanel({ projectId, industry = "" }: KeywordsPanelProps) 
                       </span>
                     ) : "—"}
                   </td>
+                  )}
+                  {visibleCols.includes("position") && (
                   <td className="p-3 text-right">{row.our_position ?? "—"}</td>
+                  )}
+                  {visibleCols.includes("intent") && (
                   <td className="p-3 text-muted-foreground">{row.intent ?? "—"}</td>
+                  )}
                 </tr>
               ))}
             </tbody>

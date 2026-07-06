@@ -126,9 +126,9 @@ export async function gatherIntelligenceReport(
     safe(() => resolveDomainAuthority(domain), null),
     supabase
       .from("keyword_opportunities")
-      .select("keyword, volume, difficulty, intent, data_quality")
+      .select("keyword, volume_estimate, difficulty, intent, source")
       .eq("project_id", projectId)
-      .order("volume", { ascending: false })
+      .order("volume_estimate", { ascending: false })
       .limit(30),
     supabase
       .from("rank_keywords")
@@ -138,12 +138,12 @@ export async function gatherIntelligenceReport(
       .limit(50),
     supabase
       .from("schema_deployments")
-      .select("schema_type, status, page_url")
+      .select("schema_types, validation_status, page_url")
       .eq("project_id", projectId)
       .limit(20),
     supabase
       .from("community_mentions")
-      .select("platform, title, url, sentiment")
+      .select("platform, keyword, url, mention_type")
       .eq("project_id", projectId)
       .order("created_at", { ascending: false })
       .limit(15),
@@ -156,7 +156,7 @@ export async function gatherIntelligenceReport(
     safe(() => buildEntityProfile(project, {}), null),
     supabase
       .from("cwv_history")
-      .select("lcp, cls, inp, created_at")
+      .select("lcp_ms, cls, inp_ms, created_at")
       .eq("project_id", projectId)
       .order("created_at", { ascending: false })
       .limit(1)
@@ -194,10 +194,12 @@ export async function gatherIntelligenceReport(
 
   const kwRows = (keywordOpps.data || []).map((k) => ({
     keyword: k.keyword as string,
-    volume: k.volume as number | undefined,
+    volume: k.volume_estimate as number | undefined,
     difficulty: k.difficulty as number | undefined,
     intent: k.intent as string | undefined,
-    dataQuality: (k.data_quality === "measured" ? "measured" : "estimated_proxy") as ReportDataQuality,
+    dataQuality: (k.source === "measured" || k.source === "omnidata_serp"
+      ? "measured"
+      : "estimated_proxy") as ReportDataQuality,
   }));
 
   const striking = (reportData.strikingKeywords || []).map((k) => ({
@@ -224,9 +226,9 @@ export async function gatherIntelligenceReport(
   const latestCwv = cwvHistory.data;
   const cwvSection = latestCwv
     ? {
-        lcp: latestCwv.lcp as number | undefined,
+        lcp: latestCwv.lcp_ms as number | undefined,
         cls: latestCwv.cls as number | undefined,
-        inp: latestCwv.inp as number | undefined,
+        inp: latestCwv.inp_ms as number | undefined,
         dataQuality: "measured" as ReportDataQuality,
       }
     : competitiveTarget?.cwv
@@ -328,7 +330,13 @@ export async function gatherIntelligenceReport(
       available: (schemaRows.data || []).length > 0,
       dataQuality: (schemaRows.data || []).length > 0 ? "measured" : "not_available",
       deployments: (schemaRows.data || []).length,
-      types: [...new Set((schemaRows.data || []).map((s) => s.schema_type as string))],
+      types: [
+        ...new Set(
+          (schemaRows.data || []).flatMap((s) =>
+            Array.isArray(s.schema_types) ? (s.schema_types as string[]) : []
+          )
+        ),
+      ],
       issues: [],
     },
     community: {
@@ -336,9 +344,9 @@ export async function gatherIntelligenceReport(
       dataQuality: (communityRows.data || []).length > 0 ? "measured" : "not_available",
       mentions: (communityRows.data || []).map((m) => ({
         platform: m.platform as string,
-        title: m.title as string,
+        title: (m.keyword as string) || (m.url as string),
         url: m.url as string | undefined,
-        sentiment: m.sentiment as string | undefined,
+        sentiment: m.mention_type as string | undefined,
       })),
       totalMentions: (communityRows.data || []).length,
     },

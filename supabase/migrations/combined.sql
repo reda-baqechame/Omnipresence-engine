@@ -1,5 +1,5 @@
--- PresenceOS combined migration (62 files)
--- Generated 2026-07-01T13:25:48.339Z
+-- PresenceOS combined migration (64 files)
+-- Generated 2026-07-06T18:50:39.601Z
 
 -- ========== 0001_init.sql ==========
 
@@ -2803,7 +2803,56 @@ DROP POLICY IF EXISTS rank_schedule_keywords_all ON rank_schedule_keywords;
 CREATE POLICY rank_schedule_keywords_all ON rank_schedule_keywords FOR ALL
   USING (project_id IN (SELECT id FROM projects WHERE organization_id IN (SELECT get_user_org_ids())));
 
--- Share of AI Voice snapshot per visibility run (persisted at scan finalize).
-ALTER TABLE visibility_runs ADD COLUMN IF NOT EXISTS brand_sov NUMERIC;
+
+-- ========== 0063_intelligence_reports.sql ==========
+
+-- Deep Intelligence Report: type, section config, async generation status
+ALTER TABLE reports
+  ADD COLUMN IF NOT EXISTS report_type TEXT NOT NULL DEFAULT 'standard'
+    CHECK (report_type IN ('standard', 'deep')),
+  ADD COLUMN IF NOT EXISTS sections JSONB DEFAULT '[]'::jsonb,
+  ADD COLUMN IF NOT EXISTS status TEXT NOT NULL DEFAULT 'ready'
+    CHECK (status IN ('pending', 'generating', 'ready', 'failed')),
+  ADD COLUMN IF NOT EXISTS error_message TEXT,
+  ADD COLUMN IF NOT EXISTS html_url TEXT;
+
+CREATE INDEX IF NOT EXISTS idx_reports_project_status ON reports(project_id, status, created_at DESC);
+
+
+-- ========== 0064_audit_leads_org.sql ==========
+
+-- Scope audit leads per organization (agency funnel isolation)
+
+ALTER TABLE organizations
+  ADD COLUMN IF NOT EXISTS audit_referral_token TEXT UNIQUE
+    DEFAULT encode(gen_random_bytes(16), 'hex');
+
+UPDATE organizations
+SET audit_referral_token = encode(gen_random_bytes(16), 'hex')
+WHERE audit_referral_token IS NULL;
+
+ALTER TABLE organizations
+  ALTER COLUMN audit_referral_token SET NOT NULL;
+
+CREATE INDEX IF NOT EXISTS idx_organizations_audit_referral_token
+  ON organizations(audit_referral_token);
+
+ALTER TABLE audit_leads
+  ADD COLUMN IF NOT EXISTS organization_id UUID REFERENCES organizations(id) ON DELETE SET NULL;
+
+CREATE INDEX IF NOT EXISTS idx_audit_leads_org ON audit_leads(organization_id, created_at DESC);
+
+DROP POLICY IF EXISTS audit_leads_select_admin ON audit_leads;
+
+-- Only org owners/admins see leads attributed to their organization
+CREATE POLICY audit_leads_select_org_admin ON audit_leads
+  FOR SELECT TO authenticated
+  USING (
+    organization_id IS NOT NULL
+    AND organization_id IN (
+      SELECT organization_id FROM memberships
+      WHERE user_id = auth.uid() AND role IN ('owner', 'admin')
+    )
+  );
 
 

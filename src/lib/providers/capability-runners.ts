@@ -17,6 +17,8 @@ import { getBacklinks } from "./dataforseo";
 import { enrichVisitorFromIp, type VisitorEnrichment } from "@/lib/engines/visitor-identity";
 import { sendEmail, type EmailMessage, type EmailSendResult } from "@/lib/email/transport";
 import { broadcastDirectSocial, type DirectPostResult } from "./social/direct";
+import { scheduleViaBuffer } from "./social/buffer";
+import { scheduleViaAyrshare } from "./social/ayrshare";
 
 let wired = false;
 function ensureWired(): void {
@@ -60,12 +62,28 @@ function ensureWired(): void {
   attachRunner<[EmailMessage], EmailSendResult>("email", "smtp-email", emailRunner);
   attachRunner<[EmailMessage], EmailSendResult>("email", "resend-email", emailRunner);
 
-  // Social port: direct X/LinkedIn posting (no Buffer/Ayrshare middleman).
+  // Social port: direct X/LinkedIn first; Buffer/Ayrshare as paid multi-platform upgrades.
   attachRunner<[string], DirectPostResult[]>("social", "direct-social", async (text) => {
     const results = await broadcastDirectSocial(text);
     return results.some((p) => p.success)
       ? { success: true, data: results, creditsUsed: 0 }
       : { success: false, error: results.map((p) => p.error).filter(Boolean).join("; ") || "no social platform posted" };
+  });
+
+  attachRunner<[string], { success: boolean; error?: string }>("social", "buffer-social", async (text) => {
+    const token = process.env.BUFFER_ACCESS_TOKEN || "";
+    const r = await scheduleViaBuffer(token, { text, profileIds: [] });
+    return r.success
+      ? { success: true, data: r, creditsUsed: 1 }
+      : { success: false, error: r.error || "Buffer post failed" };
+  });
+
+  attachRunner<[string], { success: boolean; error?: string }>("social", "ayrshare-social", async (text) => {
+    const key = process.env.AYRSHARE_API_KEY || "";
+    const r = await scheduleViaAyrshare(key, { text, platforms: ["twitter", "linkedin", "facebook"] });
+    return r.success
+      ? { success: true, data: r, creditsUsed: 1 }
+      : { success: false, error: r.error || "Ayrshare post failed" };
   });
 
   wired = true;

@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createServiceClient } from "@/lib/supabase/server";
 import { authenticateApiKey } from "@/lib/security/api-keys";
+import { guardApiKeyEndpoint } from "@/lib/security/api-v1-guard";
 
 /**
  * Public API (Phase 11): read rank data for a project owned by the API key's org.
@@ -12,6 +13,9 @@ export async function GET(request: NextRequest) {
   if (!ctx) {
     return NextResponse.json({ error: "Invalid or missing API key" }, { status: 401 });
   }
+
+  const limited = await guardApiKeyEndpoint(request, ctx.organizationId, "ranks", 120, 60 * 60 * 1000);
+  if (limited) return limited;
 
   const projectId = request.nextUrl.searchParams.get("projectId");
   if (!projectId) {

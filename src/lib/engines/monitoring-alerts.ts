@@ -66,14 +66,12 @@ export async function collectProjectAlertItems(
 
   const { data: runs } = await supabase
     .from("visibility_runs")
-    .select("id, created_at, brand_sov")
+    .select("id, created_at")
     .eq("project_id", projectId)
     .order("created_at", { ascending: false })
     .limit(2);
 
-  async function resolveRunSov(run: { id: string; brand_sov?: number | null }): Promise<number | null> {
-    const stored = Number(run.brand_sov);
-    if (Number.isFinite(stored)) return stored;
+  async function resolveRunSov(run: { id: string }): Promise<number | null> {
     if (!project?.name) return null;
     const { data: probes } = await supabase
       .from("visibility_results")

@@ -3,8 +3,18 @@ import { createClient } from "@/lib/supabase/server";
 import { fetchDailyTrends, matchTrendsToIndustry, trendToContentTopic } from "@/lib/engines/trend-discovery";
 import { verifyProjectAccess } from "@/lib/security/project-access";
 import { apiError, apiForbidden, apiUnauthorized, readJsonBody } from "@/lib/security/api-response";
+import { guardPublicEndpoint } from "@/lib/security/public-guard";
 
 export async function GET(request: NextRequest) {
+  const limited = await guardPublicEndpoint(request, "trends-get", 30, 60 * 60 * 1000);
+  if (limited) return limited;
+
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) return apiUnauthorized();
+
   const geo = request.nextUrl.searchParams.get("geo") || "US";
   const industry = request.nextUrl.searchParams.get("industry") || "";
   const trends = await fetchDailyTrends(geo);

@@ -6,7 +6,7 @@
  * Usage: node scripts/ensure-prod-env.mjs [--deploy]
  */
 import { randomBytes } from "crypto";
-import { readFileSync, existsSync, unlinkSync } from "fs";
+import { readFileSync, existsSync, unlinkSync, appendFileSync } from "fs";
 import { spawnSync } from "child_process";
 import { join, dirname } from "path";
 import { fileURLToPath } from "url";
@@ -14,7 +14,19 @@ import { fileURLToPath } from "url";
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 const deploy = process.argv.includes("--deploy");
 const DEFAULT_APP_URL = "https://omnipresence-engine.vercel.app";
+const OPERATOR_ENV = ".env.operator.local";
+const OPERATOR_KEYS = new Set(["HEALTH_ADMIN_SECRET", "TRAFFIC_PANEL_INGEST_SECRET"]);
+
 const pullPath = ".env.ensure.tmp";
+
+function persistOperatorSecrets(fixes) {
+  const lines = fixes.filter(([key]) => OPERATOR_KEYS.has(key));
+  if (!lines.length) return;
+  const stamp = `# Updated ${new Date().toISOString()} by ensure-prod-env.mjs\n`;
+  const body = lines.map(([key, value]) => `${key}=${value}`).join("\n") + "\n";
+  appendFileSync(join(root, OPERATOR_ENV), stamp + body, "utf8");
+  console.log(`  → Saved operator secrets to ${OPERATOR_ENV} (gitignored; use npm run verify:prod:live)\n`);
+}
 
 function run(cmd, args, opts = {}) {
   const result = spawnSync(cmd, args, {
@@ -106,6 +118,9 @@ if (needs("OAUTH_STATE_SECRET")) {
 if (needs("TRAFFIC_PANEL_INGEST_SECRET")) {
   fixes.push(["TRAFFIC_PANEL_INGEST_SECRET", randomBytes(24).toString("base64url")]);
 }
+if (needs("HEALTH_ADMIN_SECRET")) {
+  fixes.push(["HEALTH_ADMIN_SECRET", randomBytes(32).toString("hex")]);
+}
 if (needs("INTEGRATION_ENCRYPTION_KEY")) {
   fixes.push(["INTEGRATION_ENCRYPTION_KEY", randomBytes(32).toString("base64url")]);
 }
@@ -159,6 +174,7 @@ if (fixes.length) {
   for (const [key, value] of fixes) {
     vercelAdd(key, value);
   }
+  persistOperatorSecrets(fixes);
   console.log("\nRedeploy required for public env vars to take effect.\n");
 } else {
   console.log("✓ Auto-fixable production keys already set.\n");

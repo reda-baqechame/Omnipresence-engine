@@ -2,6 +2,7 @@ import Link from "next/link";
 import { ArrowRight, Target } from "lucide-react";
 import type { ActionPlan } from "@/lib/engines/action-plan";
 import type { TaskPriority } from "@/types/database";
+import { ProjectionBadge } from "@/components/projection-badge";
 
 const PRIORITY_STYLE: Record<TaskPriority, string> = {
   critical: "text-red-400 bg-red-500/10 border-red-500/30",
@@ -32,7 +33,13 @@ export function ActionPlanPanel({ projectId, plan }: { projectId: string; plan: 
       </div>
       <p className="text-sm text-muted-foreground mb-4">
         Your highest-leverage moves, ranked by impact per hour.
-        {plan.totalEffort > 0 && ` About ${effortLabel(plan.totalEffort)} of focused work`}
+        {plan.totalEffort > 0 && (
+          <>
+            {" "}
+            About {effortLabel(plan.totalEffort)} of focused work
+            <ProjectionBadge label="Est. effort" detail="Heuristic hours from task category — not a measured time tracking." className="ml-1 align-middle" />
+          </>
+        )}
         {plan.remaining > 0 && ` · ${plan.remaining} more queued`}.
       </p>
 
@@ -71,6 +78,7 @@ export function ActionPlanPanel({ projectId, plan }: { projectId: string; plan: 
                   </>
                 )}
                 <span>Impact {Math.round(item.impact)}/100</span>
+                <ProjectionBadge label="Est." detail="Impact score is a projected heuristic for prioritization." className="scale-90" />
                 <span>·</span>
                 <span>{effortLabel(item.effort)}</span>
                 {item.href && (

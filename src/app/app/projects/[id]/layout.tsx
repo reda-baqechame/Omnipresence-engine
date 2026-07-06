@@ -2,6 +2,7 @@ import { notFound } from "next/navigation";
 import Link from "next/link";
 import { ArrowLeft, Download, RefreshCw } from "lucide-react";
 import { ProjectTabs } from "@/components/project-tabs";
+import { ProjectOsNav } from "@/components/project-os-nav";
 import { getProject } from "@/lib/projects";
 
 export default async function ProjectLayout({
@@ -63,7 +64,10 @@ export default async function ProjectLayout({
       </div>
 
       <ProjectTabs projectId={id} />
-      {children}
+      <div className="flex items-start gap-0">
+        <ProjectOsNav projectId={id} />
+        <div className="flex-1 min-w-0">{children}</div>
+      </div>
     </div>
   );
 }

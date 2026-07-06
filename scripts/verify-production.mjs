@@ -3,22 +3,38 @@
  * Verify production deployment readiness.
  * Usage: node scripts/verify-production.mjs [baseUrl]
  *
- * Uses the public /api/health endpoint (no auth). /api/capabilities is
- * intentionally auth-gated — a 401 there is correct, not a deploy failure.
+ * Public /api/health returns only `{ ok: true }`. Set HEALTH_ADMIN_SECRET (bearer)
+ * for schema, provider, and production-readiness checks.
  */
+import { fetchHealth } from "./health-fetch.mjs";
 
 const base = process.argv[2] || process.env.SMOKE_BASE_URL || "https://omnipresence-engine.vercel.app";
-
-async function fetchJson(path, opts = {}) {
-  const res = await fetch(`${base}${path}`, { signal: AbortSignal.timeout(30_000), ...opts });
-  if (!res.ok) throw new Error(`${path} → ${res.status}`);
-  return res.json();
-}
 
 console.log(`\nVerifying ${base}\n`);
 
 try {
-  const health = await fetchJson("/api/health");
+  const { health, mode } = await fetchHealth(base);
+
+  if (mode === "public") {
+    const healthy = health.ok === true || health.status === "healthy";
+    console.log(`Public health: ${healthy ? "OK" : "DEGRADED"} (${health.status || "unknown"})`);
+    if (!healthy) {
+      process.exit(1);
+    }
+    if (!process.env.HEALTH_ADMIN_SECRET?.trim()) {
+      console.log(
+        "\nDetailed checks skipped — set HEALTH_ADMIN_SECRET (Vercel + local) for schema/provider audit."
+      );
+      console.log("  Generate: openssl rand -hex 32");
+      console.log("  Or run: node scripts/ensure-prod-env.mjs\n");
+      process.exit(0);
+    }
+    console.log(
+      "\nHEALTH_ADMIN_SECRET is set locally but /api/health returned the public payload."
+    );
+    console.log("  Ensure the same secret is configured on Vercel production, then retry.\n");
+    process.exit(1);
+  }
 
   // Optional: authenticated operator view (401 without session is expected).
   let caps = null;
@@ -26,7 +42,7 @@ try {
     const res = await fetch(`${base}/api/capabilities`, { signal: AbortSignal.timeout(15_000) });
     if (res.ok) caps = await res.json();
   } catch {
-    /* health is the source of truth for unauthenticated prod checks */
+    /* health is the source of truth for operator prod checks */
   }
 
   const liveData = health.checks?.live_data === "ok" || Boolean(caps?.liveData);
@@ -46,7 +62,9 @@ try {
     const g = health.googleCloud;
     const on = (v) => (v ? "ON" : "OFF");
     console.log(`Google Cloud key: ${g.keyConfigured ? "SET" : "missing"}`);
-    console.log(`  PageSpeed/CrUX: ${on(g.pagespeed)} · History: ${on(g.cruxHistory)} · YouTube: ${on(g.youtube)} · KG: ${on(g.knowledgeGraph)} · NLP: ${on(g.naturalLanguage)}`);
+    console.log(
+      `  PageSpeed/CrUX: ${on(g.pagespeed)} · History: ${on(g.cruxHistory)} · YouTube: ${on(g.youtube)} · KG: ${on(g.knowledgeGraph)} · NLP: ${on(g.naturalLanguage)}`
+    );
   }
   console.log(`Integration encryption: ${health.checks?.integration_encryption || "unknown"}`);
   console.log(`Intelligence schema: ${health.checks?.intelligence_schema || "unknown"}`);

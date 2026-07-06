@@ -5,6 +5,7 @@ import { formatCurrency } from "@/lib/utils";
 import type { AttributionMetric } from "@/types/database";
 import { Ga4PropertyPicker } from "@/components/ga4-property-picker";
 import { AdsEquivalentPanel } from "@/components/ads-equivalent";
+import { ProjectionBadge } from "@/components/projection-badge";
 import { LlmReferralChart } from "@/components/llm-referral-chart";
 import { VisitorIdentityPanel } from "@/components/visitor-identity-panel";
 import { CapabilityEvidenceBar } from "@/components/capability-evidence-bar";
@@ -221,7 +222,10 @@ export function AttributionPanel({
           </div>
 
           <div className="bg-gradient-to-r from-primary/10 to-transparent border border-primary/20 rounded-xl p-6">
-            <h3 className="text-lg font-semibold mb-2">Paid Ads Equivalent</h3>
+            <h3 className="text-lg font-semibold mb-2 flex items-center gap-2">
+              Paid Ads Equivalent
+              <ProjectionBadge />
+            </h3>
             <div className="text-4xl font-bold text-primary">
               {formatCurrency(current.paid_ads_equivalent)}
             </div>

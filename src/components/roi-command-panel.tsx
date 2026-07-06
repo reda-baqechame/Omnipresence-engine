@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { MetricGlossary } from "@/components/metric-glossary";
+import { ProjectionBadge } from "@/components/projection-badge";
 
 interface Summary {
   available: boolean;
@@ -61,7 +62,7 @@ function Stat({
         {label}
         {tag && (
           <span className="text-[10px] uppercase tracking-wide text-muted-foreground/70 border border-border rounded px-1">
-            {tag}
+            {tag === "projected" ? <ProjectionBadge label="Projected" /> : tag}
           </span>
         )}
       </div>
@@ -178,7 +179,13 @@ export function RoiCommandPanel({ projectId }: { projectId: string }) {
       <div className="grid gap-3 grid-cols-2 md:grid-cols-4">
         <Stat label="Revenue" value={t.revenue} delta={d.revenue} prefix="$" available={summary.revenueAvailable !== false} />
         <Stat label="Leads" value={t.leads} delta={d.leads} available={summary.revenueAvailable !== false} />
-        <Stat label="Paid-ad equivalent" value={t.paidAdsEquivalent} delta={d.paid_ads_equivalent} prefix="$" tag="est." />
+        <Stat
+          label="Paid-ad equivalent"
+          value={t.paidAdsEquivalent}
+          delta={d.paid_ads_equivalent}
+          prefix="$"
+          tag={summary.paidAdsEquivalentEstimated ? "projected" : undefined}
+        />
         <Stat label="Organic traffic" value={t.organicTraffic} delta={d.organic_traffic} />
         <Stat label="AI referrals" value={t.aiReferralTraffic} delta={d.ai_referral_traffic} />
         <Stat label="Social clicks" value={t.socialClicks} delta={d.social_clicks} />

@@ -21,14 +21,14 @@ export default function LandingPage() {
 
       <section className="max-w-7xl mx-auto px-6 py-24 text-center">
         <div className="inline-block bg-primary/10 text-primary px-4 py-1.5 rounded-full text-sm font-medium mb-6">
-          The Organic Visibility Engine
+          Proof-led Organic Growth Intelligence OS
         </div>
         <h1 className="text-5xl md:text-7xl font-extrabold tracking-tight mb-6 leading-tight">
           Be found <span className="text-primary">everywhere</span><br />your customers search
         </h1>
         <p className="text-xl text-muted-foreground max-w-2xl mx-auto mb-10">
-          Audit your visibility across Google, AI chatbots, social platforms, directories, and communities.
-          Get the exact plan to become more visible — without increasing ad spend.
+          PresenceOS tells agencies and growth teams where they are invisible, what to fix, and whether actions
+          produced rankings, AI mentions, traffic, and revenue — with measured data, not fabricated dashboards.
         </p>
         <div className="flex items-center justify-center gap-4">
           <Link href="/signup" className="bg-primary text-primary-foreground px-8 py-3 rounded-lg font-semibold text-lg hover:opacity-90 transition flex items-center gap-2">

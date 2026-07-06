@@ -6,6 +6,7 @@
 import { existsSync, readFileSync } from "fs";
 import { join, dirname } from "path";
 import { fileURLToPath } from "url";
+import { fetchHealth } from "./health-fetch.mjs";
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 const base = process.argv[2] || process.env.SMOKE_BASE_URL || "https://omnipresence-engine.vercel.app";
@@ -74,12 +75,12 @@ if (migSrc.includes("visitor_sessions") && migSrc.includes("memberships")) {
   failed++;
 }
 
-console.log("\n6. Project tabs — Prompts");
-const tabsSrc = readFileSync(join(root, "src/components/project-tabs.tsx"), "utf8");
-if (tabsSrc.includes("/prompts")) {
-  console.log("  ✓ Prompts tab wired");
+console.log("\n6. Project nav — Prompts");
+const osNavSrc = readFileSync(join(root, "src/components/project-os-nav.tsx"), "utf8");
+if (osNavSrc.includes("/prompts")) {
+  console.log("  ✓ Prompts route wired in project OS nav");
 } else {
-  console.log("  ✗ Prompts tab missing");
+  console.log("  ✗ Prompts route missing from project OS nav");
   failed++;
 }
 
@@ -126,10 +127,11 @@ try {
 }
 
 try {
-  const healthRes = await fetch(`${base}/api/health`, { signal: AbortSignal.timeout(15_000) });
-  if (healthRes.ok) {
-    const health = await healthRes.json();
-    console.log("\n9. Production health (phase 9)");
+  const { health, mode } = await fetchHealth(base, { timeout: 15_000 });
+  console.log("\n9. Production health (phase 9)");
+  if (mode === "public") {
+    console.log("  ○ detailed checks skipped (set HEALTH_ADMIN_SECRET for operator view)");
+  } else {
     const phase9 = health.checks?.phase9_schema;
     const ok = phase9 === "ok" || phase9 === "skipped";
     console.log(`  ${ok ? "✓" : "✗"} phase9_schema: ${phase9 || "unknown"}`);

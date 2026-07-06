@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { ProjectionBadge } from "@/components/projection-badge";
 
 interface GraphNode {
   id: string;
@@ -210,7 +211,10 @@ export function SourceGraphPanel({ projectId }: { projectId: string }) {
               <div key={`top-${o.source_domain}`} className="rounded-md border border-primary/30 bg-primary/5 p-3">
                 <div className="flex items-center justify-between gap-3">
                   <span className="font-medium">{o.source_domain}</span>
-                  <span className="text-xs text-muted-foreground">influence {o.influence_score}</span>
+                  <span className="text-xs text-muted-foreground flex items-center gap-1">
+                    influence {o.influence_score}
+                    <ProjectionBadge label="Est." detail="Influence score blends citation frequency and authority heuristics." />
+                  </span>
                 </div>
                 {o.recommended_action && (
                   <p className="mt-1 text-sm text-muted-foreground">{o.recommended_action}</p>

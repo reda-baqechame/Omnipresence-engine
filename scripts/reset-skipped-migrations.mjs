@@ -1,4 +1,5 @@
 import pg from "pg";
+import { ensureSchemaMigrationsTable } from "./schema-migrations-utils.mjs";
 
 const raw =
   process.env.DATABASE_URL ||
@@ -26,9 +27,10 @@ const TO_RESET = [
 
 const client = new pg.Client({ connectionString: conn });
 await client.connect();
+await ensureSchemaMigrationsTable(client);
 const res = await client.query(
-  "DELETE FROM schema_migrations WHERE id = ANY($1) RETURNING id",
+  "DELETE FROM schema_migrations WHERE version = ANY($1) RETURNING version",
   [TO_RESET]
 );
-console.log("Cleared recorded migrations:", res.rows.map((r) => r.id).join(", ") || "(none)");
+console.log("Cleared recorded migrations:", res.rows.map((r) => r.version).join(", ") || "(none)");
 await client.end();

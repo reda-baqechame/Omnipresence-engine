@@ -4,14 +4,15 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { cn } from "@/lib/utils";
 
+/** Top-level hub tabs (mobile + quick nav). Full OS tree is in ProjectOsNav. */
 const TABS = [
   { href: "", label: "Overview" },
-  { href: "/ai-visibility", label: "AI Visibility" },
-  { href: "/search-performance", label: "Search Performance" },
-  { href: "/content-site", label: "Content & Site" },
-  { href: "/authority-presence", label: "Authority & Presence" },
-  { href: "/competitors", label: "Competitors" },
-  { href: "/action-proof", label: "Action Plan & Proof" },
+  { href: "/ai-visibility", label: "AEO/GEO" },
+  { href: "/search-performance", label: "Search" },
+  { href: "/content-site", label: "Content" },
+  { href: "/authority-presence", label: "Authority" },
+  { href: "/action-proof", label: "Execution" },
+  { href: "/trust", label: "Trust" },
 ];
 
 export function ProjectTabs({ projectId }: { projectId: string }) {

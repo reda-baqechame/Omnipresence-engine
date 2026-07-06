@@ -11,6 +11,7 @@ import { canUseDeepReport } from "@/lib/plans/features";
 import { apiForbidden, apiServerError, apiUnauthorized } from "@/lib/security/api-response";
 import type { SubscriptionPlan } from "@/types/database";
 import type { IntelligenceReportSectionId } from "@/types/intelligence-report";
+import { getReportPreset } from "@/lib/engines/report-presets";
 
 export async function POST(
   request: NextRequest,
@@ -35,9 +36,18 @@ export async function POST(
       const body = (await request.json()) as {
         report_type?: "standard" | "deep";
         sections?: IntelligenceReportSectionId[];
+        preset?: string;
       };
-      reportType = body.report_type === "deep" ? "deep" : "standard";
-      sections = body.sections;
+      if (body.preset) {
+        const preset = getReportPreset(body.preset);
+        if (preset) {
+          reportType = preset.reportType;
+          sections = preset.sections.length ? preset.sections : undefined;
+        }
+      } else {
+        reportType = body.report_type === "deep" ? "deep" : "standard";
+        sections = body.sections;
+      }
     } catch {
       /* default standard */
     }
