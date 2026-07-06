@@ -15,7 +15,10 @@ export default function WhiteLabelSettingsPage() {
   const [saved, setSaved] = useState(false);
   const [loading, setLoading] = useState(true);
   const [embedSnippet, setEmbedSnippet] = useState("");
+  const [auditReferralUrl, setAuditReferralUrl] = useState("");
+  const [auditRefToken, setAuditRefToken] = useState("");
   const [copied, setCopied] = useState(false);
+  const [copiedReferral, setCopiedReferral] = useState(false);
 
   useEffect(() => {
     async function load() {
@@ -25,7 +28,7 @@ export default function WhiteLabelSettingsPage() {
 
       const { data: membership } = await supabase
         .from("memberships")
-        .select("organization_id, organizations(white_label_name, white_label_primary_color, logo_url, white_label_domain, client_portal_enabled)")
+        .select("organization_id, organizations(white_label_name, white_label_primary_color, logo_url, white_label_domain, client_portal_enabled, audit_referral_token)")
         .eq("user_id", user.id)
         .limit(1)
         .single();
@@ -36,6 +39,7 @@ export default function WhiteLabelSettingsPage() {
         logo_url?: string;
         white_label_domain?: string;
         client_portal_enabled?: boolean;
+        audit_referral_token?: string;
       } | null;
 
       if (org) {
@@ -46,6 +50,11 @@ export default function WhiteLabelSettingsPage() {
           white_label_domain: org.white_label_domain || "",
           client_portal_enabled: Boolean(org.client_portal_enabled),
         });
+        if (org.audit_referral_token) {
+          setAuditRefToken(org.audit_referral_token);
+          const base = window.location.origin;
+          setAuditReferralUrl(`${base}/audit?ref=${org.audit_referral_token}`);
+        }
       }
       setLoading(false);
     }
@@ -59,12 +68,13 @@ export default function WhiteLabelSettingsPage() {
       params.set("color", form.white_label_primary_color.replace("#", ""));
     }
     if (form.logo_url) params.set("logo", form.logo_url);
+    if (auditRefToken) params.set("ref", auditRefToken);
     const qs = params.toString();
     fetch(`/api/embed/audit-snippet${qs ? `?${qs}` : ""}`)
       .then((r) => r.text())
       .then(setEmbedSnippet)
       .catch(() => setEmbedSnippet(""));
-  }, [form.white_label_name, form.white_label_primary_color, form.logo_url]);
+  }, [form.white_label_name, form.white_label_primary_color, form.logo_url, auditRefToken]);
 
   async function handleSave(e: React.FormEvent) {
     e.preventDefault();
@@ -95,6 +105,12 @@ export default function WhiteLabelSettingsPage() {
     await navigator.clipboard.writeText(embedSnippet);
     setCopied(true);
     setTimeout(() => setCopied(false), 2000);
+  }
+
+  async function copyReferral() {
+    await navigator.clipboard.writeText(auditReferralUrl);
+    setCopiedReferral(true);
+    setTimeout(() => setCopiedReferral(false), 2000);
   }
 
   if (loading) return <p className="text-muted-foreground">Loading...</p>;
@@ -187,9 +203,30 @@ export default function WhiteLabelSettingsPage() {
       </form>
 
       <div className="bg-card border border-border rounded-xl p-6">
+        <h3 className="font-semibold mb-2">Agency Audit Referral Link</h3>
+        <p className="text-sm text-muted-foreground mb-4">
+          Share this link to capture leads attributed to your organization. Leads from the generic /audit page without a ref token are not shown in your dashboard.
+        </p>
+        {auditReferralUrl ? (
+          <>
+            <pre className="text-xs bg-secondary p-4 rounded-lg overflow-x-auto mb-3">{auditReferralUrl}</pre>
+            <button
+              type="button"
+              onClick={copyReferral}
+              className="border border-border px-4 py-2 rounded-lg text-sm"
+            >
+              {copiedReferral ? "Copied!" : "Copy referral link"}
+            </button>
+          </>
+        ) : (
+          <p className="text-sm text-muted-foreground">Referral token loading...</p>
+        )}
+      </div>
+
+      <div className="bg-card border border-border rounded-xl p-6">
         <h3 className="font-semibold mb-2">Embeddable Audit Widget (v2)</h3>
         <p className="text-sm text-muted-foreground mb-4">
-          Paste this on client sites. Brand, color, and logo params are applied from your settings above.
+          Paste this on client sites. Brand, color, logo, and referral token are applied from your settings above.
         </p>
         <pre className="text-xs bg-secondary p-4 rounded-lg overflow-x-auto max-h-48 mb-3">
           {embedSnippet || "Loading embed snippet..."}

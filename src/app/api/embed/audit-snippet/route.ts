@@ -8,11 +8,14 @@ export async function GET(request: NextRequest) {
   const rawColor = request.nextUrl.searchParams.get("color") || "6366f1";
   const color = /^#?[0-9a-fA-F]{3,8}$/.test(rawColor) ? rawColor : "6366f1";
   const logo = request.nextUrl.searchParams.get("logo") || "";
+  const rawRef = (request.nextUrl.searchParams.get("ref") || "").trim().toLowerCase();
+  const ref = /^[a-f0-9]{16,64}$/.test(rawRef) ? rawRef : "";
 
   const params = new URLSearchParams();
   if (brand) params.set("brand", brand);
   if (color) params.set("color", color.startsWith("#") ? color : `#${color}`);
   if (logo) params.set("logo", logo);
+  if (ref) params.set("ref", ref);
   const qs = params.toString();
   const embedUrl = `${base}/embed/audit${qs ? `?${qs}` : ""}`;
 

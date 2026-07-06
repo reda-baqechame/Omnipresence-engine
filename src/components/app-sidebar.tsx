@@ -6,11 +6,12 @@ const NAV_ITEMS = [
   { href: "/app/projects", label: "Projects", icon: FolderKanban },
   { href: "/app/ops", label: "Ops Console", icon: Workflow },
   { href: "/app/reports", label: "Reports", icon: FileText },
-  { href: "/app/leads", label: "Leads", icon: Users },
+  { href: "/app/leads", label: "Leads", icon: Users, adminOnly: true },
   { href: "/app/settings", label: "Settings", icon: Settings },
 ];
 
-export function AppSidebar() {
+export function AppSidebar({ showLeads = false }: { showLeads?: boolean }) {
+  const items = NAV_ITEMS.filter((item) => !item.adminOnly || showLeads);
   return (
     <aside className="w-64 border-r border-border bg-card min-h-screen p-4 flex flex-col">
       <Link href="/app" className="flex items-center gap-2 px-2 py-4 mb-4">
@@ -19,7 +20,7 @@ export function AppSidebar() {
       </Link>
 
       <nav className="flex-1 space-y-1">
-        {NAV_ITEMS.map((item) => (
+        {items.map((item) => (
           <Link
             key={item.href}
             href={item.href}

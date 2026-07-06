@@ -105,6 +105,7 @@ export interface AuditLead {
     critical_issues?: number;
   };
   source: string;
+  organization_id?: string | null;
   created_at: string;
 }
 
@@ -123,6 +124,7 @@ export interface Organization {
   api_credits_used: number;
   slack_webhook_url?: string;
   notifications_enabled?: boolean;
+  audit_referral_token?: string;
   created_at: string;
   updated_at: string;
 }

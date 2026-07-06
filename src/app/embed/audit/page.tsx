@@ -8,6 +8,7 @@ export default function EmbedAuditPage() {
   const brand = searchParams.get("brand") || "";
   const color = searchParams.get("color") || "#6366f1";
   const logo = searchParams.get("logo") || "";
+  const orgToken = searchParams.get("ref") || undefined;
 
   const [form, setForm] = useState({ domain: "", brandName: brand, industry: "", email: "" });
   const [loading, setLoading] = useState(false);
@@ -32,7 +33,7 @@ export default function EmbedAuditPage() {
       const res = await fetch("/api/public/audit", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ ...form, brandName: form.brandName || brand }),
+        body: JSON.stringify({ ...form, brandName: form.brandName || brand, orgToken }),
       });
       const data = await res.json();
       if (!res.ok) setResult({ error: data.error || "Audit failed" });

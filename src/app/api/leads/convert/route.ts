@@ -20,7 +20,7 @@ export async function POST(request: NextRequest) {
     .single();
 
   if (!membership) return apiError("No organization found");
-  if (!["owner", "admin", "member"].includes(membership.role)) {
+  if (!["owner", "admin"].includes(membership.role)) {
     return apiForbidden();
   }
 
@@ -31,6 +31,10 @@ export async function POST(request: NextRequest) {
     .single();
 
   if (!lead) return apiNotFound();
+
+  if (!lead.organization_id || lead.organization_id !== membership.organization_id) {
+    return apiError("Lead does not belong to your organization", 403);
+  }
 
   let domain: string;
   try {

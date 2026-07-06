@@ -11,6 +11,7 @@ import { guardPublicEndpoint, isValidEmail } from "@/lib/security/public-guard";
 import { apiError, readJsonBody } from "@/lib/security/api-response";
 import { runPublicAuditIntelligenceWithBudget } from "@/lib/engines/public-audit-scan";
 import { preferLiveData } from "@/lib/config/capabilities";
+import { resolveOrgFromAuditToken } from "@/lib/security/audit-referral";
 
 export const maxDuration = 120;
 
@@ -18,13 +19,21 @@ export async function POST(request: NextRequest) {
   const limited = await guardPublicEndpoint(request, "public-audit", 5, 60 * 60 * 1000);
   if (limited) return limited;
 
-  let body: { domain?: string; brandName?: string; industry?: string; email?: string; location?: string; competitors?: string[] };
+  let body: {
+    domain?: string;
+    brandName?: string;
+    industry?: string;
+    email?: string;
+    location?: string;
+    competitors?: string[];
+    orgToken?: string;
+  };
   try {
     body = await readJsonBody(request);
   } catch {
     return apiError("Invalid JSON body");
   }
-  const { domain, brandName, industry, email, location, competitors } = body;
+  const { domain, brandName, industry, email, location, competitors, orgToken } = body;
 
   if (!domain || !email) {
     return apiError("Domain and email required");
@@ -154,13 +163,21 @@ export async function POST(request: NextRequest) {
 
   try {
     const supabase = await createServiceClient();
+    const organizationId = await resolveOrgFromAuditToken(supabase, orgToken);
     await supabase.from("audit_leads").insert({
       email: email.toLowerCase().slice(0, 254),
       domain: normalized,
       brand_name: name,
       industry: ind,
       score_snapshot: scoreSnapshot,
-      source: preferLiveData() ? "public_audit_live" : "public_audit",
+      source: organizationId
+        ? preferLiveData()
+          ? "agency_audit_live"
+          : "agency_audit"
+        : preferLiveData()
+          ? "public_audit_live"
+          : "public_audit",
+      organization_id: organizationId,
     });
   } catch {
     // Lead persistence is best-effort when DB isn't configured

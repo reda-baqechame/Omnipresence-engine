@@ -1,13 +1,16 @@
 "use client";
 
-import { useState } from "react";
+import { useState, Suspense } from "react";
 import Link from "next/link";
-import { Globe, ArrowRight, CheckCircle } from "lucide-react";
+import { useSearchParams } from "next/navigation";
+import { Globe, ArrowRight } from "lucide-react";
 import { ScoreGauge } from "@/components/score-gauge";
 import { SubScoreBar } from "@/components/score-gauge";
 import { CoverageMap } from "@/components/coverage-map";
 
-export default function PublicAuditPage() {
+function PublicAuditForm() {
+  const searchParams = useSearchParams();
+  const orgToken = searchParams.get("ref") || undefined;
   const [form, setForm] = useState({ domain: "", brandName: "", industry: "", email: "" });
   const [loading, setLoading] = useState(false);
   const [result, setResult] = useState<{
@@ -32,7 +35,7 @@ export default function PublicAuditPage() {
     const res = await fetch("/api/public/audit", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(form),
+      body: JSON.stringify({ ...form, orgToken }),
     });
     setResult(await res.json());
     setLoading(false);
@@ -206,5 +209,13 @@ export default function PublicAuditPage() {
         )}
       </div>
     </div>
+  );
+}
+
+export default function PublicAuditPage() {
+  return (
+    <Suspense fallback={<div className="min-h-screen flex items-center justify-center text-muted-foreground">Loading...</div>}>
+      <PublicAuditForm />
+    </Suspense>
   );
 }

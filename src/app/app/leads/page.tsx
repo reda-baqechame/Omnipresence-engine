@@ -1,15 +1,36 @@
 import { createClient } from "@/lib/supabase/server";
 import type { AuditLead } from "@/types/database";
 import Link from "next/link";
+import { redirect } from "next/navigation";
 import { ConvertLeadButton } from "@/components/convert-lead-button";
 
 export default async function LeadsPage() {
   const supabase = await createClient();
   const { data: { user } } = await supabase.auth.getUser();
+  if (!user) redirect("/login");
+
+  const { data: adminMemberships } = await supabase
+    .from("memberships")
+    .select("organization_id, role")
+    .eq("user_id", user.id)
+    .in("role", ["owner", "admin"]);
+
+  const orgIds = (adminMemberships || []).map((m) => m.organization_id);
+  if (orgIds.length === 0) {
+    return (
+      <div className="bg-card border border-border rounded-xl p-12 text-center text-muted-foreground">
+        <p className="mb-2">Leads are only visible to organization owners and admins.</p>
+        <Link href="/app" className="text-primary hover:underline text-sm">
+          Back to dashboard
+        </Link>
+      </div>
+    );
+  }
 
   const { data: leads } = await supabase
     .from("audit_leads")
     .select("*")
+    .in("organization_id", orgIds)
     .order("created_at", { ascending: false })
     .limit(100);
 
@@ -21,15 +42,14 @@ export default async function LeadsPage() {
         <div>
           <h1 className="text-3xl font-bold">Audit Leads</h1>
           <p className="text-muted-foreground mt-1">
-            Prospects captured from the public free audit at /audit
+            Prospects from your embeddable audit widget and referral links — scoped to your organization only.
           </p>
         </div>
         <Link
-          href="/audit"
-          target="_blank"
+          href="/app/settings/whitelabel"
           className="border border-border px-4 py-2 rounded-lg text-sm hover:bg-secondary transition"
         >
-          View Public Audit
+          Get Embed Code
         </Link>
       </div>
 
@@ -78,8 +98,7 @@ export default async function LeadsPage() {
         <div className="bg-card border border-border rounded-xl p-12 text-center text-muted-foreground">
           <p className="mb-2">No leads captured yet.</p>
           <p className="text-sm">
-            Share your free audit page to start collecting prospects.
-            {!user && " Sign in to view leads."}
+            Add the embeddable audit widget from Settings → White-Label to start collecting prospects.
           </p>
         </div>
       )}
