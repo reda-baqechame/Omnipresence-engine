@@ -9,7 +9,8 @@ import { submitIndexNow } from "@/lib/engines/indexnow";
 import { loadProjectIntegration, publishViaCms, type CmsCredentials, type CmsPlatform } from "@/lib/integrations/store";
 import { getValidOAuthToken } from "@/lib/oauth/tokens";
 import { verifyProjectAccess } from "@/lib/security/project-access";
-import { apiError, apiForbidden, apiNotFound, apiUnauthorized, readJsonBody } from "@/lib/security/api-response";
+import { apiError, apiForbidden, apiNotFound, apiUnauthorized, readJsonBody, validateBody } from "@/lib/security/api-response";
+import { DistributionScheduleSchema } from "@/lib/validation/schemas";
 
 // Publishers are unified in @/lib/integrations/store (publishViaCms). This route
 // only needs the supported-platform allowlist for request validation.
@@ -20,7 +21,21 @@ export async function POST(request: NextRequest) {
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) return apiUnauthorized();
 
-  const { assetId, platform, credentials: inlineCredentials } = await readJsonBody(request);
+  const parsed = await validateBody(request, DistributionScheduleSchema);
+  if (parsed.response) return parsed.response;
+  const body = parsed.data;
+  const { projectId, channel, payload } = body;
+
+  const access = await verifyProjectAccess(supabase, projectId, user.id, "member");
+  if (!access) return apiForbidden();
+
+  const assetId = typeof payload?.assetId === "string" ? payload.assetId : undefined;
+  const platform = typeof payload?.platform === "string" ? payload.platform : undefined;
+  const inlineCredentials = payload?.credentials;
+
+  if (!assetId || !platform) {
+    return apiError("payload.assetId and payload.platform required");
+  }
 
   const { data: asset } = await supabase
     .from("content_assets")
@@ -29,9 +44,7 @@ export async function POST(request: NextRequest) {
     .single();
 
   if (!asset) return apiNotFound();
-
-  const access = await verifyProjectAccess(supabase, asset.project_id, user.id, "member");
-  if (!access) return apiForbidden();
+  if (asset.project_id !== projectId) return apiForbidden();
 
   if (!SUPPORTED_CMS.includes(platform as CmsPlatform)) {
     return NextResponse.json({ error: "Unknown platform" }, { status: 400 });

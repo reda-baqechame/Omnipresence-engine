@@ -1,9 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
-import { readJsonBody } from "@/lib/security/api-response";
+import { apiError, validateBody } from "@/lib/security/api-response";
 import { createServiceClient } from "@/lib/supabase/server";
 import { authenticateApiKey } from "@/lib/security/api-keys";
 import { triggerProjectScan } from "@/lib/engines/trigger-scan";
 import { guardApiKeyEndpoint } from "@/lib/security/api-v1-guard";
+import { V1ScanSchema } from "@/lib/validation/schemas";
 
 /**
  * Public API (Phase 11): batch-trigger scans for projects owned by the key's org.
@@ -19,9 +20,11 @@ export async function POST(request: NextRequest) {
   const limited = await guardApiKeyEndpoint(request, ctx.organizationId, "scan", 20, 60 * 60 * 1000);
   if (limited) return limited;
 
-  const body = await readJsonBody(request).catch(() => ({}));
+  const parsed = await validateBody(request, V1ScanSchema);
+  if (parsed.response) return parsed.response;
+  const body = parsed.data;
   const all = body.all === true;
-  const requestedIds: string[] = Array.isArray(body.projectIds) ? body.projectIds : [];
+  const requestedIds: string[] = body.projectIds ?? [];
 
   let query = supabase
     .from("projects")

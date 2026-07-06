@@ -1,7 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient, createServiceClient } from "@/lib/supabase/server";
 import { slugify } from "@/lib/utils";
-import { apiError, apiServerError, apiUnauthorized, readJsonBody } from "@/lib/security/api-response";
+import { apiError, apiServerError, apiUnauthorized, validateBody } from "@/lib/security/api-response";
+import { AuthSetupOrgSchema } from "@/lib/validation/schemas";
 import { guardPublicEndpoint } from "@/lib/security/public-guard";
 
 export async function POST(request: NextRequest) {
@@ -12,15 +13,10 @@ export async function POST(request: NextRequest) {
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) return apiUnauthorized();
 
-  let orgName: unknown;
-  try {
-    ({ orgName } = await readJsonBody(request));
-  } catch {
-    return apiError("Invalid JSON body");
-  }
-  if (!orgName || typeof orgName !== "string" || orgName.trim().length < 2) {
-    return apiError("Organization name is required");
-  }
+  const parsed = await validateBody(request, AuthSetupOrgSchema);
+  if (parsed.response) return parsed.response;
+  const body = parsed.data;
+  const orgName = body.name;
 
   const service = await createServiceClient();
 
@@ -38,7 +34,7 @@ export async function POST(request: NextRequest) {
 
   const { data: org, error: orgError } = await service
     .from("organizations")
-    .insert({ name: orgName.trim().slice(0, 120), slug, api_credit_limit: 9999999 })
+    .insert({ name: orgName.slice(0, 120), slug, api_credit_limit: 9999999 })
     .select()
     .single();
 

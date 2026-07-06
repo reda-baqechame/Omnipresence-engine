@@ -5,7 +5,8 @@ import {
   maskCredentials,
 } from "@/lib/security/credential-vault";
 import { verifyProjectAccess } from "@/lib/security/project-access";
-import { apiError, apiForbidden, apiUnauthorized, readJsonBody } from "@/lib/security/api-response";
+import { apiError, apiForbidden, apiUnauthorized, validateBody } from "@/lib/security/api-response";
+import { IntegrationsUpsertSchema } from "@/lib/validation/schemas";
 
 const VALID_PROVIDERS = new Set(["wordpress", "webflow", "shopify", "buffer", "ayrshare", "gbp", "clarity"]);
 
@@ -33,16 +34,12 @@ export async function POST(request: NextRequest) {
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) return apiUnauthorized();
 
-  const { projectId, provider, credentials, metadata } = await readJsonBody(request) as {
-    projectId: string;
-    provider: string;
-    credentials: Record<string, unknown>;
-    metadata?: Record<string, unknown>;
-  };
+  const parsed = await validateBody(request, IntegrationsUpsertSchema);
+  if (parsed.response) return parsed.response;
+  const body = parsed.data;
+  const { projectId, provider, credentials } = body;
 
-  if (!projectId || !provider || !credentials) {
-    return apiError("projectId, provider, credentials required");
-  }
+  if (!credentials) return apiError("credentials required");
   if (!VALID_PROVIDERS.has(provider)) return apiError("Invalid provider");
 
   const access = await verifyProjectAccess(supabase, projectId, user.id, "admin");
@@ -57,7 +54,7 @@ export async function POST(request: NextRequest) {
         project_id: projectId,
         provider,
         credentials_encrypted: encrypted,
-        metadata: metadata || {},
+        metadata: {},
         is_active: true,
         updated_at: new Date().toISOString(),
       },

@@ -1,4 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
+import { createClient } from "@/lib/supabase/server";
+import { verifyProjectAccess } from "@/lib/security/project-access";
+import { apiError, apiForbidden, apiUnauthorized, validateBody } from "@/lib/security/api-response";
+import { EmbedAuditSnippetSchema } from "@/lib/validation/schemas";
 
 /** Public embed snippet for agency white-label audit widgets (v2 — brand/color params). */
 export async function GET(request: NextRequest) {
@@ -39,4 +43,24 @@ export async function GET(request: NextRequest) {
       "Cache-Control": "public, max-age=3600",
     },
   });
+}
+
+/** POST /api/embed/audit-snippet — validated embed config for a project domain. */
+export async function POST(request: NextRequest) {
+  const supabase = await createClient();
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) return apiUnauthorized();
+
+  const parsed = await validateBody(request, EmbedAuditSnippetSchema);
+  if (parsed.response) return parsed.response;
+  const body = parsed.data;
+  const { projectId, domain } = body;
+
+  const access = await verifyProjectAccess(supabase, projectId, user.id, "viewer");
+  if (!access) return apiForbidden();
+
+  const base = process.env.NEXT_PUBLIC_APP_URL || "https://omnipresence-engine.vercel.app";
+  const embedUrl = `${base}/embed/audit?domain=${encodeURIComponent(domain)}`;
+
+  return NextResponse.json({ projectId, domain, embedUrl });
 }

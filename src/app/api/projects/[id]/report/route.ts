@@ -8,10 +8,12 @@ import {
 } from "@/lib/engines/report-builder";
 import { verifyProjectAccess } from "@/lib/security/project-access";
 import { canUseDeepReport } from "@/lib/plans/features";
-import { apiForbidden, apiServerError, apiUnauthorized } from "@/lib/security/api-response";
+import { apiForbidden, apiServerError, apiUnauthorized, validateBody } from "@/lib/security/api-response";
+import { guardOrgEndpoint } from "@/lib/security/api-v1-guard";
 import type { SubscriptionPlan } from "@/types/database";
 import type { IntelligenceReportSectionId } from "@/types/intelligence-report";
 import { getReportPreset } from "@/lib/engines/report-presets";
+import { ReportGenerateSchema } from "@/lib/validation/schemas";
 
 export async function POST(
   request: NextRequest,
@@ -27,29 +29,26 @@ export async function POST(
   const access = await verifyProjectAccess(supabase, id, user.id, "member");
   if (!access) return apiForbidden();
 
+  const limited = await guardOrgEndpoint(access.organizationId, "report-generate", 15, 60 * 60 * 1000);
+  if (limited) return limited;
+
   let reportType: "standard" | "deep" = "standard";
   let sections: IntelligenceReportSectionId[] | undefined;
 
   const contentType = request.headers.get("content-type") || "";
   if (contentType.includes("application/json")) {
-    try {
-      const body = (await request.json()) as {
-        report_type?: "standard" | "deep";
-        sections?: IntelligenceReportSectionId[];
-        preset?: string;
-      };
-      if (body.preset) {
-        const preset = getReportPreset(body.preset);
-        if (preset) {
-          reportType = preset.reportType;
-          sections = preset.sections.length ? preset.sections : undefined;
-        }
-      } else {
-        reportType = body.report_type === "deep" ? "deep" : "standard";
-        sections = body.sections;
+    const parsed = await validateBody(request, ReportGenerateSchema);
+    if (parsed.response) return parsed.response;
+    const body = parsed.data;
+    if (body.preset) {
+      const preset = getReportPreset(body.preset);
+      if (preset) {
+        reportType = preset.reportType;
+        sections = preset.sections.length ? preset.sections : undefined;
       }
-    } catch {
-      /* default standard */
+    } else {
+      reportType = body.report_type === "deep" ? "deep" : "standard";
+      sections = body.sections as IntelligenceReportSectionId[] | undefined;
     }
   }
 

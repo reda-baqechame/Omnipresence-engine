@@ -81,7 +81,7 @@ export async function GET(
   }));
 
   const measuredVisibility = (visibility || []).filter((v) => v.data_source === "measured").length;
-  const providers = describeProviders().filter((p) => p.usableNow);
+  const providers = (await describeProviders()).filter((p) => p.usableNow);
   const caps = getCapabilitiesSummary();
 
   return NextResponse.json({

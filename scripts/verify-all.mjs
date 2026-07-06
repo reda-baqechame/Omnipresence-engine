@@ -15,6 +15,8 @@ function run(cmd, args, cwd = root) {
 }
 
 const steps = [
+  { name: "rls-coverage", ok: () => run("node", ["scripts/verify-rls-coverage.mjs"]) },
+  { name: "zod-coverage", ok: () => run("node", ["scripts/verify-zod-coverage.mjs"]) },
   { name: "table-coverage", ok: () => run("node", ["scripts/verify-table-coverage.mjs"]) },
   { name: "column-coverage", ok: () => run("node", ["scripts/verify-column-coverage.mjs"]) },
   { name: "route-auth", ok: () => run("node", ["scripts/verify-route-auth.mjs"]) },
@@ -54,6 +56,7 @@ const steps = [
         "src/lib/security/__tests__/rate-limit.test.ts",
         "src/lib/observability/__tests__/log.test.ts",
         "src/lib/validation/__tests__/schemas.test.ts",
+        "src/lib/providers/__tests__/envelope.test.ts",
         "src/lib/providers/__tests__/circuit-breaker.test.ts",
         "src/lib/providers/__tests__/router-failover.smoke.test.ts",
         "src/lib/providers/__tests__/failure-injection.test.ts",
@@ -66,6 +69,8 @@ const steps = [
         "src/lib/engines/__tests__/keyword-intelligence.test.ts",
         "src/lib/engines/__tests__/source-influence.test.ts",
         "src/app/api/__tests__/routes-contract.test.ts",
+        "src/app/api/__tests__/routes-http.test.ts",
+        "src/components/__tests__/trust-ui.test.ts",
       ]),
   },
   { name: "accuracy-golden", ok: () => run("node", ["scripts/verify-accuracy.mjs"]) },

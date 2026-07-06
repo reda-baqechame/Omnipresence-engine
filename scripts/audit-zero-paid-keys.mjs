@@ -57,7 +57,7 @@ const SOVEREIGN = {
     { id: "omnidata", env: ["OMNIDATA_BASE_URL"] },
     { id: "playwright-scrape", env: ["OMNIDATA_ENABLE_SCRAPE"] },
   ],
-  crawl: [{ id: "playwright-crawl", always: true }],
+  crawl: [{ id: "fetch-crawl", always: true }],
   backlinks: [{ id: "commoncrawl-webgraph", always: true }],
   generate: [{ id: "ollama-generate", env: ["OLLAMA_BASE_URL"] }],
   email: [{ id: "smtp-email", env: ["SMTP_HOST"] }],

@@ -1,5 +1,6 @@
 import { getBacklinks, isOmniDataActive, hasLabsApi } from "@/lib/providers/dataforseo";
 import { resolveDomainAuthority } from "@/lib/providers/domain-authority";
+import { buildProviderEnvelope } from "@/lib/providers/envelope";
 import type { ProviderResult } from "./types";
 
 export interface BacklinkItem {
@@ -70,7 +71,22 @@ export async function getBacklinksFree(
       }
       if (items.length > 0) {
         await enrichWithAuthority(items);
-        return { success: true, data: items, creditsUsed: real.creditsUsed };
+        const provider = isOmniDataActive() ? "omnidata-webgraph" : "dataforseo";
+        return {
+          success: true,
+          data: items,
+          creditsUsed: real.creditsUsed,
+          envelope: buildProviderEnvelope({
+            capability: "backlinks",
+            provider,
+            providerClass: "surface_measurement",
+            dataSource: "measured",
+            freshness: "recent",
+            confidence: 0.9,
+            parserVersion: "backlinks-free@1",
+            payload: items,
+          }),
+        };
       }
     }
   }

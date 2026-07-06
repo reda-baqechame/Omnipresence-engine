@@ -3,12 +3,16 @@ import { createClient } from "@/lib/supabase/server";
 import { triggerProjectScan } from "@/lib/engines/trigger-scan";
 import { verifyProjectAccess } from "@/lib/security/project-access";
 import { ApiCreditExceededError } from "@/lib/metering/api-usage";
-import { apiError, apiForbidden, apiNotFound, apiServerError, apiUnauthorized } from "@/lib/security/api-response";
+import { apiError, apiForbidden, apiNotFound, apiServerError, apiUnauthorized, validateBody } from "@/lib/security/api-response";
+import { RescanSchema } from "@/lib/validation/schemas";
 
 export async function POST(
-  _request: NextRequest,
+  request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
+  const parsed = await validateBody(request, RescanSchema);
+  if (parsed.response) return parsed.response;
+
   const { id } = await params;
   const supabase = await createClient();
   const { data: { user } } = await supabase.auth.getUser();

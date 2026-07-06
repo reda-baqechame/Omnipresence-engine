@@ -1,7 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { verifyProjectAccess } from "@/lib/security/project-access";
-import { apiError, apiForbidden, apiUnauthorized, readJsonBody } from "@/lib/security/api-response";
+import { apiError, apiForbidden, apiUnauthorized, validateBody } from "@/lib/security/api-response";
+import { DeepCrawlSchema } from "@/lib/validation/schemas";
 import { runDeepCrawl, persistDeepCrawl } from "@/lib/engines/deep-crawl";
 
 export async function GET(request: NextRequest) {
@@ -28,14 +29,10 @@ export async function POST(request: NextRequest) {
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) return apiUnauthorized();
 
-  let body: { projectId?: string; maxPages?: number };
-  try {
-    body = await readJsonBody(request);
-  } catch {
-    return apiError("Invalid JSON body");
-  }
-  const { projectId } = body;
-  if (!projectId) return apiError("projectId required");
+  const parsed = await validateBody(request, DeepCrawlSchema);
+  if (parsed.response) return parsed.response;
+  const body = parsed.data;
+  const { projectId, url, maxPages } = body;
 
   const access = await verifyProjectAccess(supabase, projectId, user.id, "member");
   if (!access) return apiForbidden();
@@ -47,8 +44,8 @@ export async function POST(request: NextRequest) {
     .single();
   if (!project) return apiError("Project not found", 404);
 
-  const maxPages = Math.min(120, Math.max(10, Number(body.maxPages) || 60));
-  const result = await runDeepCrawl(project.domain, maxPages);
+  const pageLimit = Math.min(120, Math.max(10, maxPages || 60));
+  const result = await runDeepCrawl(url || project.domain, pageLimit);
   if (result.available) {
     await persistDeepCrawl(supabase, projectId, project.organization_id, result);
   }

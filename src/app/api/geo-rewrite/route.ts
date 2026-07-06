@@ -2,7 +2,8 @@ import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { inngest } from "@/lib/inngest/client";
 import { verifyProjectAccess } from "@/lib/security/project-access";
-import { apiError, apiForbidden, apiUnauthorized, readJsonBody } from "@/lib/security/api-response";
+import { apiError, apiForbidden, apiUnauthorized, validateBody } from "@/lib/security/api-response";
+import { GeoRewriteSchema } from "@/lib/validation/schemas";
 
 /**
  * Kick off the measured GEO rewrite loop for a page: AutoGEO rewrite -> deploy
@@ -14,14 +15,10 @@ export async function POST(request: NextRequest) {
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) return apiUnauthorized();
 
-  let body: { projectId?: string; url?: string; waitDays?: number };
-  try {
-    body = await readJsonBody(request);
-  } catch {
-    return apiError("Invalid JSON body");
-  }
-  const { projectId, url, waitDays } = body;
-  if (!projectId) return apiError("projectId required");
+  const parsed = await validateBody(request, GeoRewriteSchema);
+  if (parsed.response) return parsed.response;
+  const body = parsed.data;
+  const { projectId, url } = body;
 
   const access = await verifyProjectAccess(supabase, projectId, user.id, "member");
   if (!access) return apiForbidden();
@@ -42,7 +39,7 @@ export async function POST(request: NextRequest) {
 
   await inngest.send({
     name: "project/geo-rewrite.requested",
-    data: { projectId, organizationId: project.organization_id, url, waitDays },
+    data: { projectId, organizationId: project.organization_id, url },
   });
 
   return NextResponse.json({ success: true, mode: "inngest" });

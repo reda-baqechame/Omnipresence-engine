@@ -76,6 +76,8 @@
     "check:claims-backed": "node scripts/check-claims-backed.mjs",
     "audit:live": "node scripts/audit-live-results.mjs",
     "verify:all": "node scripts/verify-all.mjs",
+    "verify:rls": "node scripts/verify-rls-coverage.mjs",
+    "verify:zod": "node scripts/verify-zod-coverage.mjs",
     "e2e:happy-path": "node scripts/e2e-happy-path.mjs",
     "omnidata:test": "npm run test --prefix services/omnidata",
     "omnidata:parity": "npm run parity --prefix services/omnidata",
@@ -141,6 +143,10 @@
     "typescript": "^6.0.3"
   },
   "optionalDependencies": {
+    "@opentelemetry/exporter-trace-otlp-http": "^0.57.0",
+    "@opentelemetry/resources": "^1.30.0",
+    "@opentelemetry/sdk-node": "^0.57.0",
+    "@opentelemetry/semantic-conventions": "^1.28.0",
     "@next/swc-linux-x64-gnu": "16.2.9",
     "@next/swc-win32-x64-msvc": "16.2.9",
     "@tailwindcss/oxide-linux-x64-gnu": "4.3.1",

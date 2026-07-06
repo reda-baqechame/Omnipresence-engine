@@ -18,7 +18,7 @@ export async function GET() {
   }
 
   const coverage = getClaimsCoverage();
-  const adapters = describeProviders();
+  const adapters = await describeProviders();
   return NextResponse.json({
     ...getCapabilitiesSummary(),
     production: getProductionReadiness(),

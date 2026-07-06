@@ -16,6 +16,7 @@
  */
 import { createHash, randomUUID } from "node:crypto";
 import type { SupabaseClient } from "@supabase/supabase-js";
+import { getTraceId } from "@/lib/observability/trace";
 
 const BUCKET = "ai-evidence";
 
@@ -134,6 +135,7 @@ export async function recordEvidence(
     screenshot_path: screenshotPath,
     dom_path: domPath,
     evidence_url: evidenceUrl,
+    trace_id: getTraceId() ?? null,
   });
   if (error) return null;
 
@@ -242,6 +244,7 @@ export async function recordMeasurementEvidence(
     response_hash: hash,
     payload_excerpt: input.excerpt || {},
     evidence_url: evidenceUrl,
+    trace_id: getTraceId() ?? null,
   });
   if (error) return null;
 

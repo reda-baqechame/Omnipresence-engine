@@ -2,7 +2,8 @@ import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { signOAuthState } from "@/lib/security/oauth-state";
 import { verifyProjectAccess } from "@/lib/security/project-access";
-import { apiError, apiUnauthorized, apiForbidden, apiServerError, readJsonBody } from "@/lib/security/api-response";
+import { apiError, apiUnauthorized, apiForbidden, apiServerError, validateBody } from "@/lib/security/api-response";
+import { OAuthConnectSchema } from "@/lib/validation/schemas";
 
 const OAUTH_PROVIDERS = {
   google_search_console: {
@@ -111,24 +112,26 @@ export async function POST(request: NextRequest) {
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) return apiUnauthorized();
 
-  const { projectId, provider, accessToken, refreshToken, expiresAt, metadata } = await readJsonBody(request);
+  const parsed = await validateBody(request, OAuthConnectSchema);
+  if (parsed.response) return parsed.response;
+  const body = parsed.data;
+  const { projectId, provider } = body;
+
+  if (!projectId) return apiError("projectId required");
 
   const access = await verifyProjectAccess(supabase, projectId, user.id, "admin");
   if (!access) return apiForbidden();
 
-  const { data, error } = await supabase
-    .from("oauth_connections")
-    .upsert({
-      project_id: projectId,
-      provider,
-      access_token: accessToken,
-      refresh_token: refreshToken,
-      expires_at: expiresAt,
-      ...(metadata && typeof metadata === "object" ? { metadata } : {}),
-    }, { onConflict: "project_id,provider" })
-    .select()
-    .single();
+  const providerKey =
+    provider === "gsc" || provider === "google"
+      ? "google_search_console"
+      : provider === "bing"
+        ? "bing_webmaster"
+        : "google_analytics";
 
-  if (error) return apiServerError("oauth connection failed", error);
-  return NextResponse.json({ connection: data });
+  const appUrl = process.env.NEXT_PUBLIC_APP_URL || "";
+  return NextResponse.json({
+    connectUrl: `${appUrl}/api/oauth?provider=${providerKey}&projectId=${projectId}`,
+    provider: providerKey,
+  });
 }

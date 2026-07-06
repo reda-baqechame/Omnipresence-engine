@@ -1,7 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { verifyProjectAccess } from "@/lib/security/project-access";
-import { apiError, apiForbidden, apiUnauthorized, readJsonBody } from "@/lib/security/api-response";
+import { apiError, apiForbidden, apiUnauthorized, validateBody } from "@/lib/security/api-response";
+import { PanelCreateSchema } from "@/lib/validation/schemas";
 import { clampRuns, sanitizeEngines } from "@/lib/engines/prompt-panels";
 
 /** GET /api/panels?projectId=... — list panels (with member counts). */
@@ -38,14 +39,11 @@ export async function GET(request: NextRequest) {
 }
 
 interface CreatePanelBody {
-  projectId?: string;
-  name?: string;
   description?: string;
   geos?: string[];
   personas?: string[];
   engines?: string[];
   runsPerPrompt?: number;
-  prompts?: string[];
 }
 
 /** POST /api/panels — create a panel + its prompt members. */
@@ -54,20 +52,21 @@ export async function POST(request: NextRequest) {
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) return apiUnauthorized();
 
-  const body = await readJsonBody<CreatePanelBody>(request);
-  const projectId = body.projectId;
-  if (!projectId) return apiError("projectId required");
-  if (!body.name?.trim()) return apiError("name required");
+  const parsed = await validateBody(request, PanelCreateSchema);
+  if (parsed.response) return parsed.response;
+  const validated = parsed.data;
+  const { projectId, name, prompts } = validated;
+  const body = validated as typeof validated & CreatePanelBody;
   const access = await verifyProjectAccess(supabase, projectId, user.id, "member");
   if (!access) return apiForbidden();
 
-  const prompts = (body.prompts || []).map((p) => p.trim()).filter(Boolean).slice(0, 200);
+  const promptList = prompts.map((p) => p.trim()).filter(Boolean).slice(0, 200);
 
   const { data: panel, error } = await supabase
     .from("ai_prompt_panels")
     .insert({
       project_id: projectId,
-      name: body.name.trim().slice(0, 200),
+      name: name.slice(0, 200),
       description: body.description?.slice(0, 1000) || null,
       geos: (body.geos || []).map((g) => g.trim()).filter(Boolean).slice(0, 20),
       personas: (body.personas || []).map((p) => p.trim()).filter(Boolean).slice(0, 20),
@@ -78,9 +77,9 @@ export async function POST(request: NextRequest) {
     .single();
   if (error || !panel) return apiError("Failed to create panel", 500);
 
-  if (prompts.length) {
+  if (promptList.length) {
     await supabase.from("ai_prompt_panel_members").insert(
-      prompts.map((text) => ({
+      promptList.map((text) => ({
         panel_id: panel.id,
         project_id: projectId,
         prompt_text: text.slice(0, 500),
@@ -88,5 +87,5 @@ export async function POST(request: NextRequest) {
     );
   }
 
-  return NextResponse.json({ id: panel.id, member_count: prompts.length }, { status: 201 });
+  return NextResponse.json({ id: panel.id, member_count: promptList.length }, { status: 201 });
 }

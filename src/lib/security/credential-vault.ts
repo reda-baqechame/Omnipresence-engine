@@ -39,6 +39,10 @@ function deriveEncryptKey(): Buffer {
 function deriveDecryptKeys(): Buffer[] {
   const secrets: string[] = [];
   if (hasIntegrationEncryptionKey()) secrets.push(process.env.INTEGRATION_ENCRYPTION_KEY!);
+  const previous = process.env.INTEGRATION_ENCRYPTION_KEY_PREVIOUS;
+  if (previous && previous.length >= 32 && !previous.startsWith("your-")) {
+    secrets.push(previous);
+  }
   if (process.env.SUPABASE_SERVICE_ROLE_KEY) secrets.push(process.env.SUPABASE_SERVICE_ROLE_KEY);
   if (!isProductionDeploy()) secrets.push(DEV_FALLBACK);
   const unique = [...new Set(secrets)];

@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { parseOrError } from "@/lib/validation/schemas";
+import { bindTraceFromRequest } from "@/lib/observability/trace";
 import type { z } from "zod";
 
 export function apiError(message: string, status = 400) {
@@ -35,6 +36,7 @@ export async function readJsonBody<T = any>(
   request: Request,
   fallback: T = {} as T
 ): Promise<T> {
+  bindTraceFromRequest(request);
   try {
     const body = await request.json();
     return (body ?? fallback) as T;
@@ -57,6 +59,7 @@ export async function validateBody<T>(
   request: Request,
   schema: z.ZodType<T>
 ): Promise<{ data: T; response: null } | { data: null; response: NextResponse }> {
+  bindTraceFromRequest(request);
   const body = await readJsonBody(request);
   const result = parseOrError(schema, body);
   if (!result.ok) {

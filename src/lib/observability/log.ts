@@ -20,6 +20,37 @@ export function logProviderError(scope: string, error: unknown, context?: Record
   console.warn(`[provider-error] ${JSON.stringify(payload)}`);
 }
 
+export type MetricTags = Record<string, string | number | boolean | undefined>;
+
+/**
+ * Minimal metrics layer — structured log lines today, swappable for a real
+ * backend later without call-site changes.
+ */
+export function recordMetric(name: string, value: number, tags?: MetricTags): void {
+  const payload = {
+    level: "info",
+    type: "metric",
+    name,
+    value,
+    ...(tags ? { tags } : {}),
+    at: new Date().toISOString(),
+  };
+  console.log(`[metric] ${JSON.stringify(payload)}`);
+}
+
+export function recordSloBreach(slo: string, actual: number, target: number, tags?: MetricTags): void {
+  const payload = {
+    level: "error",
+    type: "slo-breach",
+    slo,
+    actual,
+    target,
+    ...(tags ? { tags } : {}),
+    at: new Date().toISOString(),
+  };
+  console.error(`[slo-breach] ${JSON.stringify(payload)}`);
+}
+
 export interface SentryDsn {
   host: string;
   projectId: string;

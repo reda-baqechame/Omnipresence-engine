@@ -45,6 +45,17 @@ assert(/source_type/.test(roadmap) && /evidence_label/.test(roadmap), "roadmap i
 assert(/provider\?/.test(provenanceBadge) && /evidenceUrl\?/.test(provenanceBadge), "ProvenanceBadge must expose provider and evidence URL");
 assert(/raw_response/.test(visibilityTable) && /evidenceUrl/.test(visibilityTable), "visibility rows must surface provider/evidence metadata");
 
+const runners = read("src/lib/providers/capability-runners.ts");
+const router = read("src/lib/providers/router.ts");
+assert(
+  /fetch-crawl/.test(router) && /fetch-crawl/.test(runners),
+  "crawl sovereign adapter id must be fetch-crawl (keyless HTTP fetch, not playwright)"
+);
+assert(
+  !/playwright-crawl/.test(router) && !/playwright-crawl/.test(runners),
+  "misleading playwright-crawl adapter id must not remain in router/runners"
+);
+
 if (failures.length) {
   console.error("\nOutput quality gate failed:\n");
   for (const failure of failures) console.error(`- ${failure}`);

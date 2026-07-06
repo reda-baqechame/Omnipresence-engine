@@ -7,6 +7,7 @@ import { retryWithExponentialBackoff } from "./retry-policy.js";
 import { writeCaptureEvidence } from "./evidence-writer.js";
 import { withCaptureSlot, captureConcurrencySnapshot } from "./concurrency.js";
 import { renderHtmlToPdf } from "./render-pdf.js";
+import { executeCaptureViaQueue, isQueueEnabled, startCaptureWorker } from "./queue.js";
 
 // Fail fast on insecure production config before binding the port.
 assertProductionAuth();
@@ -75,15 +76,22 @@ app.post("/capture", async (req, res) => {
   const selectedSurface = surface as Surface;
 
   try {
-    const raw = await withCaptureSlot(() =>
-      retryWithExponentialBackoff(
-        () => capture(selectedSurface, prompt, options),
-        {
-          attempts: RETRY_ATTEMPTS,
-          shouldRetry: (_error, _attempt, result) => shouldRetryCapture(result ?? null),
-        }
-      )
-    );
+    const raw = isQueueEnabled()
+      ? await executeCaptureViaQueue({
+          surface: selectedSurface,
+          prompt,
+          options,
+          retryAttempts: RETRY_ATTEMPTS,
+        })
+      : await withCaptureSlot(() =>
+          retryWithExponentialBackoff(
+            () => capture(selectedSurface, prompt, options),
+            {
+              attempts: RETRY_ATTEMPTS,
+              shouldRetry: (_error, _attempt, result) => shouldRetryCapture(result ?? null),
+            }
+          )
+        );
 
     if (!raw) {
       // Not grounded (login required, selector miss). Never fabricate.
@@ -121,6 +129,7 @@ app.post("/capture", async (req, res) => {
       responseHash: raw.responseHash,
       screenshotBase64: raw.screenshotBase64 ?? null,
       domHtml: raw.domHtml ?? null,
+      domHash: raw.domHash ?? null,
       captureContext: raw.context,
       evidencePaths,
       evidenceUrl: evidencePaths?.evidencePublicUrl ?? null,
@@ -161,6 +170,10 @@ app.post("/render-pdf", async (req, res) => {
   }
 });
 
+if (isQueueEnabled()) {
+  startCaptureWorker();
+}
+
 app.listen(PORT, () => {
-  console.log(`ai-ui-capture listening on :${PORT}`);
+  console.log(`ai-ui-capture listening on :${PORT}${isQueueEnabled() ? " (BullMQ worker active)" : ""}`);
 });

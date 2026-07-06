@@ -1,5 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createServiceClient } from "@/lib/supabase/server";
+import { validateBody } from "@/lib/security/api-response";
+import { TrafficPanelIngestSchema } from "@/lib/validation/schemas";
 
 /**
  * POST /api/traffic-panel/ingest
@@ -14,12 +16,10 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  const body = await req.json().catch(() => ({}));
-  const projectId = typeof body.projectId === "string" ? body.projectId : null;
-  const domain = typeof body.domain === "string" ? body.domain : null;
-  if (!projectId || !domain) {
-    return NextResponse.json({ error: "projectId and domain required" }, { status: 400 });
-  }
+  const parsed = await validateBody(req, TrafficPanelIngestSchema);
+  if (parsed.response) return parsed.response;
+  const body = parsed.data;
+  const { projectId, domain, visits } = body;
 
   const supabase = await createServiceClient();
   const { data: project } = await supabase
@@ -29,11 +29,8 @@ export async function POST(req: NextRequest) {
     .single();
   if (!project) return NextResponse.json({ error: "Project not found" }, { status: 404 });
 
-  const end = typeof body.periodEnd === "string" ? body.periodEnd : new Date().toISOString().slice(0, 10);
-  const start =
-    typeof body.periodStart === "string"
-      ? body.periodStart
-      : new Date(Date.now() - 7 * 86400000).toISOString().slice(0, 10);
+  const end = new Date().toISOString().slice(0, 10);
+  const start = new Date(Date.now() - 7 * 86400000).toISOString().slice(0, 10);
 
   const { error } = await supabase.from("traffic_panel_observations").insert({
     project_id: projectId,
@@ -41,12 +38,12 @@ export async function POST(req: NextRequest) {
     domain,
     period_start: start,
     period_end: end,
-    visits: typeof body.visits === "number" ? body.visits : null,
-    unique_visitors: typeof body.uniqueVisitors === "number" ? body.uniqueVisitors : null,
-    pageviews: typeof body.pageviews === "number" ? body.pageviews : null,
-    source: typeof body.source === "string" ? body.source : "pixel",
+    visits: visits ?? null,
+    unique_visitors: null,
+    pageviews: null,
+    source: "pixel",
     provenance: "panel_observed",
-    metadata: body.metadata && typeof body.metadata === "object" ? body.metadata : {},
+    metadata: {},
   });
 
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });

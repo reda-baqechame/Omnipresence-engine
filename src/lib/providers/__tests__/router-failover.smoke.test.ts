@@ -87,7 +87,7 @@ test("dead primary fails over to healthy fallback, then is fast-failed once its 
     assert.equal(out.provider, healthy.id);
   }
   assert.equal(deadInvocations, threshold, "dead provider invoked once per call until circuit opens");
-  assert.equal(circuitStatus(`route:${dead.id}`, opts), "open");
+  assert.equal(await circuitStatus(`route:${dead.id}`, opts), "open");
 
   // Subsequent calls: dead's circuit is open → fast-failed, NOT invoked again.
   for (let i = 0; i < 5; i++) {
@@ -113,7 +113,7 @@ test("recovered primary closes its circuit after the cooldown half-open trial", 
 
   // Open the circuit.
   for (let i = 0; i < 2; i++) await routeOnce([flaky], opts);
-  assert.equal(circuitStatus(key, opts), "open");
+  assert.equal(await circuitStatus(key, opts), "open");
 
   // Wait out the cooldown; provider recovers (real timer — spin-waits are flaky under load).
   await new Promise((r) => setTimeout(r, opts.cooldownMs + 15));
@@ -121,5 +121,5 @@ test("recovered primary closes its circuit after the cooldown half-open trial", 
   const out = await routeOnce([flaky], opts);
   assert.equal(out.ok, true);
   assert.equal(out.provider, flaky.id);
-  assert.equal(circuitStatus(key, opts), "closed");
+  assert.equal(await circuitStatus(key, opts), "closed");
 });

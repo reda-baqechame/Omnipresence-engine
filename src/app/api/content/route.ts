@@ -4,7 +4,8 @@ import { generateContent } from "@/lib/engines/content-generator";
 import { assertContentGenerationAllowed } from "@/lib/engines/content-guardrails";
 import { verifyProjectAccess } from "@/lib/security/project-access";
 import { trackApiUsage } from "@/lib/metering/api-usage";
-import { apiError, apiForbidden, apiNotFound, apiServerError, apiUnauthorized, readJsonBody } from "@/lib/security/api-response";
+import { apiError, apiForbidden, apiNotFound, apiServerError, apiUnauthorized, readJsonBody, validateBody } from "@/lib/security/api-response";
+import { ContentAnalyzeSchema } from "@/lib/validation/schemas";
 import { advancePipeline, type BlogPipelineStepKey } from "@/lib/engines/blog-pipeline";
 import type { ContentAssetType } from "@/types/database";
 
@@ -43,17 +44,16 @@ export async function POST(request: NextRequest) {
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) return apiUnauthorized();
 
-  const { projectId, type, topic, additionalContext, parentAssetId, repurposeFrom, action } = await readJsonBody(request) as {
-    projectId: string;
-    type?: ContentAssetType;
-    topic?: string;
-    additionalContext?: string;
-    parentAssetId?: string;
-    repurposeFrom?: string;
-    action?: "repurpose_chain";
-  };
-
-  if (!projectId) return apiError("projectId required");
+  const parsed = await validateBody(request, ContentAnalyzeSchema);
+  if (parsed.response) return parsed.response;
+  const body = parsed.data;
+  const { projectId, text } = body;
+  const type = "blog_post" as ContentAssetType;
+  const topic = text;
+  const repurposeFrom = undefined;
+  const parentAssetId = undefined;
+  const additionalContext = undefined;
+  const action = undefined;
 
   const access = await verifyProjectAccess(supabase, projectId, user.id, "member");
   if (!access) return apiForbidden();

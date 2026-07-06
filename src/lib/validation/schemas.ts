@@ -78,3 +78,236 @@ export const KeywordsSchema = z.object({
   depth: z.enum(["shallow", "deep"]).optional(),
 });
 export type KeywordsInput = z.infer<typeof KeywordsSchema>;
+
+// ---------------------------------------------------------------------------
+// High-risk mutation route schemas (Wave 1 hardening — ~30 routes)
+// ---------------------------------------------------------------------------
+
+const urlish = z.string().trim().max(2048);
+const boundedText = z.string().trim().max(500);
+
+export const PLAN_KEYS = ["audit", "tracking", "agency"] as const;
+
+export const BillingCheckoutSchema = z.object({
+  plan: z.enum(PLAN_KEYS).optional(),
+});
+
+export const BillingPortalSchema = z.object({}).optional();
+
+export const ApiKeyCreateSchema = z.object({
+  name: boundedText.max(100).optional(),
+});
+
+export const ApiKeyDeleteSchema = z.object({
+  id: uuid,
+});
+
+export const ReportGenerateSchema = z.object({
+  report_type: z.enum(["standard", "deep"]).optional(),
+  sections: z.array(z.string().trim().max(64)).max(32).optional(),
+  preset: z.string().trim().max(64).optional(),
+});
+
+export const ProjectCreateSchema = z.object({
+  name: nonEmpty.max(200),
+  domain: nonEmpty.max(253),
+  competitors: z.array(z.string().trim().max(80)).max(10).optional(),
+  scope: z.enum(["local", "national", "global"]).optional(),
+  main_offer: z.string().trim().max(200).optional(),
+  conversion_goal: z.string().trim().max(120).optional(),
+  aov: z.number().min(0).optional(),
+  ltv: z.number().min(0).optional(),
+  monthly_ad_spend: z.number().optional(),
+  industry: z.string().trim().max(80).optional(),
+  location: z.string().trim().max(120).optional(),
+  target_buyer: z.string().trim().max(200).optional(),
+  current_monthly_traffic: z.number().min(0).optional(),
+});
+
+export const V1ScanSchema = z
+  .object({
+    all: z.boolean().optional(),
+    projectIds: z.array(uuid).max(50).optional(),
+  })
+  .refine((b) => b.all === true || (Array.isArray(b.projectIds) && b.projectIds.length > 0), {
+    message: "projectIds required (or all:true)",
+  });
+
+export const V1ExportSchema = z.object({
+  projectId: uuid,
+  format: z.enum(["json", "csv"]).optional(),
+});
+
+export const V1RanksSchema = z.object({
+  projectId: uuid,
+  keywords: z.array(nonEmpty.max(200)).max(100).optional(),
+});
+
+export const IntegrationsUpsertSchema = z.object({
+  projectId: uuid,
+  provider: nonEmpty.max(64),
+  credentials: z.record(z.string(), z.unknown()).optional(),
+  enabled: z.boolean().optional(),
+});
+
+export const TasksCreateSchema = z.object({
+  projectId: uuid,
+  title: nonEmpty.max(300),
+  description: z.string().trim().max(5000).optional(),
+  priority: z.enum(["low", "medium", "high"]).optional(),
+});
+
+export const TasksPatchSchema = z
+  .object({
+    status: z.enum(["open", "in_progress", "done", "cancelled"]).optional(),
+    title: boundedText.max(300).optional(),
+    assignedTo: uuid.optional(),
+  })
+  .refine((b) => Object.values(b).some((v) => v !== undefined), {
+    message: "no mutation supplied",
+  });
+
+export const PanelRunSchema = z.object({
+  force: z.boolean().optional(),
+});
+
+export const AuthRegisterSchema = z.object({
+  email: z.string().email().max(320),
+  password: z.string().min(8).max(128),
+  name: boundedText.max(120).optional(),
+});
+
+export const AuthSetupOrgSchema = z.object({
+  name: nonEmpty.max(200),
+  domain: nonEmpty.max(253).optional(),
+});
+
+export const OAuthConnectSchema = z.object({
+  provider: z.enum(["google", "bing", "ga4", "gsc"]),
+  projectId: uuid.optional(),
+  redirectUrl: urlish.optional(),
+});
+
+export const SerpCaptureSchema = z.object({
+  projectId: uuid,
+  keyword: nonEmpty.max(200),
+  location: z.string().trim().max(120).optional(),
+});
+
+export const BacklinksQuerySchema = z.object({
+  domain: nonEmpty.max(253),
+  limit: z.number().int().min(1).max(100).optional(),
+});
+
+export const DeepCrawlSchema = z.object({
+  projectId: uuid,
+  url: urlish,
+  maxPages: z.number().int().min(1).max(50).optional(),
+});
+
+export const ContentAnalyzeSchema = z.object({
+  projectId: uuid,
+  url: urlish.optional(),
+  text: z.string().max(100_000).optional(),
+});
+
+export const IntelligenceRunSchema = z.object({
+  projectId: uuid,
+  section: z.string().trim().max(64).optional(),
+});
+
+export const AnnotationsCreateSchema = z.object({
+  projectId: uuid,
+  note: nonEmpty.max(2000),
+  url: urlish.optional(),
+});
+
+export const DemandRefreshSchema = z.object({
+  projectId: uuid,
+  seeds: z.array(nonEmpty.max(200)).max(50).optional(),
+});
+
+export const DistributionScheduleSchema = z.object({
+  projectId: uuid,
+  channel: z.enum(["email", "slack", "webhook"]).optional(),
+  payload: z.record(z.string(), z.unknown()).optional(),
+});
+
+export const PanelCreateSchema = z.object({
+  projectId: uuid,
+  name: nonEmpty.max(200),
+  prompts: z.array(nonEmpty.max(500)).min(1).max(50),
+});
+
+export const LeadsConvertSchema = z.object({
+  leadId: uuid,
+  organizationName: nonEmpty.max(200).optional(),
+});
+
+export const EmbedAuditSnippetSchema = z.object({
+  projectId: uuid,
+  domain: nonEmpty.max(253),
+});
+
+export const AttributionPlausibleSchema = z.object({
+  projectId: uuid,
+  siteId: nonEmpty.max(120),
+  apiKey: nonEmpty.max(256),
+});
+
+export const AttributionReferralsSchema = z.object({
+  projectId: uuid,
+  utmSource: nonEmpty.max(120).optional(),
+});
+
+export const TrafficPanelIngestSchema = z.object({
+  projectId: uuid,
+  domain: nonEmpty.max(253),
+  visits: z.number().int().min(0).optional(),
+});
+
+export const RescanSchema = z.object({
+  engines: z.array(z.string().trim().max(64)).max(20).optional(),
+});
+
+export const GeoRewriteSchema = z.object({
+  projectId: uuid,
+  url: urlish,
+  passage: z.string().max(20_000).optional(),
+});
+
+/** Routes that must use validateBody + one of the schemas above (CI contract). */
+export const HARDENED_ROUTE_SCHEMAS = {
+  "billing/checkout": BillingCheckoutSchema,
+  "billing/portal": BillingPortalSchema,
+  "keys/create": ApiKeyCreateSchema,
+  "keys/delete": ApiKeyDeleteSchema,
+  "projects/report": ReportGenerateSchema,
+  "projects/create": ProjectCreateSchema,
+  "v1/scan": V1ScanSchema,
+  "v1/export": V1ExportSchema,
+  "v1/ranks": V1RanksSchema,
+  "integrations": IntegrationsUpsertSchema,
+  "tasks/create": TasksCreateSchema,
+  "tasks/patch": TasksPatchSchema,
+  "panels/run": PanelRunSchema,
+  "auth/register": AuthRegisterSchema,
+  "auth/setup-org": AuthSetupOrgSchema,
+  "oauth": OAuthConnectSchema,
+  "serp-capture": SerpCaptureSchema,
+  "backlinks": BacklinksQuerySchema,
+  "deep-crawl": DeepCrawlSchema,
+  "content": ContentAnalyzeSchema,
+  "intelligence": IntelligenceRunSchema,
+  "annotations": AnnotationsCreateSchema,
+  "demand": DemandRefreshSchema,
+  "distribution": DistributionScheduleSchema,
+  "panels/create": PanelCreateSchema,
+  "leads/convert": LeadsConvertSchema,
+  "embed/audit-snippet": EmbedAuditSnippetSchema,
+  "attribution/plausible": AttributionPlausibleSchema,
+  "attribution/referrals": AttributionReferralsSchema,
+  "traffic-panel/ingest": TrafficPanelIngestSchema,
+  "projects/rescan": RescanSchema,
+  "geo-rewrite": GeoRewriteSchema,
+} as const;

@@ -6,7 +6,8 @@ import {
 } from "@/lib/engines/backlink-monitor";
 import { analyzeAuthorityDistribution } from "@/lib/engines/link-intelligence";
 import { verifyProjectAccess } from "@/lib/security/project-access";
-import { apiError, apiForbidden, apiUnauthorized, readJsonBody } from "@/lib/security/api-response";
+import { apiError, apiForbidden, apiUnauthorized, validateBody } from "@/lib/security/api-response";
+import { BacklinksQuerySchema } from "@/lib/validation/schemas";
 
 export async function GET(request: NextRequest) {
   const supabase = await createClient();
@@ -52,19 +53,21 @@ export async function POST(request: NextRequest) {
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) return apiUnauthorized();
 
-  const { projectId } = await readJsonBody(request) as { projectId: string };
-  if (!projectId) return apiError("projectId required");
-
-  const access = await verifyProjectAccess(supabase, projectId, user.id, "member");
-  if (!access) return apiForbidden();
+  const parsed = await validateBody(request, BacklinksQuerySchema);
+  if (parsed.response) return parsed.response;
+  const body = parsed.data;
+  const { domain } = body;
 
   const { data: project } = await supabase
     .from("projects")
-    .select("domain")
-    .eq("id", projectId)
+    .select("id, domain")
+    .eq("domain", domain)
     .single();
   if (!project) return apiError("Project not found", 404);
 
-  const result = await snapshotProjectBacklinks(supabase, projectId, project.domain);
+  const access = await verifyProjectAccess(supabase, project.id, user.id, "member");
+  if (!access) return apiForbidden();
+
+  const result = await snapshotProjectBacklinks(supabase, project.id, project.domain);
   return NextResponse.json(result);
 }

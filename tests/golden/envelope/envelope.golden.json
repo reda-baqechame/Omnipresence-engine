@@ -1,0 +1,22 @@
+{
+  "schema_version": "2026-07-01",
+  "capability": "serp",
+  "provider": "duckduckgo",
+  "provider_class": "surface_measurement",
+  "data_source": "measured",
+  "freshness": "live",
+  "confidence": 0.9,
+  "parser_version": "duckduckgo@1",
+  "required_fields": [
+    "schema_version",
+    "capability",
+    "provider",
+    "provider_class",
+    "data_source",
+    "freshness",
+    "confidence",
+    "measured_at",
+    "parser_version",
+    "response_hash"
+  ]
+}

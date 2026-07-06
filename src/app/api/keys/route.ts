@@ -1,7 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
-import { apiError, apiUnauthorized, readJsonBody } from "@/lib/security/api-response";
+import { apiError, apiUnauthorized, validateBody } from "@/lib/security/api-response";
+import { guardOrgEndpoint } from "@/lib/security/api-v1-guard";
 import { generateApiKey } from "@/lib/security/api-keys";
+import { ApiKeyCreateSchema, ApiKeyDeleteSchema } from "@/lib/validation/schemas";
 
 async function getOrgContext(
   supabase: Awaited<ReturnType<typeof createClient>>,
@@ -47,8 +49,12 @@ export async function POST(request: NextRequest) {
   if (!ctx) return apiError("No organization");
   if (!requireAdmin(ctx.role)) return apiError("Only organization owners or admins can manage API keys", 403);
 
-  const body = await readJsonBody(request).catch(() => ({}));
-  const name = (body.name as string) || "API key";
+  const limited = await guardOrgEndpoint(ctx.orgId, "keys-create", 10, 60 * 60 * 1000);
+  if (limited) return limited;
+
+  const parsed = await validateBody(request, ApiKeyCreateSchema);
+  if (parsed.response) return parsed.response;
+  const name = parsed.data.name || "API key";
 
   const { key, prefix, hash } = generateApiKey();
   const { data, error } = await supabase
@@ -77,6 +83,9 @@ export async function DELETE(request: NextRequest) {
   const ctx = await getOrgContext(supabase, user.id);
   if (!ctx) return apiError("No organization");
   if (!requireAdmin(ctx.role)) return apiError("Only organization owners or admins can manage API keys", 403);
+
+  const limited = await guardOrgEndpoint(ctx.orgId, "keys-revoke", 20, 60 * 60 * 1000);
+  if (limited) return limited;
 
   const id = request.nextUrl.searchParams.get("id");
   if (!id) return apiError("id required");

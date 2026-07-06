@@ -1,8 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { getStripe, PLANS, type PlanKey } from "@/lib/stripe";
-import { apiError, apiUnauthorized, readJsonBody } from "@/lib/security/api-response";
+import { apiError, apiUnauthorized, validateBody } from "@/lib/security/api-response";
+import { guardOrgEndpoint } from "@/lib/security/api-v1-guard";
 import { FREE_ACCESS_MODE } from "@/lib/config/access";
+import { BillingCheckoutSchema } from "@/lib/validation/schemas";
 
 export async function POST(request: NextRequest) {
   if (FREE_ACCESS_MODE) {
@@ -19,8 +21,9 @@ export async function POST(request: NextRequest) {
   } = await supabase.auth.getUser();
   if (!user) return apiUnauthorized();
 
-  const body = await readJsonBody(request).catch(() => ({}));
-  const planKey = (body.plan as PlanKey) || "tracking";
+  const parsed = await validateBody(request, BillingCheckoutSchema);
+  if (parsed.response) return parsed.response;
+  const planKey = (parsed.data.plan as PlanKey) || "tracking";
   if (!(planKey in PLANS)) {
     return apiError("Invalid plan. Choose audit, tracking, or agency.");
   }
@@ -35,6 +38,9 @@ export async function POST(request: NextRequest) {
   if (!membership || !["owner", "admin"].includes(membership.role)) {
     return apiError("Only organization owners or admins can manage billing", 403);
   }
+
+  const limited = await guardOrgEndpoint(membership.organization_id, "billing-checkout", 10, 60 * 60 * 1000);
+  if (limited) return limited;
 
   const { data: org } = await supabase
     .from("organizations")

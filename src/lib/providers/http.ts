@@ -162,11 +162,20 @@ export interface BreakerOptions {
 
 export type CircuitStatus = "closed" | "open" | "half-open";
 
-export function circuitStatus(key: string, options: BreakerOptions = {}): CircuitStatus {
+/** Derive circuit status from a loaded breaker state (shared by withBreaker + circuitStatus). */
+export function circuitStatusFromState(
+  state: BreakerState | null | undefined,
+  options: BreakerOptions = {}
+): CircuitStatus {
   const { threshold = 5, cooldownMs = 30_000 } = options;
-  const state = breakers.get(key);
   if (!state || state.failures < threshold) return "closed";
   return Date.now() - state.openedAt < cooldownMs ? "open" : "half-open";
+}
+
+/** Read breaker state from Redis (when configured) + process cache — same path as withBreaker. */
+export async function circuitStatus(key: string, options: BreakerOptions = {}): Promise<CircuitStatus> {
+  const state = await loadBreakerState(key);
+  return circuitStatusFromState(state, options);
 }
 
 /** Test/ops helper: clear breaker state for a key (or all keys). */

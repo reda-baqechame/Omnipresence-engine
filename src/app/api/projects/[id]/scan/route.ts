@@ -8,6 +8,7 @@ import {
   assertTenantSurfaceBudget,
 } from "@/lib/metering/api-usage";
 import { apiError, apiForbidden, apiNotFound, apiServerError, apiUnauthorized } from "@/lib/security/api-response";
+import { guardOrgEndpoint } from "@/lib/security/api-v1-guard";
 
 const DEFAULT_STALE_SCAN_MS = 6 * 60 * 1000;
 
@@ -22,6 +23,9 @@ export async function POST(
 
   const access = await verifyProjectAccess(supabase, id, user.id, "member");
   if (!access) return apiForbidden();
+
+  const limited = await guardOrgEndpoint(access.organizationId, "project-scan", 12, 60 * 60 * 1000);
+  if (limited) return limited;
 
   const serviceClient = await createServiceClient();
 

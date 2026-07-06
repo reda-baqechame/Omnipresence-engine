@@ -49,10 +49,8 @@ jobs:
         run: npm run verify:all
       - name: railway:verify
         run: npm run railway:verify
-        continue-on-error: true
       - name: production:ready
         run: npm run production:ready
-        continue-on-error: true
       - name: claims strict (prod)
         if: github.event_name == 'workflow_dispatch'
         run: CLAIMS_STRICT_PROD=1 npm run check:claims-backed

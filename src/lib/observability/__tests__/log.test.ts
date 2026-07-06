@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { parseDsn, captureException, logProviderError } from "../log.ts";
+import { parseDsn, captureException, logProviderError, recordMetric } from "../log.ts";
 
 /**
  * Observability is refund-safety infrastructure: a swallowed provider error can
@@ -36,4 +36,8 @@ test("captureException never throws even with a circular-ish context and no DSN"
 
 test("logProviderError never throws", () => {
   assert.doesNotThrow(() => logProviderError("test.scope", new Error("warn"), { a: 1 }));
+});
+
+test("recordMetric never throws and emits structured metric line", () => {
+  assert.doesNotThrow(() => recordMetric("test.counter", 1, { route: "health" }));
 });

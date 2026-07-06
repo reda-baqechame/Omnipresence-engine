@@ -3,6 +3,8 @@ export interface ProviderResult<T> {
   data?: T;
   error?: string;
   creditsUsed?: number;
+  /** Versioned provenance envelope when the adapter emits measured data. */
+  envelope?: import("./envelope").ProviderEnvelopeMeta;
 }
 
 export interface AIVisibilityResult {

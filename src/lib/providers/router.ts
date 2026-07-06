@@ -25,6 +25,8 @@ import { searchGoogleOrganicFirecrawl, hasFirecrawlCapability } from "@/lib/prov
 import { isZeroPaidKeysMode, isBenchmarkOnlyForced, type ProviderCategory } from "@/lib/config/capabilities";
 import { isProviderCallAllowed } from "@/lib/providers/provider-call-cap";
 import { withBreaker, CircuitOpenError, circuitStatus, type CircuitStatus } from "@/lib/providers/http";
+import { buildProviderEnvelope } from "@/lib/providers/envelope";
+import { recordProviderTelemetry } from "@/lib/providers/telemetry";
 import type { ProviderResult, SERPResult } from "./types";
 
 export type Capability = "serp" | "crawl" | "backlinks" | "generate" | "email" | "social" | "enrich";
@@ -183,7 +185,7 @@ const serpAdapters: Adapter<[string, string, string, string[]], SERPResult>[] = 
 // paid social upgrades routed after direct X/LinkedIn posting.
 // Clearbit is still used as a paid upgrade INSIDE the ip-asn-enrich runner.
 const catalogAdapters: Adapter[] = [
-  { id: "playwright-crawl", capability: "crawl", category: "surface_measurement", paid: false, selfHosted: true, confidence: 0.85, freshness: "live", costPerCall: 0, enabled: () => true },
+  { id: "fetch-crawl", capability: "crawl", category: "surface_measurement", paid: false, selfHosted: true, confidence: 0.85, freshness: "live", costPerCall: 0, enabled: () => true },
   { id: "firecrawl-crawl", capability: "crawl", category: "fallback_only", paid: true, selfHosted: false, confidence: 0.8, freshness: "live", costPerCall: 0.002, enabled: () => hasFirecrawlCapability() },
 
   { id: "commoncrawl-webgraph", capability: "backlinks", category: "surface_measurement", paid: false, selfHosted: true, confidence: 0.7, freshness: "recent", costPerCall: 0, enabled: () => true },
@@ -283,6 +285,7 @@ export async function route<TArgs extends unknown[], TData>(
 
   for (const adapter of adapters) {
     const breakerKey = `route:${adapter.id}`;
+    const started = Date.now();
     if (adapter.id === "serper" || adapter.id === "brave") {
       const allowed = await isProviderCallAllowed(adapter.id as "serper" | "brave");
       if (!allowed) {
@@ -306,8 +309,35 @@ export async function route<TArgs extends unknown[], TData>(
       h.failures = 0;
       h.lastOkAt = Date.now();
       trail.push({ id: adapter.id, ok: true });
-      return { ...result, provider: adapter.id, trail };
+      const envelope =
+        result.envelope ??
+        buildProviderEnvelope({
+          capability: adapter.capability,
+          provider: adapter.id,
+          providerClass: effectiveCategory(adapter),
+          dataSource: "measured",
+          freshness: adapter.freshness,
+          confidence: adapter.confidence,
+          parserVersion: `${adapter.id}@1`,
+          payload: result.data,
+        });
+      recordProviderTelemetry(null, {
+        capability,
+        provider: adapter.id,
+        success: true,
+        latencyMs: Date.now() - started,
+        costUsd: adapter.costPerCall,
+      });
+      return { ...result, provider: adapter.id, trail, envelope };
     } catch (err) {
+      recordProviderTelemetry(null, {
+        capability,
+        provider: adapter.id,
+        success: false,
+        latencyMs: Date.now() - started,
+        costUsd: adapter.costPerCall,
+        errorMessage: err instanceof Error ? err.message : String(err),
+      });
       if (err instanceof CircuitOpenError) {
         trail.push({ id: adapter.id, ok: false, error: "circuit open" });
         continue;
@@ -356,10 +386,11 @@ export interface AdapterStatus {
 }
 
 /** Diagnostic catalog of every adapter and whether it's usable right now. */
-export function describeProviders(): AdapterStatus[] {
+export async function describeProviders(): Promise<AdapterStatus[]> {
   const zeroPaid = isZeroPaidKeysMode();
   const all: Adapter[] = (Object.keys(registry) as Capability[]).flatMap((c) => registry[c]);
-  return all.map((a) => {
+  const circuits = await Promise.all(all.map((a) => circuitStatus(`route:${a.id}`)));
+  return all.map((a, i) => {
     const category = effectiveCategory(a);
     return {
       id: a.id,
@@ -375,7 +406,7 @@ export function describeProviders(): AdapterStatus[] {
       freshness: a.freshness,
       costPerCall: a.costPerCall,
       failures: getHealth(a.id).failures,
-      circuit: circuitStatus(`route:${a.id}`),
+      circuit: circuits[i],
     };
   });
 }

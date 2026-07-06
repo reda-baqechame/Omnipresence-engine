@@ -1,8 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient, createServiceClient } from "@/lib/supabase/server";
 import { slugify } from "@/lib/utils";
-import { apiError, apiServerError, readJsonBody } from "@/lib/security/api-response";
-import { guardPublicEndpoint, isValidEmail } from "@/lib/security/public-guard";
+import { apiError, apiServerError, validateBody } from "@/lib/security/api-response";
+import { AuthRegisterSchema } from "@/lib/validation/schemas";
+import { guardPublicEndpoint } from "@/lib/security/public-guard";
 
 const REGISTER_LIMIT = 8;
 const REGISTER_WINDOW_MS = 60 * 60_000;
@@ -15,22 +16,15 @@ export async function POST(request: NextRequest) {
   const limited = await guardPublicEndpoint(request, "auth-register", REGISTER_LIMIT, REGISTER_WINDOW_MS);
   if (limited) return limited;
 
-  let body: { email?: string; password?: string; fullName?: string; orgName?: string };
-  try {
-    body = await readJsonBody(request);
-  } catch {
-    return apiError("Invalid JSON body");
-  }
+  const parsed = await validateBody(request, AuthRegisterSchema);
+  if (parsed.response) return parsed.response;
+  const body = parsed.data;
 
-  const email = body.email?.trim().toLowerCase();
+  const email = body.email.trim().toLowerCase();
   const password = body.password;
-  const fullName = body.fullName?.trim().slice(0, 120) || "";
-  const orgName = (body.orgName?.trim() || (fullName ? `${fullName}'s Agency` : "")).slice(0, 120);
+  const fullName = body.name?.slice(0, 120) || "";
+  const orgName = (fullName ? `${fullName}'s Agency` : "").slice(0, 120);
 
-  if (!email || !password) return apiError("Email and password are required");
-  if (!isValidEmail(email)) return apiError("Invalid email address");
-  if (password.length < 8) return apiError("Password must be at least 8 characters");
-  if (password.length > 128) return apiError("Password is too long");
   if (orgName.length < 2) return apiError("Organization name is required");
 
   const service = await createServiceClient();

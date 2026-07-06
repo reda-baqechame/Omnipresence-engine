@@ -21,7 +21,7 @@ PresenceOS backlink authority and keyword difficulty use the sovereign Common Cr
 ```bash
 # SSH / one-off job on OmniData service
 cd /app/services/omnidata
-npm run ingest:webgraph -- --release CC-MAIN-2025-18
+npm run webgraph:ingest -- --release CC-MAIN-2025-18
 
 # Verify
 curl -s "$OMNIDATA_BASE_URL/health" | jq .

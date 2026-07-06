@@ -1,6 +1,7 @@
 import type { ProviderResult } from "./types";
 import type { PageSpeedResult } from "./pagespeed";
 import { labsApiPost } from "./dataforseo";
+import { buildProviderEnvelope } from "./envelope";
 
 const USE_OMNIDATA = Boolean(process.env.OMNIDATA_BASE_URL?.replace(/\/$/, ""));
 
@@ -39,9 +40,7 @@ export async function getPageSpeedViaOmniData(
     );
     const r = env?.tasks?.[0]?.result?.[0];
     if (!r || r.available === false || typeof r.performance_score !== "number") return null;
-    return {
-      success: true,
-      data: {
+    const data: PageSpeedResult = {
         performanceScore: r.performance_score,
         lcpMs: r.lcp_ms ?? 0,
         cls: r.cls ?? 0,
@@ -57,8 +56,28 @@ export async function getPageSpeedViaOmniData(
             }
           : undefined,
         strategy,
-      },
+      };
+    const dataSource =
+      r.data_source === "pagespeed_with_crux"
+        ? "measured"
+        : r.data_source === "lab_only"
+          ? "estimated"
+          : "unavailable";
+    return {
+      success: true,
+      data,
       creditsUsed: 0,
+      envelope: buildProviderEnvelope({
+        capability: "pagespeed",
+        provider: "omnidata",
+        providerClass: "surface_measurement",
+        dataSource,
+        freshness: "live",
+        confidence: r.has_field_data ? 0.95 : 0.8,
+        parserVersion: "omnidata-performance@1",
+        payload: data,
+        sourceUrl: url,
+      }),
     };
   } catch {
     return null;

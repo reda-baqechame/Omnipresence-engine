@@ -1,5 +1,5 @@
--- PresenceOS combined migration (64 files)
--- Generated 2026-07-06T18:50:39.601Z
+-- PresenceOS combined migration (67 files)
+-- Generated 2026-07-06T23:22:11.635Z
 
 -- ========== 0001_init.sql ==========
 
@@ -2854,5 +2854,138 @@ CREATE POLICY audit_leads_select_org_admin ON audit_leads
       WHERE user_id = auth.uid() AND role IN ('owner', 'admin')
     )
   );
+
+
+-- ========== 0065_data_source_constraints.sql ==========
+
+-- Platform-wide data_source CHECK constraints (trust spine enforcement at DB layer).
+
+-- Full 5-value provenance enum (nullable columns allow NULL).
+DO $$
+DECLARE
+  t TEXT;
+  tables TEXT[] := ARRAY[
+    'visibility_results',
+    'technical_findings',
+    'coverage_items',
+    'authority_opportunities',
+    'scores',
+    'keyword_opportunities',
+    'attribution_metrics',
+    'cwv_history',
+    'deep_crawl_pages',
+    'deep_crawl_issues',
+    'gsc_snapshots',
+    'ga4_snapshots',
+    'bing_snapshots',
+    'rank_snapshots',
+    'product_visibility_snapshots',
+    'source_graph_nodes',
+    'source_graph_edges',
+    'source_influence_scores',
+    'citation_authority_scores',
+    'merchant_listings',
+    'ai_probe_traces',
+    'rank_keywords',
+    'rank_history',
+    'measurement_evidence',
+    'backlink_graph_edges',
+    'traffic_panel_observations'
+  ];
+  full_check TEXT := $$data_source IS NULL OR data_source IN (
+    'measured', 'estimated', 'model_knowledge', 'simulated', 'unavailable'
+  )$$;
+BEGIN
+  FOREACH t IN ARRAY tables LOOP
+    EXECUTE format('ALTER TABLE %I DROP CONSTRAINT IF EXISTS %I', t, t || '_data_source_check');
+    IF EXISTS (
+      SELECT 1 FROM information_schema.columns
+      WHERE table_schema = 'public' AND table_name = t AND column_name = 'data_source'
+    ) THEN
+      EXECUTE format('ALTER TABLE %I ADD CONSTRAINT %I CHECK (%s)', t, t || '_data_source_check', full_check);
+    END IF;
+  END LOOP;
+END $$;
+
+-- NOT NULL tables with full enum (no NULL).
+DO $$
+DECLARE
+  t TEXT;
+  tables TEXT[] := ARRAY[
+    'behavior_metrics',
+    'backlink_graph_edges'
+  ];
+  full_check_nn TEXT := $$data_source IN (
+    'measured', 'estimated', 'model_knowledge', 'simulated', 'unavailable'
+  )$$;
+BEGIN
+  FOREACH t IN ARRAY tables LOOP
+    EXECUTE format('ALTER TABLE %I DROP CONSTRAINT IF EXISTS %I', t, t || '_data_source_check');
+    IF EXISTS (
+      SELECT 1 FROM information_schema.columns
+      WHERE table_schema = 'public' AND table_name = t AND column_name = 'data_source'
+    ) THEN
+      EXECUTE format('ALTER TABLE %I ADD CONSTRAINT %I CHECK (%s)', t, t || '_data_source_check', full_check_nn);
+    END IF;
+  END LOOP;
+END $$;
+
+-- Legacy citation_sources: measured | simulated only.
+ALTER TABLE citation_sources DROP CONSTRAINT IF EXISTS citation_sources_data_source_check;
+ALTER TABLE citation_sources
+  ADD CONSTRAINT citation_sources_data_source_check
+  CHECK (data_source IN ('measured', 'simulated'));
+
+
+-- ========== 0066_provider_telemetry.sql ==========
+
+-- Provider adapter telemetry for bounded weekly recalibration (Wave 4).
+CREATE TABLE IF NOT EXISTS public.provider_telemetry (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  organization_id UUID REFERENCES public.organizations(id) ON DELETE SET NULL,
+  project_id UUID REFERENCES public.projects(id) ON DELETE SET NULL,
+  capability TEXT NOT NULL,
+  provider TEXT NOT NULL,
+  success BOOLEAN NOT NULL,
+  latency_ms INTEGER NOT NULL CHECK (latency_ms >= 0),
+  cost_usd NUMERIC(12, 6) NOT NULL DEFAULT 0,
+  error_message TEXT,
+  trace_id TEXT,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE INDEX IF NOT EXISTS provider_telemetry_provider_created_idx
+  ON public.provider_telemetry (provider, created_at DESC);
+
+CREATE INDEX IF NOT EXISTS provider_telemetry_org_created_idx
+  ON public.provider_telemetry (organization_id, created_at DESC)
+  WHERE organization_id IS NOT NULL;
+
+ALTER TABLE public.provider_telemetry ENABLE ROW LEVEL SECURITY;
+
+CREATE POLICY provider_telemetry_org_read ON public.provider_telemetry
+  FOR SELECT
+  USING (
+    organization_id IS NULL
+    OR organization_id IN (
+      SELECT organization_id FROM public.memberships WHERE user_id = auth.uid()
+    )
+  );
+
+-- Inserts are service-role / server only (no client INSERT policy).
+
+
+-- ========== 0067_evidence_trace_id.sql ==========
+
+-- Propagate request trace_id into evidence rows for end-to-end observability.
+ALTER TABLE public.measurement_evidence
+  ADD COLUMN IF NOT EXISTS trace_id TEXT;
+
+ALTER TABLE public.ai_capture_evidence
+  ADD COLUMN IF NOT EXISTS trace_id TEXT;
+
+CREATE INDEX IF NOT EXISTS measurement_evidence_trace_idx
+  ON public.measurement_evidence (trace_id)
+  WHERE trace_id IS NOT NULL;
 
 

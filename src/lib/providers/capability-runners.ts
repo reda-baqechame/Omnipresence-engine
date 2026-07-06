@@ -26,7 +26,7 @@ function ensureWired(): void {
 
   // Crawl port: keyless self-hosted fetch crawler is the sovereign default;
   // Firecrawl is the optional paid upgrade.
-  attachRunner<[string], CrawlResult>("crawl", "playwright-crawl", (url) => scrapePageKeyless(url));
+  attachRunner<[string], CrawlResult>("crawl", "fetch-crawl", (url) => scrapePageKeyless(url));
   attachRunner<[string], CrawlResult>("crawl", "firecrawl-crawl", (url) => scrapePageFirecrawl(url));
 
   // Backlinks port: Common Crawl webgraph (keyless) first; DataForSEO optional.

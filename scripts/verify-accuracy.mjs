@@ -60,7 +60,13 @@ console.log("");
 
 const r = spawnSync(
   "node",
-  ["--disable-warning=MODULE_TYPELESS_PACKAGE_JSON", "--test", ...files],
+  [
+    "--disable-warning=MODULE_TYPELESS_PACKAGE_JSON",
+    "--import",
+    "./tests/_lib/register-loader.mjs",
+    "--test",
+    ...files,
+  ],
   { cwd: root, shell: true, stdio: "inherit", encoding: "utf8" }
 );
 

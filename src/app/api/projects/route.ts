@@ -2,19 +2,18 @@ import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { triggerProjectScan } from "@/lib/engines/trigger-scan";
 import { assertPublicDomain, DomainValidationError } from "@/lib/security/domain";
-import { apiError, apiServerError, apiUnauthorized, readJsonBody } from "@/lib/security/api-response";
+import { apiError, apiServerError, apiUnauthorized, validateBody } from "@/lib/security/api-response";
 import { assertProjectLimit, PlanLimitExceededError } from "@/lib/plans/limits";
+import { ProjectCreateSchema } from "@/lib/validation/schemas";
 
 export async function POST(request: NextRequest) {
   const supabase = await createClient();
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) return apiUnauthorized();
 
-  const body = await readJsonBody(request);
-
-  if (!body.name || !body.domain) {
-    return apiError("Name and domain are required");
-  }
+  const parsed = await validateBody(request, ProjectCreateSchema);
+  if (parsed.response) return parsed.response;
+  const body = parsed.data;
 
   let domain: string;
   try {
@@ -48,7 +47,7 @@ export async function POST(request: NextRequest) {
     : [];
 
   // Phase 22 — business-model intake for the operating plan (refund-safe context).
-  const scope = ["local", "national", "global"].includes(body.scope) ? body.scope : undefined;
+  const scope = body.scope;
   const businessModel = {
     offer: body.main_offer ? String(body.main_offer).slice(0, 200) : undefined,
     conversion_goal: body.conversion_goal ? String(body.conversion_goal).slice(0, 120) : undefined,

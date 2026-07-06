@@ -1,7 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { verifyProjectAccess } from "@/lib/security/project-access";
-import { apiError, apiForbidden, apiUnauthorized, readJsonBody } from "@/lib/security/api-response";
+import { apiError, apiForbidden, apiUnauthorized, validateBody } from "@/lib/security/api-response";
+import { AnnotationsCreateSchema } from "@/lib/validation/schemas";
 
 export async function GET(request: NextRequest) {
   const supabase = await createClient();
@@ -29,27 +30,22 @@ export async function POST(request: NextRequest) {
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) return apiUnauthorized();
 
-  const body = await readJsonBody(request);
-  const { projectId, label, date, annotationType } = body as {
-    projectId: string;
-    label: string;
-    date?: string;
-    annotationType?: string;
-  };
-  if (!projectId || !label) return apiError("projectId and label required");
+  const parsed = await validateBody(request, AnnotationsCreateSchema);
+  if (parsed.response) return parsed.response;
+  const body = parsed.data;
+  const { projectId, note } = body;
 
   const access = await verifyProjectAccess(supabase, projectId, user.id, "member");
   if (!access) return apiForbidden();
 
-  const validTypes = ["note", "publish", "fix", "campaign", "algo_update"];
-  const type = validTypes.includes(annotationType || "") ? annotationType : "note";
+  const type = "note";
 
   const { data, error } = await supabase
     .from("annotations")
     .insert({
       project_id: projectId,
-      label,
-      date: date || new Date().toISOString().slice(0, 10),
+      label: note,
+      date: new Date().toISOString().slice(0, 10),
       annotation_type: type,
       created_by: user.id,
     })

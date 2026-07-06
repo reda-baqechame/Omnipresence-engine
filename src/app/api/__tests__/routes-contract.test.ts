@@ -7,9 +7,9 @@ const root = join(import.meta.dirname, "../../../..");
 
 const ROUTES: Array<{ path: string; mustInclude: string[] }> = [
   { path: "app/api/health/route.ts", mustInclude: ["isHealthAuthorized", "ok: true"] },
-  { path: "app/api/billing/checkout/route.ts", mustInclude: ["checkout.sessions.create", "organization_id"] },
-  { path: "app/api/billing/portal/route.ts", mustInclude: ["billingPortal.sessions.create"] },
-  { path: "app/api/keys/route.ts", mustInclude: ["requireAdmin", "Only organization owners or admins"] },
+  { path: "app/api/billing/checkout/route.ts", mustInclude: ["checkout.sessions.create", "organization_id", "guardOrgEndpoint"] },
+  { path: "app/api/billing/portal/route.ts", mustInclude: ["billingPortal.sessions.create", "guardOrgEndpoint"] },
+  { path: "app/api/keys/route.ts", mustInclude: ["requireAdmin", "Only organization owners or admins", "guardOrgEndpoint"] },
   { path: "app/api/v1/scan/route.ts", mustInclude: ["guardApiKeyEndpoint", "authenticateApiKey"] },
   { path: "app/api/v1/ranks/route.ts", mustInclude: ["guardApiKeyEndpoint"] },
   { path: "app/api/v1/export/route.ts", mustInclude: ["guardApiKeyEndpoint"] },
@@ -20,7 +20,8 @@ const ROUTES: Array<{ path: string; mustInclude: string[] }> = [
   { path: "app/api/webhooks/stripe/route.ts", mustInclude: ["checkout.session.completed"] },
   { path: "app/api/attribution/sync/route.ts", mustInclude: ["verifyProjectAccess"] },
   { path: "app/api/leads/convert/route.ts", mustInclude: ["organization_id"] },
-  { path: "app/api/projects/[id]/report/route.ts", mustInclude: ["getReportPreset", "canUseDeepReport"] },
+  { path: "app/api/projects/[id]/report/route.ts", mustInclude: ["getReportPreset", "canUseDeepReport", "guardOrgEndpoint", "validateBody"] },
+  { path: "app/api/projects/[id]/scan/route.ts", mustInclude: ["guardOrgEndpoint", "verifyProjectAccess"] },
   { path: "app/api/capabilities/route.ts", mustInclude: ["describeProviders"] },
   { path: "app/api/keywords/route.ts", mustInclude: ["verifyProjectAccess"] },
   { path: "app/api/ranks/route.ts", mustInclude: ["verifyProjectAccess"] },

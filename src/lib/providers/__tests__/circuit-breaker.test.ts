@@ -13,7 +13,7 @@ test("circuit stays closed and returns results while the call succeeds", async (
   resetBreaker(key);
   const out = await withBreaker(key, async () => 42, { threshold: 3 });
   assert.equal(out, 42);
-  assert.equal(circuitStatus(key, { threshold: 3 }), "closed");
+  assert.equal(await circuitStatus(key, { threshold: 3 }), "closed");
 });
 
 test("circuit opens after threshold consecutive failures and then fast-fails", async () => {
@@ -25,7 +25,7 @@ test("circuit opens after threshold consecutive failures and then fast-fails", a
   for (let i = 0; i < 3; i++) {
     await assert.rejects(withBreaker(key, boom, { threshold: 3, cooldownMs: 10_000 }));
   }
-  assert.equal(circuitStatus(key, { threshold: 3, cooldownMs: 10_000 }), "open");
+  assert.equal(await circuitStatus(key, { threshold: 3, cooldownMs: 10_000 }), "open");
 
   // Next call must fast-fail with CircuitOpenError WITHOUT invoking the function.
   let invoked = false;
@@ -55,12 +55,12 @@ test("circuit half-opens after cooldown and a success closes it", async () => {
   }
   // Wait out the cooldown window (real timer — spin-waits are flaky under parallel load).
   await new Promise((r) => setTimeout(r, 15));
-  assert.equal(circuitStatus(key, { threshold: 2, cooldownMs: 1 }), "half-open");
+  assert.equal(await circuitStatus(key, { threshold: 2, cooldownMs: 1 }), "half-open");
 
   // Half-open allows a trial; a success closes the circuit.
   const out = await withBreaker(key, async () => "recovered", { threshold: 2, cooldownMs: 1 });
   assert.equal(out, "recovered");
-  assert.equal(circuitStatus(key, { threshold: 2, cooldownMs: 1 }), "closed");
+  assert.equal(await circuitStatus(key, { threshold: 2, cooldownMs: 1 }), "closed");
 });
 
 test("a success resets the failure count (no premature open)", async () => {
@@ -74,5 +74,5 @@ test("a success resets the failure count (no premature open)", async () => {
   // Success before hitting the threshold clears the count.
   await withBreaker(key, async () => 1, { threshold: 3 });
   await assert.rejects(withBreaker(key, boom, { threshold: 3 }));
-  assert.equal(circuitStatus(key, { threshold: 3 }), "closed");
+  assert.equal(await circuitStatus(key, { threshold: 3 }), "closed");
 });

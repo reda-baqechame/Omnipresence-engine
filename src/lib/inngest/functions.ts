@@ -1375,6 +1375,101 @@ export const weeklyPanelRun = inngest.createFunction(
   }
 );
 
+/** SLO breach detector — evidence writes, rank freshness (hourly). */
+export const sloCheckCron = inngest.createFunction(
+  { id: "slo-check", retries: 0, triggers: [{ cron: "0 * * * *" }] },
+  async ({ step }) => {
+    const supabase = await createServiceClient();
+
+    const evidenceWrites = await step.run("evidence-write-slo", async () => {
+      const since = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
+      const { count } = await supabase
+        .from("measurement_evidence")
+        .select("id", { count: "exact", head: true })
+        .gte("created_at", since);
+      const total = count ?? 0;
+      if (total === 0) {
+        const { recordSloBreach } = await import("@/lib/observability/log");
+        recordSloBreach("evidence.write", 0, 0.999);
+      }
+      return total;
+    });
+
+    const projects = await step.run("fetch-active-projects", async () => {
+      const { data } = await supabase
+        .from("projects")
+        .select("id, daily_rank_tracking")
+        .eq("status", "active");
+      return data || [];
+    });
+
+    let fresh = 0;
+    for (const project of projects) {
+      const isFresh = await step.run(`rank-freshness-${project.id}`, async () => {
+        const { data: kw } = await supabase
+          .from("rank_keywords")
+          .select("last_checked_at")
+          .eq("project_id", project.id)
+          .order("last_checked_at", { ascending: false })
+          .limit(1)
+          .maybeSingle();
+        if (!kw?.last_checked_at) return false;
+        const freqDays = project.daily_rank_tracking ? 1 : 7;
+        const ageMs = Date.now() - new Date(kw.last_checked_at).getTime();
+        return ageMs <= freqDays * 24 * 60 * 60 * 1000 * 1.5;
+      });
+      if (isFresh) fresh += 1;
+    }
+
+    const total = projects.length;
+    const freshnessRate = total > 0 ? fresh / total : 1;
+    if (freshnessRate < 0.95) {
+      const { recordSloBreach } = await import("@/lib/observability/log");
+      recordSloBreach("rank.freshness", freshnessRate, 0.95, { fresh, total });
+      const webhook = process.env.SLACK_ALERT_WEBHOOK_URL;
+      if (webhook) {
+        await sendSlackWebhook(webhook, {
+          text: `SLO breach: rank freshness ${(freshnessRate * 100).toFixed(1)}% (target 95%)`,
+        });
+      }
+    }
+
+    return { evidenceWrites, freshnessRate, fresh, total };
+  }
+);
+
+/** Weekly bounded provider confidence recalibration → scorecard drift signal. */
+export const weeklyProviderRecalibration = inngest.createFunction(
+  { id: "weekly-provider-recalibration", retries: 1, triggers: [{ cron: "0 6 * * 1" }] },
+  async ({ step }) => {
+    const supabase = await createServiceClient();
+    return step.run("recalibrate", async () => {
+      const since = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString();
+      const { data: rows } = await supabase
+        .from("provider_telemetry")
+        .select("provider, success, latency_ms")
+        .gte("created_at", since);
+      const byProvider = new Map<string, { ok: number; total: number; latency: number[] }>();
+      for (const r of rows || []) {
+        const cur = byProvider.get(r.provider) || { ok: 0, total: 0, latency: [] };
+        cur.total += 1;
+        if (r.success) cur.ok += 1;
+        cur.latency.push(r.latency_ms);
+        byProvider.set(r.provider, cur);
+      }
+      const adjustments: Array<{ provider: string; successRate: number; delta: number }> = [];
+      for (const [provider, stats] of byProvider) {
+        const rate = stats.total > 0 ? stats.ok / stats.total : 1;
+        const delta = Math.max(-0.15, Math.min(0.15, rate - 0.85));
+        adjustments.push({ provider, successRate: rate, delta });
+      }
+      const { recordMetric } = await import("@/lib/observability/log");
+      recordMetric("provider.recalibration.providers", adjustments.length);
+      return { adjustments, windowStart: since };
+    });
+  }
+);
+
 export const functions = [
   runFullScan,
   runFullScanLegacy,
@@ -1409,6 +1504,8 @@ export const functions = [
   quarterlyOperatingReview,
   runPanelOnRequest,
   weeklyPanelRun,
+  sloCheckCron,
+  weeklyProviderRecalibration,
   runOpsItem,
   opsQueueDrain,
   deployVerificationSweep,

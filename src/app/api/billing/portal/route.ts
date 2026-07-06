@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { getStripe } from "@/lib/stripe";
 import { apiError, apiUnauthorized } from "@/lib/security/api-response";
+import { guardOrgEndpoint } from "@/lib/security/api-v1-guard";
 import { FREE_ACCESS_MODE } from "@/lib/config/access";
 
 export async function POST() {
@@ -29,6 +30,9 @@ export async function POST() {
   if (!membership || !["owner", "admin"].includes(membership.role)) {
     return apiError("Only organization owners or admins can manage billing", 403);
   }
+
+  const limited = await guardOrgEndpoint(membership.organization_id, "billing-portal", 20, 60 * 60 * 1000);
+  if (limited) return limited;
 
   const { data: org } = await supabase
     .from("organizations")

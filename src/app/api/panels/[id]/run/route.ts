@@ -1,13 +1,17 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { verifyProjectAccess } from "@/lib/security/project-access";
-import { apiError, apiForbidden, apiNotFound, apiUnauthorized } from "@/lib/security/api-response";
+import { apiError, apiForbidden, apiNotFound, apiUnauthorized, validateBody } from "@/lib/security/api-response";
+import { PanelRunSchema } from "@/lib/validation/schemas";
 import { inngest } from "@/lib/inngest/client";
 import { estimatePanelCalls } from "@/lib/engines/prompt-panels";
 import { TenantBudgetExceededError, assertTenantSurfaceBudget } from "@/lib/metering/api-usage";
 
 /** POST /api/panels/[id]/run — queue a panel run (executed off-request by Inngest). */
 export async function POST(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+  const parsed = await validateBody(request, PanelRunSchema);
+  if (parsed.response) return parsed.response;
+
   const { id } = await params;
   const supabase = await createClient();
   const { data: { user } } = await supabase.auth.getUser();

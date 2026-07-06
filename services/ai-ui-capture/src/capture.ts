@@ -1,5 +1,7 @@
 import { createHash } from "node:crypto";
 import { chromium, type Browser, type BrowserContext, type Page } from "playwright";
+import { hashDom } from "./dom-hash.js";
+import { SURFACE_SELECTORS } from "./manifests/selectors.js";
 import { hasSessionStateForSurface, nextStorageStateForSurface } from "./session-pool.js";
 
 export type Surface =
@@ -31,6 +33,8 @@ export interface RawCapture {
   screenshotBase64?: string;
   /** Full DOM HTML snapshot of the page (when withEvidence). */
   domHtml?: string;
+  /** sha256 of canonicalized DOM (when withEvidence). */
+  domHash?: string;
   /** Effective geo/locale/persona the capture actually ran under (provenance). */
   context: { geo?: string; locale: string; timezone?: string; persona: "desktop" | "mobile" };
   /**
@@ -172,6 +176,7 @@ function buildResult(
     responseHash: sha256(fingerprint),
     screenshotBase64: evidence.screenshotBase64,
     domHtml: evidence.domHtml,
+    domHash: evidence.domHtml ? hashDom(evidence.domHtml) : undefined,
     context: { geo: opts.geo, locale: opts.locale || localeForGeo(opts.geo), timezone: opts.timezone, persona },
     surfacePresent,
   };
@@ -192,9 +197,10 @@ async function capturePerplexity(ctx: BrowserContext, prompt: string, opts: Capt
       waitUntil: "domcontentloaded",
       timeout: NAV_TIMEOUT,
     });
-    await page.waitForSelector("main", { timeout: NAV_TIMEOUT });
+    const [answerSelector] = SURFACE_SELECTORS.perplexity;
+    await page.waitForSelector(answerSelector, { timeout: NAV_TIMEOUT });
     await page.waitForTimeout(6000);
-    const answer = (await page.locator("main").innerText().catch(() => "")) || "";
+    const answer = (await page.locator(answerSelector).innerText().catch(() => "")) || "";
     const blocked = detectBlock(page.url(), answer);
     if (blocked) return { blocked: true, reason: blocked };
     const hrefs = await page.locator("a").evaluateAll((els) =>
@@ -217,16 +223,8 @@ async function captureGoogleAiOverview(ctx: BrowserContext, prompt: string, opts
       timeout: NAV_TIMEOUT,
     });
     await page.waitForTimeout(5000);
-    const aioSelectors = [
-      "[data-attrid='AIOverview']",
-      "div[jsname][data-mcpr]",
-      ".WaaZC",
-      "[data-subtree='aimc']",
-      ".LLtSOc",
-      "div[data-snhf='0']",
-    ];
     let answer = "";
-    for (const sel of aioSelectors) {
+    for (const sel of SURFACE_SELECTORS.google_ai_overview) {
       const loc = page.locator(sel).first();
       if (await loc.count().catch(() => 0)) {
         const text = (await loc.innerText().catch(() => "")) || "";
@@ -266,15 +264,8 @@ async function captureBingCopilot(ctx: BrowserContext, prompt: string, opts: Cap
       timeout: NAV_TIMEOUT,
     });
     await page.waitForTimeout(5000);
-    const copilotSelectors = [
-      "[class*='b_ans']",
-      "#copans",
-      "[data-priority='2']",
-      ".b_slidebar",
-      "div.b_algoSlug",
-    ];
     let answer = "";
-    for (const sel of copilotSelectors) {
+    for (const sel of SURFACE_SELECTORS.bing_copilot) {
       const loc = page.locator(sel).first();
       if (await loc.count().catch(() => 0)) {
         const text = (await loc.innerText().catch(() => "")) || "";
@@ -319,16 +310,19 @@ async function captureAuthedChat(
   try {
     const url = surface === "chatgpt" ? "https://chatgpt.com/" : "https://gemini.google.com/app";
     await page.goto(url, { waitUntil: "domcontentloaded", timeout: NAV_TIMEOUT });
-    const box = page.locator("textarea, div[contenteditable='true']").first();
+    const selectors = SURFACE_SELECTORS[surface];
+    const inputSelector = selectors.filter((s) => s !== "main").join(", ");
+    const answerSelector = selectors.includes("main") ? "main" : selectors[selectors.length - 1];
+    const box = page.locator(inputSelector).first();
     await box.waitFor({ timeout: NAV_TIMEOUT });
     await box.click();
     await box.fill(prompt);
     await page.keyboard.press("Enter");
     await page.waitForTimeout(12000);
-    const answer = (await page.locator("main").innerText().catch(() => "")) || "";
+    const answer = (await page.locator(answerSelector).innerText().catch(() => "")) || "";
     const blocked = detectBlock(page.url(), answer);
     if (blocked) return { blocked: true, reason: blocked };
-    const hrefs = await page.locator("main a").evaluateAll((els) =>
+    const hrefs = await page.locator(`${answerSelector} a`).evaluateAll((els) =>
       els.map((e) => (e as HTMLAnchorElement).href).filter(Boolean)
     );
     if (!answer.trim()) return null;
