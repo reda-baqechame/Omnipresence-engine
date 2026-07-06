@@ -590,8 +590,13 @@ export interface Report {
   share_token: string;
   title: string;
   pdf_url?: string;
+  html_url?: string;
   is_public: boolean;
   white_label: boolean;
+  report_type?: "standard" | "deep";
+  sections?: string[];
+  status?: "pending" | "generating" | "ready" | "failed";
+  error_message?: string;
   created_at: string;
 }
 

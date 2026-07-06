@@ -11,6 +11,13 @@ const WHITE_LABEL_PLANS: SubscriptionPlan[] = ["agency", "enterprise"];
 const CLIENT_PORTAL_PLANS: SubscriptionPlan[] = ["agency", "enterprise"];
 const API_EXPORT_PLANS: SubscriptionPlan[] = ["tracking", "agency", "enterprise"];
 
+const DEEP_REPORT_PLANS: SubscriptionPlan[] = ["tracking", "agency", "enterprise"];
+
+export function canUseDeepReport(plan?: SubscriptionPlan | null): boolean {
+  if (FREE_ACCESS_MODE) return true;
+  return DEEP_REPORT_PLANS.includes((plan || "free") as SubscriptionPlan);
+}
+
 export function canUseWhiteLabel(plan?: SubscriptionPlan | null): boolean {
   if (FREE_ACCESS_MODE) return true;
   return WHITE_LABEL_PLANS.includes((plan || "free") as SubscriptionPlan);

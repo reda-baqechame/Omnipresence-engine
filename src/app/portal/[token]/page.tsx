@@ -1,13 +1,11 @@
 import { createServiceClient } from "@/lib/supabase/server";
-import { gatherReportData, getOrgWhiteLabel } from "@/lib/engines/report-builder";
-import { generateReportHTML } from "@/lib/engines/report-generator";
+import { renderReportHtmlForView, getOrgWhiteLabel } from "@/lib/engines/report-builder";
 import { notFound } from "next/navigation";
 
 /**
  * White-label client portal — the branded, client-facing view of a project's
  * proof + report, reachable via a share token (and, for agencies, a custom
- * domain pointed at this route). Always applies the agency's branding when the
- * plan allows; never exposes the platform's own marks to the client.
+ * domain pointed at this route).
  */
 export default async function ClientPortalPage({
   params,
@@ -19,28 +17,54 @@ export default async function ClientPortalPage({
 
   const { data: report } = await supabase
     .from("reports")
-    .select("project_id, is_public")
+    .select("project_id, is_public, report_type, status, error_message, title")
     .eq("share_token", token)
     .single();
 
   if (!report || !report.is_public) notFound();
 
-  const gathered = await gatherReportData(supabase, report.project_id);
-  if (!gathered) notFound();
-
-  // For the portal, fall back to neutral branding if no white-label is set, so
-  // the platform name is never shown to an agency's client.
   const { data: project } = await supabase
     .from("projects")
     .select("organization_id")
     .eq("id", report.project_id)
     .single();
+
+  if (project) {
+    const { data: org } = await supabase
+      .from("organizations")
+      .select("client_portal_enabled, plan, white_label_name")
+      .eq("id", project.organization_id)
+      .single();
+
+    if (org?.client_portal_enabled === false) {
+      notFound();
+    }
+  }
+
+  if (report.status === "generating" || report.status === "pending") {
+    return (
+      <div className="min-h-screen flex flex-col items-center justify-center gap-4 p-8">
+        <div className="h-10 w-10 animate-spin rounded-full border-4 border-indigo-600 border-t-transparent" />
+        <h1 className="text-xl font-semibold">Preparing client report</h1>
+        <meta httpEquiv="refresh" content="15" />
+      </div>
+    );
+  }
+
+  if (report.status === "failed") notFound();
+
+  const html = await renderReportHtmlForView(
+    supabase,
+    report.project_id,
+    (report.report_type as "standard" | "deep") || "standard"
+  );
+  if (!html) notFound();
+
   const whiteLabel =
-    gathered.whiteLabel ||
     (project ? await getOrgWhiteLabel(supabase, project.organization_id) : undefined) ||
     { name: "Client Report", color: "#6366f1" };
 
-  const html = generateReportHTML(gathered.reportData, whiteLabel);
+  void whiteLabel;
 
   return (
     <div>

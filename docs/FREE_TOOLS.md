@@ -127,3 +127,20 @@ copyleft tools are **optional, network-isolated services** behind env flags.
 
 Run `node scripts/railway-spend-guard.mjs` manually or rely on the
 `daily-railway-spend-guard` Inngest cron (09:00 UTC daily).
+
+**Note:** `verify-webgraph.mjs` falls back to Railway CLI credentials when
+`vercel env pull` returns empty sensitive values (known CLI quirk).
+
+## Deep Intelligence Reports
+
+| Feature | Env | Default | Purpose |
+|---------|-----|---------|---------|
+| PDF render timeout | `REPORT_PDF_TIMEOUT_MS` | 90000 | Playwright PDF via ai-ui-capture |
+| Report retention | `REPORT_RETENTION_PER_PROJECT` | 10 | Weekly cron prunes older artifacts |
+| LLM narrative | `REPORT_NARRATIVE_LLM` | true | Set `false` for deterministic-only prose |
+
+Deep reports aggregate: competitive snapshot, popularity signal, backlinks/webgraph,
+keyword intelligence, AI visibility (scoped to latest run), technical audit + CrUX,
+local/entity, community mentions, ROI/attribution, roadmap, proof ledger, and a
+dynamic methodology appendix with license attributions (Cloudflare Radar CC BY-NC 4.0,
+Common Crawl open data, etc.).

@@ -13,7 +13,7 @@ import type { VisibilityScanResult } from "@/lib/engines/visibility-scanner";
 import { analyzePassageReadiness } from "@/lib/engines/passage-readiness";
 import { sendScoreDropAlert, sendCitationDropAlert } from "@/lib/email/reports";
 import { dispatchProjectAlerts } from "@/lib/engines/monitoring-alerts";
-import { gatherReportData, saveReportArtifacts } from "@/lib/engines/report-builder";
+import { gatherReportData, saveReportArtifacts, saveIntelligenceReportArtifacts } from "@/lib/engines/report-builder";
 import { syncProjectAttribution } from "@/lib/engines/attribution-sync";
 import { sendWeeklyReport } from "@/lib/email/reports";
 import { sendSlackWebhook, buildWeeklyReportSlackMessage } from "@/lib/notifications/slack";
@@ -259,26 +259,54 @@ export const monthlyAttributionSync = inngest.createFunction(
 export const generateReport = inngest.createFunction(
   { id: "generate-report", retries: 2, triggers: [{ event: "project/report.generate" }] },
   async ({ event, step }) => {
-    const { projectId, reportId } = event.data as { projectId: string; reportId: string };
+    const { projectId, reportId, reportType } = event.data as {
+      projectId: string;
+      reportId: string;
+      reportType?: "standard" | "deep";
+    };
     const supabase = await createServiceClient();
 
-    const gathered = await step.run("gather-report-data", async () => {
-      return gatherReportData(supabase, projectId);
+    await step.run("mark-generating", async () => {
+      await supabase.from("reports").update({ status: "generating" }).eq("id", reportId);
     });
 
-    if (!gathered) return { success: false, error: "No report data" };
+    try {
+      if (reportType === "deep") {
+        await step.run("save-intelligence-report", async () => {
+          await saveIntelligenceReportArtifacts(supabase, projectId, reportId, "");
+        });
+      } else {
+        const gathered = await step.run("gather-report-data", async () => {
+          return gatherReportData(supabase, projectId);
+        });
 
-    await step.run("save-report", async () => {
-      await saveReportArtifacts(
-        supabase,
-        projectId,
-        reportId,
-        gathered.reportData,
-        gathered.whiteLabel
-      );
-    });
+        if (!gathered) {
+          await supabase.from("reports").update({ status: "failed", error_message: "No report data" }).eq("id", reportId);
+          return { success: false, error: "No report data" };
+        }
 
-    return { success: true, reportId };
+        await step.run("save-report", async () => {
+          await saveReportArtifacts(
+            supabase,
+            projectId,
+            reportId,
+            gathered.reportData,
+            gathered.whiteLabel
+          );
+        });
+      }
+
+      return { success: true, reportId };
+    } catch (err) {
+      await supabase
+        .from("reports")
+        .update({
+          status: "failed",
+          error_message: err instanceof Error ? err.message : "Report generation failed",
+        })
+        .eq("id", reportId);
+      throw err;
+    }
   }
 );
 
@@ -917,6 +945,18 @@ export const dailyRailwaySpendGuard = inngest.createFunction(
   }
 );
 
+/** Weekly report artifact retention — keep last N reports per project. */
+export const weeklyReportRetention = inngest.createFunction(
+  { id: "weekly-report-retention", retries: 0, triggers: [{ cron: "0 4 * * 0" }] },
+  async ({ step }) => {
+    return step.run("prune-reports", async () => {
+      const supabase = await createServiceClient();
+      const { pruneOldReportArtifacts } = await import("@/lib/ops/report-retention");
+      return pruneOldReportArtifacts(supabase);
+    });
+  }
+);
+
 // Measured GEO rewrite loop: baseline citation rate -> AutoGEO answer-first
 // rewrite -> deploy artifact -> wait for propagation -> re-probe -> measure
 // real citation/mention lift from ai_probe_traces -> results-ledger/guarantee.
@@ -1359,6 +1399,7 @@ export const functions = [
   weeklyMentionFirehose,
   monthlyWebgraphReingest,
   dailyRailwaySpendGuard,
+  weeklyReportRetention,
   geoRewriteLoop,
   scheduledContentPublish,
   weeklyIntelligenceSync,

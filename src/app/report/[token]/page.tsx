@@ -1,6 +1,5 @@
 import { createServiceClient } from "@/lib/supabase/server";
-import { gatherReportData } from "@/lib/engines/report-builder";
-import { generateReportHTML } from "@/lib/engines/report-generator";
+import { renderReportHtmlForView } from "@/lib/engines/report-builder";
 import { notFound } from "next/navigation";
 
 export default async function PublicReportPage({
@@ -13,16 +12,42 @@ export default async function PublicReportPage({
 
   const { data: report } = await supabase
     .from("reports")
-    .select("project_id, is_public")
+    .select("project_id, is_public, report_type, status, error_message, title")
     .eq("share_token", token)
     .single();
 
   if (!report || !report.is_public) notFound();
 
-  const gathered = await gatherReportData(supabase, report.project_id);
-  if (!gathered) notFound();
+  if (report.status === "generating" || report.status === "pending") {
+    return (
+      <div className="min-h-screen flex flex-col items-center justify-center gap-4 p-8">
+        <div className="h-10 w-10 animate-spin rounded-full border-4 border-indigo-600 border-t-transparent" />
+        <h1 className="text-xl font-semibold">Generating {report.title}</h1>
+        <p className="text-muted-foreground text-center max-w-md">
+          {report.report_type === "deep"
+            ? "Deep Intelligence Reports aggregate every engine — this may take 1–3 minutes. Refresh shortly."
+            : "Your report is being prepared. Refresh in a moment."}
+        </p>
+        <meta httpEquiv="refresh" content="15" />
+      </div>
+    );
+  }
 
-  const html = generateReportHTML(gathered.reportData, gathered.whiteLabel);
+  if (report.status === "failed") {
+    return (
+      <div className="min-h-screen flex flex-col items-center justify-center gap-4 p-8">
+        <h1 className="text-xl font-semibold text-red-600">Report generation failed</h1>
+        <p className="text-muted-foreground">{report.error_message || "Unknown error"}</p>
+      </div>
+    );
+  }
+
+  const html = await renderReportHtmlForView(
+    supabase,
+    report.project_id,
+    (report.report_type as "standard" | "deep") || "standard"
+  );
+  if (!html) notFound();
 
   return (
     <div>

@@ -6,6 +6,7 @@ import { getSurfaceHealthSnapshot, markSurfaceBlocked, markSurfaceFailed, markSu
 import { retryWithExponentialBackoff } from "./retry-policy.js";
 import { writeCaptureEvidence } from "./evidence-writer.js";
 import { withCaptureSlot, captureConcurrencySnapshot } from "./concurrency.js";
+import { renderHtmlToPdf } from "./render-pdf.js";
 
 // Fail fast on insecure production config before binding the port.
 assertProductionAuth();
@@ -131,6 +132,33 @@ app.post("/capture", async (req, res) => {
       // Transient infra failure — 204 so callers can fall back honestly (not 502).
       return res.status(204).end();
     }
+});
+
+/**
+ * POST /render-pdf
+ * Body: { html: string }
+ * Returns application/pdf — full HTML/CSS rendering via Playwright.
+ */
+app.post("/render-pdf", async (req, res) => {
+  const { html } = (req.body || {}) as { html?: string };
+  if (!html || typeof html !== "string") {
+    return res.status(400).json({ error: "html (string) is required" });
+  }
+  if (html.length > 5_000_000) {
+    return res.status(413).json({ error: "html payload too large" });
+  }
+
+  try {
+    const pdf = await withCaptureSlot(() =>
+      renderHtmlToPdf({ html, timeoutMs: Number(process.env.REPORT_PDF_TIMEOUT_MS || 90_000) })
+    );
+    res.setHeader("Content-Type", "application/pdf");
+    res.setHeader("Content-Length", String(pdf.length));
+    return res.send(pdf);
+  } catch (err) {
+    console.error("render-pdf failed", err);
+    return res.status(500).json({ error: "pdf_render_failed" });
+  }
 });
 
 app.listen(PORT, () => {

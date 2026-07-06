@@ -182,6 +182,82 @@ export async function saveReportArtifacts(
     publicUrl = publicUrl || `data:text/html;base64,${Buffer.from(html).toString("base64")}`;
   }
 
-  await supabase.from("reports").update({ pdf_url: publicUrl, white_label: !!whiteLabel }).eq("id", reportId);
+  await supabase.from("reports").update({ pdf_url: publicUrl, white_label: !!whiteLabel, status: "ready" }).eq("id", reportId);
   return publicUrl;
+}
+
+export async function saveIntelligenceReportArtifacts(
+  supabase: SupabaseClient,
+  projectId: string,
+  reportId: string,
+  organizationId: string
+): Promise<string> {
+  const { gatherIntelligenceReport } = await import("@/lib/engines/intelligence-report-builder");
+  const { generateIntelligenceReportHTML } = await import("@/lib/engines/intelligence-report-template");
+  const { generateReportNarrative } = await import("@/lib/engines/intelligence-report-narrative");
+  const { renderReportPdf } = await import("@/lib/providers/ai-ui-capture");
+
+  const gathered = await gatherIntelligenceReport(supabase, projectId);
+  if (!gathered) throw new Error("No intelligence report data");
+
+  const narrative = await generateReportNarrative(gathered.report, { useLlm: true });
+  const html = generateIntelligenceReportHTML(gathered.report, gathered.branding, narrative);
+  const htmlFileName = `reports/${projectId}/${reportId}.html`;
+  const pdfFileName = `reports/${projectId}/${reportId}.pdf`;
+
+  let publicUrl: string | null = null;
+  let htmlUrl: string | null = null;
+
+  const pdfBuffer = await renderReportPdf(html);
+  if (pdfBuffer) {
+    await supabase.storage.from("reports").upload(pdfFileName, pdfBuffer, {
+      contentType: "application/pdf",
+      upsert: true,
+    });
+    const { data: pdfUrlData } = supabase.storage.from("reports").getPublicUrl(pdfFileName);
+    publicUrl = pdfUrlData.publicUrl;
+  }
+
+  try {
+    await supabase.storage.from("reports").upload(htmlFileName, html, {
+      contentType: "text/html",
+      upsert: true,
+    });
+    const { data: urlData } = supabase.storage.from("reports").getPublicUrl(htmlFileName);
+    htmlUrl = urlData.publicUrl;
+    publicUrl = publicUrl || htmlUrl;
+  } catch {
+    publicUrl = publicUrl || `data:text/html;base64,${Buffer.from(html).toString("base64")}`;
+  }
+
+  await supabase.from("reports").update({
+    pdf_url: publicUrl,
+    html_url: htmlUrl,
+    white_label: !!gathered.branding,
+    status: "ready",
+    error_message: null,
+  }).eq("id", reportId);
+
+  return publicUrl;
+}
+
+/** Render HTML for a report row (standard or deep intelligence). */
+export async function renderReportHtmlForView(
+  supabase: SupabaseClient,
+  projectId: string,
+  reportType: "standard" | "deep" = "standard"
+): Promise<string | null> {
+  if (reportType === "deep") {
+    const { gatherIntelligenceReport } = await import("@/lib/engines/intelligence-report-builder");
+    const { generateIntelligenceReportHTML } = await import("@/lib/engines/intelligence-report-template");
+    const { generateReportNarrative } = await import("@/lib/engines/intelligence-report-narrative");
+    const gathered = await gatherIntelligenceReport(supabase, projectId);
+    if (!gathered) return null;
+    const narrative = await generateReportNarrative(gathered.report, { useLlm: false });
+    return generateIntelligenceReportHTML(gathered.report, gathered.branding, narrative);
+  }
+
+  const gathered = await gatherReportData(supabase, projectId);
+  if (!gathered) return null;
+  return generateReportHTML(gathered.reportData, gathered.whiteLabel);
 }

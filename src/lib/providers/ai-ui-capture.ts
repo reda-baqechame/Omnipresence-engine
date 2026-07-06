@@ -135,3 +135,33 @@ export async function captureAiUiSurface(
     return null;
   }
 }
+
+function captureServiceBase(): string | null {
+  const url = process.env.AI_UI_CAPTURE_URL;
+  if (!url) return null;
+  return url.replace(/\/capture\/?$/, "");
+}
+
+/** Render HTML to PDF via the ai-ui-capture Playwright service. */
+export async function renderReportPdf(html: string): Promise<Buffer | null> {
+  if (!hasAiUiCapture()) return null;
+  const base = captureServiceBase();
+  if (!base) return null;
+  const url = `${base}/render-pdf`;
+  try {
+    const res = await fetch(url, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        ...(process.env.AI_UI_CAPTURE_KEY ? { Authorization: `Bearer ${process.env.AI_UI_CAPTURE_KEY}` } : {}),
+      },
+      body: JSON.stringify({ html }),
+      signal: AbortSignal.timeout(Number(process.env.REPORT_PDF_TIMEOUT_MS || 90_000)),
+    });
+    if (!res.ok) return null;
+    const buf = Buffer.from(await res.arrayBuffer());
+    return buf.length > 0 ? buf : null;
+  } catch {
+    return null;
+  }
+}

@@ -44,6 +44,26 @@ function parseEnvFile(text) {
   return map;
 }
 
+function loadRailwayCreds() {
+  const omnidataDir = join(root, "services", "omnidata");
+  const rv = run("npx", ["@railway/cli", "variables", "--json"], {
+    cwd: omnidataDir,
+    capture: true,
+  });
+  if (!rv.ok) return { base: "", key: "" };
+  try {
+    const parsed = JSON.parse(rv.out.trim());
+    const base =
+      parsed.RAILWAY_PUBLIC_DOMAIN
+        ? `https://${parsed.RAILWAY_PUBLIC_DOMAIN}`
+        : parsed.OMNIDATA_BASE_URL || "";
+    const key = parsed.OMNIDATA_API_KEY || "";
+    return { base: base.replace(/\/$/, ""), key };
+  } catch {
+    return { base: "", key: "" };
+  }
+}
+
 function loadCreds() {
   let base =
     process.argv[2] ||
@@ -59,14 +79,27 @@ function loadCreds() {
   );
   if (pull.ok) {
     const env = parseEnvFile(readFileSync(join(root, pullPath), "utf8"));
-    base = env.get("OMNIDATA_BASE_URL") || base;
-    key = env.get("OMNIDATA_API_KEY") || key;
+    const pulledBase = env.get("OMNIDATA_BASE_URL") || "";
+    const pulledKey = env.get("OMNIDATA_API_KEY") || "";
+    if (pulledBase && pulledBase.trim()) base = pulledBase;
+    if (pulledKey && pulledKey.trim()) key = pulledKey;
     try {
       unlinkSync(join(root, pullPath));
     } catch {
       /* ignore */
     }
   }
+
+  // Vercel CLI pull often returns empty sensitive values — fall back to Railway.
+  if (!key || !key.trim()) {
+    const railway = loadRailwayCreds();
+    if (railway.key) {
+      key = railway.key;
+      if (railway.base) base = railway.base;
+      console.log("Using OmniData credentials from Railway CLI (Vercel pull empty).\n");
+    }
+  }
+
   return { base: base.replace(/\/$/, ""), key };
 }
 
