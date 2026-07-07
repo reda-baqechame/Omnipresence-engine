@@ -11,7 +11,7 @@ import { getActiveScanEngines } from "@/lib/config/scan-engines";
 import { attachEvidenceToResults } from "@/lib/engines/evidence";
 import { buildSourceGraph, enrichSourceDomainAuthority } from "@/lib/engines/source-graph";
 import { createTopInfluenceOutreachTasks, scoreSourceInfluenceV2 } from "@/lib/engines/source-influence";
-import { getPromptGenerationLimit, getVisibilityScanPromptLimit, getOrganizationPlan } from "@/lib/plans/limits";
+import { getPromptGenerationLimit, getEffectiveVisibilityScanPromptLimit, getOrganizationPlan } from "@/lib/plans/limits";
 import {
   assessVisibilityRunQuality,
   visibilityRunStatusFromQuality,
@@ -28,7 +28,8 @@ export interface VisibilityScanPrep {
 async function loadPromptsForScan(supabase: SupabaseClient, project: Project) {
   const plan = await getOrganizationPlan(supabase, project.organization_id);
   const promptCount = getPromptGenerationLimit(plan);
-  const maxScanPrompts = getVisibilityScanPromptLimit(plan);
+  const isFirstScan = !project.last_scan_at;
+  const maxScanPrompts = getEffectiveVisibilityScanPromptLimit(plan, isFirstScan);
 
   const { data: brand } = await supabase.from("brand_profiles").select("*").eq("project_id", project.id).single();
   const services = (brand?.products_services || []).map((s: { name: string }) => s.name);
@@ -77,22 +78,13 @@ export async function prepareVisibilityScan(
   return { runId: run!.id, prompts, maxScanPrompts };
 }
 
-export async function persistVisibilityBatch(
+export async function insertVisibilityResultRows(
   supabase: SupabaseClient,
-  projectId: string,
-  runId: string,
   visibilityResults: VisibilityScanResult[]
 ) {
   if (!visibilityResults.length) return;
 
   const now = new Date().toISOString();
-  await attachEvidenceToResults(
-    supabase,
-    projectId,
-    runId,
-    visibilityResults as unknown as Parameters<typeof attachEvidenceToResults>[3]
-  ).catch(() => 0);
-
   const rows = (visibilityResults as unknown as Array<Record<string, unknown>>).map((r) => {
     const ds = (r.data_source as string | undefined) ?? "unavailable";
     return {
@@ -106,6 +98,24 @@ export async function persistVisibilityBatch(
   await persistProbeTraces(supabase, visibilityResults);
 }
 
+export async function persistVisibilityBatch(
+  supabase: SupabaseClient,
+  projectId: string,
+  runId: string,
+  visibilityResults: VisibilityScanResult[]
+) {
+  if (!visibilityResults.length) return;
+
+  await attachEvidenceToResults(
+    supabase,
+    projectId,
+    runId,
+    visibilityResults as unknown as Parameters<typeof attachEvidenceToResults>[3]
+  ).catch(() => 0);
+
+  await insertVisibilityResultRows(supabase, visibilityResults);
+}
+
 export interface VisibilityEngineBatchResult {
   results: VisibilityScanResult[];
   scanPartial: boolean;
@@ -117,6 +127,7 @@ export async function runVisibilityEngineBatch(
   prep: VisibilityScanPrep,
   engine: VisibilityEngine
 ): Promise<VisibilityEngineBatchResult> {
+  const engineResults: VisibilityScanResult[] = [];
   const { results, scanPartial } = await runVisibilityScan({
     projectId: project.id,
     runId: prep.runId,
@@ -128,8 +139,17 @@ export async function runVisibilityEngineBatch(
     prompts: prep.prompts,
     engines: [engine],
     maxPrompts: prep.maxScanPrompts,
+    onProbeResult: async (result) => {
+      engineResults.push(result);
+      await insertVisibilityResultRows(supabase, [result]);
+    },
   });
-  await persistVisibilityBatch(supabase, project.id, prep.runId, results);
+  await attachEvidenceToResults(
+    supabase,
+    project.id,
+    prep.runId,
+    engineResults as unknown as Parameters<typeof attachEvidenceToResults>[3]
+  ).catch(() => 0);
   return { results, scanPartial };
 }
 

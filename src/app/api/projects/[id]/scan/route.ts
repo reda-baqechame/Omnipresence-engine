@@ -143,11 +143,43 @@ export async function GET(
     .limit(1)
     .single();
 
+  let progress: {
+    visibilityResults: number;
+    runStatus: string | null;
+    runAgeMinutes: number | null;
+  } | null = null;
+
+  if (status === "scanning") {
+    const { data: latestRun } = await supabase
+      .from("visibility_runs")
+      .select("id, status, started_at")
+      .eq("project_id", id)
+      .order("started_at", { ascending: false })
+      .limit(1)
+      .maybeSingle();
+
+    if (latestRun?.id) {
+      const { count } = await supabase
+        .from("visibility_results")
+        .select("id", { count: "exact", head: true })
+        .eq("run_id", latestRun.id);
+      const runAgeMs = latestRun.started_at
+        ? Date.now() - new Date(latestRun.started_at).getTime()
+        : 0;
+      progress = {
+        visibilityResults: count ?? 0,
+        runStatus: latestRun.status,
+        runAgeMinutes: runAgeMs > 0 ? Math.round(runAgeMs / 60_000) : null,
+      };
+    }
+  }
+
   return NextResponse.json({
     status,
     lastScanAt: project.last_scan_at,
     score: score?.omnipresence_score ?? null,
     recovered,
     message,
+    progress,
   });
 }

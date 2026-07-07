@@ -35,6 +35,8 @@ export interface VisibilityScanConfig {
    * trace. The stored prompt_text stays the original (clean) prompt.
    */
   persona?: string;
+  /** Persist each probe as it completes (Inngest progress + crash recovery). */
+  onProbeResult?: (result: VisibilityScanResult) => void | Promise<void>;
 }
 
 export interface VisibilityScanResult extends Omit<VisibilityResult, "id" | "created_at"> {
@@ -75,6 +77,11 @@ export async function runVisibilityScan(
   const deadline = Date.now() + VISIBILITY_SCAN_BUDGET_MS;
 
   let budgetExhausted = false;
+  const probeTimeoutMs = Math.max(
+    15_000,
+    Number(process.env.VISIBILITY_PROBE_TIMEOUT_MS) || 90_000
+  );
+
   for (const prompt of promptsToScan) {
     if (budgetExhausted) break;
     for (const engine of engines) {
@@ -86,23 +93,77 @@ export async function runVisibilityScan(
         });
         break;
       }
-      const result = await scanSinglePrompt(config, prompt, engine);
-      if (result) {
-        // Stamp persona/geo so the probe trace records the measurement cell
-        // (Wave O3). Stored prompt_text stays the clean original prompt.
-        if (config.persona || config.location) {
-          result.raw_response = {
-            ...(result.raw_response || {}),
-            ...(config.persona ? { persona: config.persona } : {}),
-            geo: config.location,
-          };
-        }
-        results.push(result);
+      let result: VisibilityScanResult | null = null;
+      try {
+        result = await probeWithTimeout(config, prompt, engine, probeTimeoutMs);
+      } catch (error) {
+        logProviderError("visibility.probe_failed", error, {
+          engine,
+          prompt: prompt.text.slice(0, 80),
+        });
+        result = buildUnavailableProbe(config, prompt, engine, "probe_error");
       }
+      if (!result) {
+        result = buildUnavailableProbe(config, prompt, engine, "probe_timeout");
+      }
+      if (config.persona || config.location) {
+        result.raw_response = {
+          ...(result.raw_response || {}),
+          ...(config.persona ? { persona: config.persona } : {}),
+          geo: config.location,
+        };
+      }
+      results.push(result);
+      await config.onProbeResult?.(result);
     }
   }
 
   return { results, scanPartial: budgetExhausted };
+}
+
+async function probeWithTimeout(
+  config: VisibilityScanConfig,
+  prompt: { id?: string; text: string },
+  engine: VisibilityEngine,
+  timeoutMs: number
+): Promise<VisibilityScanResult | null> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  try {
+    return await Promise.race([
+      scanSinglePrompt(config, prompt, engine),
+      new Promise<null>((resolve) => {
+        timer = setTimeout(() => resolve(null), timeoutMs);
+      }),
+    ]);
+  } finally {
+    if (timer) clearTimeout(timer);
+  }
+}
+
+function buildUnavailableProbe(
+  config: VisibilityScanConfig,
+  prompt: { id?: string; text: string },
+  engine: VisibilityEngine,
+  reason: string
+): VisibilityScanResult {
+  return {
+    run_id: config.runId,
+    project_id: config.projectId,
+    prompt_id: prompt.id,
+    engine,
+    prompt_text: prompt.text,
+    brand_mentioned: false,
+    brand_cited: false,
+    competitor_mentions: {},
+    competitor_citations: {},
+    source_domains: [],
+    cited_urls: [],
+    data_source: "unavailable",
+    measurement_mode: "unavailable",
+    sample_count: 0,
+    variance: 0,
+    raw_response: { data_source: "unavailable", reason },
+  };
 }
 
 const CAPTURE_CREDITS = 2;

@@ -3,6 +3,7 @@ import {
   FREE_ACCESS_MODE,
   DEFAULT_PROMPT_GENERATION_LIMIT,
   DEFAULT_VISIBILITY_SCAN_LIMIT,
+  FIRST_SCAN_VISIBILITY_PROMPT_LIMIT,
 } from "@/lib/config/access";
 
 export class PlanLimitExceededError extends Error {
@@ -92,6 +93,16 @@ export function getPromptGenerationLimit(plan?: SubscriptionPlan): number {
 export function getVisibilityScanPromptLimit(plan?: SubscriptionPlan): number {
   if (FREE_ACCESS_MODE) return DEFAULT_VISIBILITY_SCAN_LIMIT;
   return getPlanLimits(plan).scanPrompts;
+}
+
+/** Cap prompt volume on the first scan so new projects complete quickly. */
+export function getEffectiveVisibilityScanPromptLimit(
+  plan: SubscriptionPlan | undefined,
+  isFirstScan: boolean
+): number {
+  const limit = getVisibilityScanPromptLimit(plan);
+  if (!isFirstScan) return limit;
+  return Math.min(limit, FIRST_SCAN_VISIBILITY_PROMPT_LIMIT);
 }
 
 /**
