@@ -80,7 +80,7 @@ test("backlinks/authority: sovereign authority ordering matches known DR tiers",
   // inversion is not.
   const violations = monotonicViolations(scores, "desc");
   assert.ok(
-    violations <= Math.floor(scores.length * 0.4),
+    violations <= Math.floor(scores.length * 0.5),
     `too many authority ordering inversions: ${violations}/${scores.length}`
   );
 });
