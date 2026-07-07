@@ -3,21 +3,8 @@ import { createClient } from "@/lib/supabase/server";
 import { apiError, apiUnauthorized, validateBody } from "@/lib/security/api-response";
 import { guardOrgEndpoint } from "@/lib/security/api-v1-guard";
 import { generateApiKey } from "@/lib/security/api-keys";
+import { getActiveOrgContext } from "@/lib/security/org-context";
 import { ApiKeyCreateSchema, ApiKeyDeleteSchema } from "@/lib/validation/schemas";
-
-async function getOrgContext(
-  supabase: Awaited<ReturnType<typeof createClient>>,
-  userId: string
-): Promise<{ orgId: string; role: string } | null> {
-  const { data } = await supabase
-    .from("memberships")
-    .select("organization_id, role")
-    .eq("user_id", userId)
-    .limit(1)
-    .single();
-  if (!data?.organization_id) return null;
-  return { orgId: data.organization_id, role: data.role };
-}
 
 function requireAdmin(role: string): boolean {
   return ["owner", "admin"].includes(role);
@@ -28,7 +15,7 @@ export async function GET() {
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) return apiUnauthorized();
 
-  const ctx = await getOrgContext(supabase, user.id);
+  const ctx = await getActiveOrgContext(supabase, user.id);
   if (!ctx) return apiError("No organization");
 
   const { data } = await supabase
@@ -45,7 +32,7 @@ export async function POST(request: NextRequest) {
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) return apiUnauthorized();
 
-  const ctx = await getOrgContext(supabase, user.id);
+  const ctx = await getActiveOrgContext(supabase, user.id);
   if (!ctx) return apiError("No organization");
   if (!requireAdmin(ctx.role)) return apiError("Only organization owners or admins can manage API keys", 403);
 
@@ -80,7 +67,7 @@ export async function DELETE(request: NextRequest) {
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) return apiUnauthorized();
 
-  const ctx = await getOrgContext(supabase, user.id);
+  const ctx = await getActiveOrgContext(supabase, user.id);
   if (!ctx) return apiError("No organization");
   if (!requireAdmin(ctx.role)) return apiError("Only organization owners or admins can manage API keys", 403);
 

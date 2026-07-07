@@ -2,7 +2,8 @@ import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { buildMonthlyCampaign } from "@/lib/engines/link-building";
 import { verifyProjectAccess } from "@/lib/security/project-access";
-import { apiError, apiForbidden, apiUnauthorized, readJsonBody } from "@/lib/security/api-response";
+import { apiError, apiForbidden, apiUnauthorized, validateBody } from "@/lib/security/api-response";
+import { LinkBuildingPatchSchema, LinkBuildingPostSchema } from "@/lib/validation/schemas";
 
 export async function GET(request: NextRequest) {
   const supabase = await createClient();
@@ -29,8 +30,9 @@ export async function POST(request: NextRequest) {
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) return apiUnauthorized();
 
-  const { projectId, tier } = await readJsonBody(request) as { projectId: string; tier?: "growth" | "scale" };
-  if (!projectId) return apiError("projectId required");
+  const v = await validateBody(request, LinkBuildingPostSchema);
+  if (v.response) return v.response;
+  const { projectId, tier } = v.data;
 
   const access = await verifyProjectAccess(supabase, projectId, user.id, "member");
   if (!access) return apiForbidden();
@@ -93,8 +95,9 @@ export async function PATCH(request: NextRequest) {
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) return apiUnauthorized();
 
-  const { id, status } = await readJsonBody(request) as { id: string; status: string };
-  if (!id || !status) return apiError("id and status required");
+  const v = await validateBody(request, LinkBuildingPatchSchema);
+  if (v.response) return v.response;
+  const { id, status } = v.data;
 
   const { data: row } = await supabase
     .from("link_building_orders")

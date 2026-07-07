@@ -66,7 +66,7 @@ export async function targetedReprobe(
   const startISO = new Date().toISOString();
   if (!prompts.length) return startISO;
   const runId = crypto.randomUUID();
-  const results = await runVisibilityScan({
+  const { results } = await runVisibilityScan({
     projectId: project.id,
     runId,
     brandName: project.name,

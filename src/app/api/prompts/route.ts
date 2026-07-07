@@ -2,7 +2,8 @@ import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import type { PromptCategory } from "@/types/database";
 import { verifyProjectAccess } from "@/lib/security/project-access";
-import { apiError, apiForbidden, apiUnauthorized, readJsonBody } from "@/lib/security/api-response";
+import { apiError, apiForbidden, apiUnauthorized, validateBody } from "@/lib/security/api-response";
+import { PromptsPostSchema } from "@/lib/validation/schemas";
 import { fetchGscTopQueries } from "@/lib/engines/gsc-queries";
 import { getValidOAuthToken } from "@/lib/oauth/tokens";
 
@@ -112,15 +113,14 @@ export async function POST(request: NextRequest) {
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) return apiUnauthorized();
 
-  const body = await readJsonBody(request);
-  const { projectId, csv, prompts: inlinePrompts, action } = body as {
+  const v = await validateBody(request, PromptsPostSchema);
+  if (v.response) return v.response;
+  const { projectId, csv, prompts: inlinePrompts, action } = v.data as {
     projectId: string;
     csv?: string;
     prompts?: Array<{ text: string; category?: PromptCategory; priority?: number }>;
     action?: "import_gsc";
   };
-
-  if (!projectId) return apiError("projectId required");
 
   const access = await verifyProjectAccess(supabase, projectId, user.id, "member");
   if (!access) return apiForbidden();

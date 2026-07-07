@@ -1,7 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { verifyProjectAccess } from "@/lib/security/project-access";
-import { apiError, apiForbidden, apiUnauthorized, readJsonBody } from "@/lib/security/api-response";
+import { apiError, apiForbidden, apiUnauthorized, validateBody } from "@/lib/security/api-response";
+import { ProjectMutationSchema } from "@/lib/validation/schemas";
 import { analyzeVideoSeo } from "@/lib/engines/video-seo";
 
 export async function POST(request: NextRequest) {
@@ -9,14 +10,9 @@ export async function POST(request: NextRequest) {
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) return apiUnauthorized();
 
-  let body: { projectId?: string; keywords?: string[] };
-  try {
-    body = await readJsonBody(request);
-  } catch {
-    return apiError("Invalid JSON body");
-  }
-  const { projectId } = body;
-  if (!projectId) return apiError("projectId required");
+  const v = await validateBody(request, ProjectMutationSchema);
+  if (v.response) return v.response;
+  const { projectId, keywords: inputKeywords } = v.data as { projectId: string; keywords?: string[] };
 
   const access = await verifyProjectAccess(supabase, projectId, user.id, "member");
   if (!access) return apiForbidden();
@@ -28,7 +24,7 @@ export async function POST(request: NextRequest) {
     .single();
   if (!project) return apiError("Project not found", 404);
 
-  let keywords = (body.keywords || []).map((k) => String(k)).filter(Boolean);
+  let keywords = (inputKeywords || []).map((k) => String(k)).filter(Boolean);
   if (keywords.length === 0) {
     const { data: kws } = await supabase
       .from("keyword_opportunities")

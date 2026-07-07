@@ -1,5 +1,5 @@
--- PresenceOS combined migration (67 files)
--- Generated 2026-07-06T23:22:11.635Z
+-- PresenceOS combined migration (74 files)
+-- Generated 2026-07-07T02:08:55.244Z
 
 -- ========== 0001_init.sql ==========
 
@@ -2987,5 +2987,223 @@ ALTER TABLE public.ai_capture_evidence
 CREATE INDEX IF NOT EXISTS measurement_evidence_trace_idx
   ON public.measurement_evidence (trace_id)
   WHERE trace_id IS NOT NULL;
+
+
+-- ========== 0068_fix_data_source_constraints.sql ==========
+
+-- Correct 0065 table-name drift: apply 5-value data_source CHECK to actual schema tables.
+
+DO $$
+DECLARE
+  t TEXT;
+  nullable_tables TEXT[] := ARRAY[
+    'visibility_results',
+    'technical_findings',
+    'coverage_items',
+    'authority_opportunities',
+    'scores',
+    'keyword_opportunities',
+    'attribution_metrics',
+    'cwv_history',
+    'crawl_pages',
+    'crawl_issues',
+    'rank_snapshots',
+    'brand_mentions',
+    'product_visibility_snapshots',
+    'source_domains',
+    'source_mentions',
+    'source_opportunities',
+    'source_edges',
+    'merchant_products',
+    'ai_probe_traces',
+    'rank_keywords',
+    'gsc_snapshots',
+    'gbp_snapshots',
+    'ai_visibility_snapshots',
+    'data_quality_scores'
+  ];
+  not_null_tables TEXT[] := ARRAY[
+    'behavior_metrics',
+    'backlink_graph_snapshots',
+    'measurement_evidence'
+  ];
+  full_check TEXT := $$data_source IS NULL OR data_source IN (
+    'measured', 'estimated', 'model_knowledge', 'simulated', 'unavailable'
+  )$$;
+  full_check_nn TEXT := $$data_source IN (
+    'measured', 'estimated', 'model_knowledge', 'simulated', 'unavailable'
+  )$$;
+BEGIN
+  FOREACH t IN ARRAY nullable_tables LOOP
+    EXECUTE format('ALTER TABLE %I DROP CONSTRAINT IF EXISTS %I', t, t || '_data_source_check');
+    IF EXISTS (
+      SELECT 1 FROM information_schema.columns
+      WHERE table_schema = 'public' AND table_name = t AND column_name = 'data_source'
+    ) THEN
+      EXECUTE format('ALTER TABLE %I ADD CONSTRAINT %I CHECK (%s)', t, t || '_data_source_check', full_check);
+    END IF;
+  END LOOP;
+
+  FOREACH t IN ARRAY not_null_tables LOOP
+    EXECUTE format('ALTER TABLE %I DROP CONSTRAINT IF EXISTS %I', t, t || '_data_source_check');
+    IF EXISTS (
+      SELECT 1 FROM information_schema.columns
+      WHERE table_schema = 'public' AND table_name = t AND column_name = 'data_source'
+    ) THEN
+      EXECUTE format('ALTER TABLE %I ADD CONSTRAINT %I CHECK (%s)', t, t || '_data_source_check', full_check_nn);
+    END IF;
+  END LOOP;
+END $$;
+
+-- citation_sources intentionally keeps legacy 2-value enum (measured | simulated).
+ALTER TABLE citation_sources DROP CONSTRAINT IF EXISTS citation_sources_data_source_check;
+ALTER TABLE citation_sources
+  ADD CONSTRAINT citation_sources_data_source_check
+  CHECK (data_source IN ('measured', 'simulated'));
+
+
+-- ========== 0069_provider_telemetry_rls.sql ==========
+
+-- Close cross-tenant read on platform-wide telemetry rows (organization_id IS NULL).
+
+DROP POLICY IF EXISTS provider_telemetry_org_read ON public.provider_telemetry;
+
+CREATE POLICY provider_telemetry_org_read ON public.provider_telemetry
+  FOR SELECT
+  TO authenticated
+  USING (
+    organization_id IS NOT NULL
+    AND organization_id IN (
+      SELECT organization_id FROM public.memberships WHERE user_id = auth.uid()
+    )
+  );
+
+-- Platform-wide rows (NULL organization_id) are visible only via service role (no client policy).
+
+
+-- ========== 0070_org_project_consistency.sql ==========
+
+-- Enforce organization_id matches project_id on dual-column tables.
+
+CREATE OR REPLACE FUNCTION public.project_org_id(p_project_id UUID)
+RETURNS UUID
+LANGUAGE sql
+STABLE
+AS $$
+  SELECT organization_id FROM public.projects WHERE id = p_project_id;
+$$;
+
+DO $$
+DECLARE
+  t TEXT;
+  tables TEXT[] := ARRAY[
+    'keyword_corpus',
+    'rank_schedules',
+    'traffic_panel_observations',
+    'execution_tasks',
+    'ops_queue'
+  ];
+BEGIN
+  FOREACH t IN ARRAY tables LOOP
+    IF EXISTS (
+      SELECT 1 FROM information_schema.columns
+      WHERE table_schema = 'public' AND table_name = t
+        AND column_name = 'organization_id'
+    ) AND EXISTS (
+      SELECT 1 FROM information_schema.columns
+      WHERE table_schema = 'public' AND table_name = t
+        AND column_name = 'project_id'
+    ) THEN
+      EXECUTE format(
+        'ALTER TABLE %I DROP CONSTRAINT IF EXISTS %I',
+        t,
+        t || '_org_project_consistency'
+      );
+      EXECUTE format(
+        'ALTER TABLE %I ADD CONSTRAINT %I CHECK (
+          organization_id IS NULL
+          OR project_id IS NULL
+          OR organization_id = public.project_org_id(project_id)
+        )',
+        t,
+        t || '_org_project_consistency'
+      );
+    END IF;
+  END LOOP;
+END $$;
+
+
+-- ========== 0071_ai_capture_trace_index.sql ==========
+
+-- Index parity for trace_id on ai_capture_evidence (0067 added column + index on measurement_evidence only).
+
+CREATE INDEX IF NOT EXISTS idx_ai_capture_evidence_trace_id
+  ON public.ai_capture_evidence (trace_id)
+  WHERE trace_id IS NOT NULL;
+
+
+-- ========== 0072_audit_leads_backfill.sql ==========
+
+-- Require organization_id for agency-sourced audit leads (public funnel may stay NULL).
+
+CREATE OR REPLACE FUNCTION public.reject_audit_lead_null_org()
+RETURNS TRIGGER
+LANGUAGE plpgsql
+AS $$
+BEGIN
+  IF NEW.organization_id IS NULL AND NEW.source LIKE 'agency%' THEN
+    RAISE EXCEPTION 'audit_leads.organization_id is required for agency-sourced leads';
+  END IF;
+  RETURN NEW;
+END;
+$$;
+
+DROP TRIGGER IF EXISTS audit_leads_require_org ON public.audit_leads;
+CREATE TRIGGER audit_leads_require_org
+  BEFORE INSERT OR UPDATE ON public.audit_leads
+  FOR EACH ROW
+  EXECUTE FUNCTION public.reject_audit_lead_null_org();
+
+
+-- ========== 0073_reports_bucket_private.sql ==========
+
+-- Make reports bucket private; access via signed URLs / service role only.
+
+UPDATE storage.buckets SET public = false WHERE id = 'reports';
+
+DROP POLICY IF EXISTS reports_public_read ON storage.objects;
+
+-- Authenticated users may read report objects for projects in their org (path: orgId/projectId/...).
+CREATE POLICY reports_org_read ON storage.objects
+  FOR SELECT
+  TO authenticated
+  USING (
+    bucket_id = 'reports'
+    AND EXISTS (
+      SELECT 1
+      FROM public.projects p
+      JOIN public.memberships m ON m.organization_id = p.organization_id
+      WHERE m.user_id = auth.uid()
+        AND (storage.foldername(name))[1] = p.organization_id::text
+        AND (storage.foldername(name))[2] = p.id::text
+    )
+  );
+
+
+-- ========== 0074_project_tracking_hmac.sql ==========
+
+-- Per-project HMAC secret for the public tracking beacon (/api/track).
+-- When set, beacons must include x-tracking-signature: sha256=<hmac(body)>.
+
+ALTER TABLE public.projects
+  ADD COLUMN IF NOT EXISTS tracking_hmac TEXT;
+
+UPDATE public.projects
+SET tracking_hmac = encode(gen_random_bytes(32), 'hex')
+WHERE tracking_hmac IS NULL;
+
+ALTER TABLE public.projects
+  ALTER COLUMN tracking_hmac SET NOT NULL,
+  ALTER COLUMN tracking_hmac SET DEFAULT encode(gen_random_bytes(32), 'hex');
 
 

@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { guardPublicEndpoint } from "@/lib/security/public-guard";
-import { apiError, readJsonBody } from "@/lib/security/api-response";
+import { apiError, validateBody } from "@/lib/security/api-response";
+import { ToolsCitationPlannerSchema } from "@/lib/validation/schemas";
 import { getMultiSourceSuggestions } from "@/lib/providers/autocomplete-multi";
 import { hasSerpCapability } from "@/lib/config/capabilities";
 import { searchGoogleOrganicRouter } from "@/lib/providers/serp-router";
@@ -9,16 +10,9 @@ export async function POST(request: NextRequest) {
   const limited = await guardPublicEndpoint(request, "tools-citation-planner", 20, 60 * 60 * 1000);
   if (limited) return limited;
 
-  let brand: string | undefined;
-  let industry: string | undefined;
-  let location: string | undefined;
-  let domain: string | undefined;
-  try {
-    ({ brand, industry, location, domain } = await readJsonBody(request));
-  } catch {
-    return apiError("Invalid JSON body");
-  }
-  if (!brand || !industry) return apiError("brand and industry required");
+  const v = await validateBody(request, ToolsCitationPlannerSchema);
+  if (v.response) return v.response;
+  const { brand, industry, location, domain } = v.data;
 
   const loc = location ? String(location).slice(0, 80) : "your area";
   const b = String(brand).slice(0, 80);

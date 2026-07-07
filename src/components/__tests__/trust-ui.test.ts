@@ -1,24 +1,21 @@
-import { test } from "node:test";
+import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
-import { join } from "node:path";
+import { join, dirname } from "node:path";
+import { fileURLToPath } from "url";
 
-const root = join(import.meta.dirname, "..");
+const root = join(dirname(fileURLToPath(import.meta.url)), "..", "..", "..");
 
-test("ProjectionBadge surfaces projected honesty copy", () => {
-  const src = readFileSync(join(root, "projection-badge.tsx"), "utf8");
-  assert.match(src, /Projected/);
-  assert.match(src, /not a measured value/i);
-});
+describe("trust-ui backlinks unavailable", () => {
+  it("backlinks panel shows webgraph not ingested message", () => {
+    const src = readFileSync(join(root, "src/components/backlinks-panel.tsx"), "utf8");
+    assert.match(src, /Backlink index not ingested/);
+    assert.match(src, /webgraphReady/);
+  });
 
-test("DataTrustCenter fetches trust API and shows provenance", () => {
-  const src = readFileSync(join(root, "data-trust-center.tsx"), "utf8");
-  assert.match(src, /\/api\/projects\/\$\{projectId\}\/trust/);
-  assert.match(src, /ProvenanceBadge/);
-});
-
-test("CompetitorComparison labels proxies honestly", () => {
-  const src = readFileSync(join(root, "competitor-comparison.tsx"), "utf8");
-  assert.match(src, /not visit counts/i);
-  assert.match(src, /getCompetitiveSnapshot/);
+  it("agencies page uses beta disclaimer not dollar pricing", () => {
+    const src = readFileSync(join(root, "src/app/agencies/page.tsx"), "utf8");
+    assert.match(src, /Professional beta/);
+    assert.doesNotMatch(src, /\$0/);
+  });
 });

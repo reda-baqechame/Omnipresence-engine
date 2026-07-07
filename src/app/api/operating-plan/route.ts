@@ -1,7 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { verifyProjectAccess } from "@/lib/security/project-access";
-import { apiError, apiForbidden, apiUnauthorized, readJsonBody } from "@/lib/security/api-response";
+import { apiError, apiForbidden, apiUnauthorized, validateBody } from "@/lib/security/api-response";
+import { OperatingPlanPostSchema } from "@/lib/validation/schemas";
 import {
   buildOperatingPlan,
   runCadenceReview,
@@ -42,14 +43,15 @@ export async function POST(request: NextRequest) {
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) return apiUnauthorized();
 
-  const body = (await readJsonBody(request)) as {
+  const v = await validateBody(request, OperatingPlanPostSchema);
+  if (v.response) return v.response;
+  const body = v.data as {
     projectId: string;
     action: "generate_plan" | "run_review";
     businessModel?: BusinessModel;
     cadence?: Cadence;
   };
   const { projectId, action } = body;
-  if (!projectId) return apiError("projectId required");
 
   const access = await verifyProjectAccess(supabase, projectId, user.id, "member");
   if (!access) return apiForbidden();

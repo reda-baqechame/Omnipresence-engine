@@ -53,6 +53,12 @@ jobs:
         run: npm run railway:verify
       - name: production:ready
         run: npm run production:ready
+      - name: verify:stress (weekly load proof)
+        if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+        run: npm run verify:stress
+        env:
+          CI: "true"
+          VERIFY_REQUIRE_FILES: "1"
       - name: claims strict (prod)
         if: github.event_name == 'workflow_dispatch'
         run: CLAIMS_STRICT_PROD=1 npm run check:claims-backed

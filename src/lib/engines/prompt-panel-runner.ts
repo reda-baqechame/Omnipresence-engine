@@ -153,7 +153,7 @@ export async function runPromptPanel(
       for (let run = 0; run < cap.runs; run++) {
         let results: VisibilityScanResult[] = [];
         try {
-          results = await runVisibilityScan({
+          const scan = await runVisibilityScan({
             projectId: proj.id,
             runId,
             brandName: proj.name,
@@ -165,6 +165,7 @@ export async function runPromptPanel(
             prompts: cappedMembers.map((m) => ({ id: m.prompt_id ?? undefined, text: m.prompt_text })),
             maxPrompts: cappedMembers.length,
           });
+          results = scan.results;
         } catch (err) {
           logProviderError("panel.run_cell_failed", err, { panelId, geo, persona, run });
           continue;

@@ -3,7 +3,8 @@ import { createClient } from "@/lib/supabase/server";
 import { listGa4Properties } from "@/lib/engines/attribution";
 import { getValidOAuthToken } from "@/lib/oauth/tokens";
 import { verifyProjectAccess } from "@/lib/security/project-access";
-import { apiError, apiForbidden, apiNotFound, apiServerError, apiUnauthorized, readJsonBody } from "@/lib/security/api-response";
+import { apiError, apiForbidden, apiNotFound, apiServerError, apiUnauthorized, validateBody } from "@/lib/security/api-response";
+import { Ga4PropertiesPostSchema } from "@/lib/validation/schemas";
 
 export async function GET(request: NextRequest) {
   const supabase = await createClient();
@@ -42,10 +43,9 @@ export async function POST(request: NextRequest) {
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) return apiUnauthorized();
 
-  const { projectId, propertyId } = await readJsonBody(request);
-  if (!projectId || !propertyId) {
-    return apiError("projectId and propertyId required");
-  }
+  const v = await validateBody(request, Ga4PropertiesPostSchema);
+  if (v.response) return v.response;
+  const { projectId, propertyId } = v.data;
 
   const access = await verifyProjectAccess(supabase, projectId, user.id, "admin");
   if (!access) return apiForbidden();

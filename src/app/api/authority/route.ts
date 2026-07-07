@@ -3,7 +3,12 @@ import { createClient } from "@/lib/supabase/server";
 import { generateOutreachEmail, sendOutreachEmail } from "@/lib/engines/authority-finder";
 import { verifyProjectAccess } from "@/lib/security/project-access";
 import { trackApiUsage } from "@/lib/metering/api-usage";
-import { apiError, apiForbidden, apiNotFound, apiServerError, apiUnauthorized, readJsonBody } from "@/lib/security/api-response";
+import { apiError, apiForbidden, apiNotFound, apiServerError, apiUnauthorized, validateBody } from "@/lib/security/api-response";
+import {
+  AuthorityEmailPutSchema,
+  AuthorityOutreachPostSchema,
+  AuthorityStatusPatchSchema,
+} from "@/lib/validation/schemas";
 
 const VALID_STATUSES = new Set([
   "identified",
@@ -41,8 +46,9 @@ export async function POST(request: NextRequest) {
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) return apiUnauthorized();
 
-  const { opportunityId } = await readJsonBody(request);
-  if (!opportunityId) return apiError("opportunityId required");
+  const v = await validateBody(request, AuthorityOutreachPostSchema);
+  if (v.response) return v.response;
+  const { opportunityId } = v.data;
 
   const { data: opportunity } = await supabase
     .from("authority_opportunities")
@@ -80,8 +86,9 @@ export async function PATCH(request: NextRequest) {
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) return apiUnauthorized();
 
-  const { opportunityId, status } = await readJsonBody(request);
-  if (!opportunityId || !status) return apiError("opportunityId and status required");
+  const v = await validateBody(request, AuthorityStatusPatchSchema);
+  if (v.response) return v.response;
+  const { opportunityId, status } = v.data;
   if (!VALID_STATUSES.has(status)) return apiError("Invalid status");
 
   const { data: opportunity } = await supabase
@@ -111,8 +118,9 @@ export async function PUT(request: NextRequest) {
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) return apiUnauthorized();
 
-  const { opportunityId, to, subject } = await readJsonBody(request);
-  if (!opportunityId || !to) return apiError("opportunityId and to required");
+  const v = await validateBody(request, AuthorityEmailPutSchema);
+  if (v.response) return v.response;
+  const { opportunityId, to, subject } = v.data;
 
   const { data: opportunity } = await supabase
     .from("authority_opportunities")

@@ -1,7 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { verifyProjectAccess } from "@/lib/security/project-access";
-import { apiForbidden, apiNotFound, apiUnauthorized, readJsonBody } from "@/lib/security/api-response";
+import { apiForbidden, apiNotFound, apiUnauthorized, validateBody } from "@/lib/security/api-response";
+import { SchemaGenerateSchema } from "@/lib/validation/schemas";
 import { generatePageSchema, validateSchemaLocally } from "@/lib/engines/schema-engine";
 import { recordLedgerAction } from "@/lib/engines/results-ledger";
 import type { BrandProfile, Project } from "@/types/database";
@@ -11,8 +12,9 @@ export async function POST(request: NextRequest) {
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) return apiUnauthorized();
 
-  const { projectId, pageUrl, pageTitle, pageContent } = await readJsonBody(request);
-  if (!projectId) return NextResponse.json({ error: "projectId required" }, { status: 400 });
+  const v = await validateBody(request, SchemaGenerateSchema);
+  if (v.response) return v.response;
+  const { projectId, pageUrl, pageTitle, pageContent } = v.data;
 
   const access = await verifyProjectAccess(supabase, projectId, user.id, "member");
   if (!access) return apiForbidden();

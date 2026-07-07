@@ -1,7 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { verifyProjectAccess } from "@/lib/security/project-access";
-import { apiError, apiForbidden, apiNotFound, apiUnauthorized, readJsonBody } from "@/lib/security/api-response";
+import { apiError, apiForbidden, apiNotFound, apiUnauthorized, validateBody } from "@/lib/security/api-response";
+import { PanelPatchSchema } from "@/lib/validation/schemas";
 import { clampRuns, sanitizeEngines } from "@/lib/engines/prompt-panels";
 
 async function loadPanel(supabase: Awaited<ReturnType<typeof createClient>>, id: string) {
@@ -56,7 +57,9 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
   const access = await verifyProjectAccess(supabase, panel.project_id, user.id, "member");
   if (!access) return apiForbidden();
 
-  const body = await readJsonBody<UpdatePanelBody>(request);
+  const v = await validateBody(request, PanelPatchSchema);
+  if (v.response) return v.response;
+  const body = v.data;
   const patch: Record<string, unknown> = { updated_at: new Date().toISOString() };
   if (typeof body.name === "string" && body.name.trim()) patch.name = body.name.trim().slice(0, 200);
   if (typeof body.description === "string") patch.description = body.description.slice(0, 1000);

@@ -1,7 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { verifyProjectAccess } from "@/lib/security/project-access";
-import { apiError, apiForbidden, apiUnauthorized, readJsonBody } from "@/lib/security/api-response";
+import { apiError, apiForbidden, apiUnauthorized, validateBody } from "@/lib/security/api-response";
+import { ProjectMutationSchema } from "@/lib/validation/schemas";
 import {
   monitorBrandMentions,
   monitorBrandNews,
@@ -35,12 +36,12 @@ export async function POST(request: NextRequest) {
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) return apiUnauthorized();
 
-  const body = await readJsonBody(request);
-  const { projectId, action } = body as {
+  const v = await validateBody(request, ProjectMutationSchema);
+  if (v.response) return v.response;
+  const { projectId, action } = v.data as {
     projectId: string;
     action: "monitor" | "news" | "ai_sentiment" | "brand_serp";
   };
-  if (!projectId) return apiError("projectId required");
 
   const access = await verifyProjectAccess(supabase, projectId, user.id, "member");
   if (!access) return apiForbidden();

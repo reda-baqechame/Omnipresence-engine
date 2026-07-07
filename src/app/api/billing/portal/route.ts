@@ -1,11 +1,14 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { getStripe } from "@/lib/stripe";
-import { apiError, apiUnauthorized } from "@/lib/security/api-response";
+import { apiError, apiUnauthorized, validateBody } from "@/lib/security/api-response";
+import { BillingPortalSchema } from "@/lib/validation/schemas";
 import { guardOrgEndpoint } from "@/lib/security/api-v1-guard";
 import { FREE_ACCESS_MODE } from "@/lib/config/access";
 
-export async function POST() {
+export async function POST(request: Request) {
+  const v = await validateBody(request, BillingPortalSchema);
+  if (v.response) return v.response;
   if (FREE_ACCESS_MODE) {
     return apiError("Billing is disabled — all features are currently free.", 410);
   }

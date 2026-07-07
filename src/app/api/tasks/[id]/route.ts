@@ -1,7 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { verifyProjectAccess } from "@/lib/security/project-access";
-import { apiError, apiForbidden, apiUnauthorized, readJsonBody } from "@/lib/security/api-response";
+import { apiError, apiForbidden, apiUnauthorized, validateBody } from "@/lib/security/api-response";
+import { ExecutionTaskPatchSchema } from "@/lib/validation/schemas";
 import type { ExecutionTaskStatus, TaskPriority } from "@/types/database";
 
 const VALID_STATUS: ExecutionTaskStatus[] = [
@@ -27,19 +28,14 @@ export async function PATCH(
   const access = await verifyProjectAccess(supabase, existing.project_id, user.id, "member");
   if (!access) return apiForbidden();
 
-  const body = await readJsonBody(request);
-  const { status, priority, owner, due_date, description } = body as {
-    status?: ExecutionTaskStatus;
-    priority?: TaskPriority;
-    owner?: string | null;
-    due_date?: string | null;
-    description?: string;
-  };
+  const v = await validateBody(request, ExecutionTaskPatchSchema);
+  if (v.response) return v.response;
+  const { status, priority, owner, due_date, description } = v.data;
 
   const update: Record<string, unknown> = {};
   if (status) {
-    if (!VALID_STATUS.includes(status)) return apiError("Invalid status");
-    update.status = status;
+    if (!VALID_STATUS.includes(status as ExecutionTaskStatus)) return apiError("Invalid status");
+    update.status = status as ExecutionTaskStatus;
     if (status === "done") update.completed_at = new Date().toISOString();
   }
   if (priority) update.priority = priority;

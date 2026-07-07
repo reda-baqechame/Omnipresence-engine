@@ -40,6 +40,39 @@ jobs:
         run: npm run audit:zero-paid-keys
       - name: Provider superiority audit (strict)
         run: npm run audit:superiority:strict
+
+  e2e-happy-path:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - name: Install dependencies
+        run: npm install --no-audit --no-fund --include=optional
+      - name: Install OmniData deps
+        run: npm install --no-audit --no-fund --prefix services/omnidata
+      - name: E2E happy-path structure
+        run: npm run e2e:happy-path
+
+  smoke:
+    runs-on: ubuntu-latest
+    needs: build
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - name: Install dependencies (Linux optional native bindings)
+        run: |
+          rm -rf node_modules
+          npm install --no-audit --no-fund --include=optional
+          npm install --no-save \
+            @tailwindcss/oxide-linux-x64-gnu@4.3.1 \
+            lightningcss-linux-x64-gnu@1.32.0 \
+            @next/swc-linux-x64-gnu@16.2.9
       - run: npm run start &
       - run: npx wait-on http://localhost:3000 -t 120000
       - run: npm run smoke

@@ -1,7 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { verifyProjectAccess } from "@/lib/security/project-access";
-import { apiError, apiForbidden, apiUnauthorized, readJsonBody } from "@/lib/security/api-response";
+import { apiError, apiForbidden, apiUnauthorized, validateBody } from "@/lib/security/api-response";
+import { SchemaDeploySchema } from "@/lib/validation/schemas";
 import { deploySchemaToWordPress, deploySchemaToWebflow } from "@/lib/engines/schema-engine";
 import { loadProjectIntegration, type CmsCredentials } from "@/lib/integrations/store";
 import { recordLedgerAction } from "@/lib/engines/results-ledger";
@@ -15,8 +16,9 @@ export async function POST(request: NextRequest) {
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) return apiUnauthorized();
 
-  const body = await readJsonBody(request);
-  const { projectId, platform, htmlSnippet, postId, itemId } = body as {
+  const v = await validateBody(request, SchemaDeploySchema);
+  if (v.response) return v.response;
+  const { projectId, platform, htmlSnippet, postId, itemId } = v.data as {
     projectId: string;
     platform: "wordpress" | "webflow";
     htmlSnippet: string;
@@ -24,8 +26,6 @@ export async function POST(request: NextRequest) {
     itemId?: string;
   };
 
-  if (!projectId) return apiError("projectId required");
-  if (!htmlSnippet?.trim()) return apiError("htmlSnippet required");
   if (platform !== "wordpress" && platform !== "webflow") return apiError("Unsupported platform");
 
   const access = await verifyProjectAccess(supabase, projectId, user.id, "member");

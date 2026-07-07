@@ -1,4 +1,5 @@
 import { createHmac } from "crypto";
+import { assertOmniDataClientConfigured, resolveOmniDataApiKey } from "@/lib/providers/omnidata-auth";
 
 export function signOmniDataRequest(body: unknown): Record<string, string> {
   const secret = process.env.OMNIDATA_SIGNING_SECRET || process.env.OMNIDATA_API_KEY;
@@ -17,11 +18,14 @@ export function signOmniDataRequest(body: unknown): Record<string, string> {
 }
 
 export function getOmniDataHeaders(body: unknown): Record<string, string> {
-  const key = process.env.OMNIDATA_API_KEY;
-  if (!key) return {};
+  const base = process.env.OMNIDATA_BASE_URL?.replace(/\/$/, "");
+  if (!base) return {};
+  assertOmniDataClientConfigured();
+  const key = resolveOmniDataApiKey();
   return {
     Authorization: `Bearer ${key}`,
     "Content-Type": "application/json",
+    "x-api-key": key,
     ...signOmniDataRequest(body),
   };
 }

@@ -5,6 +5,7 @@ import {
   getClientIp,
   rateLimitResponse,
 } from "@/lib/security/rate-limit";
+import { recordRateLimitRejected } from "@/lib/observability/log";
 
 /**
  * Rate-limit a public endpoint by client IP. Uses the distributed (Upstash)
@@ -23,6 +24,7 @@ export async function guardPublicEndpoint(
   const ip = getClientIp(request);
   const result = await checkRateLimitDistributed(`${namespace}:${ip}`, limit, windowMs);
   if (!result.allowed) {
+    recordRateLimitRejected(namespace);
     return rateLimitResponse(result.retryAfterSec || 60);
   }
   return null;

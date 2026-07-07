@@ -1,7 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { verifyProjectAccess } from "@/lib/security/project-access";
-import { apiError, apiForbidden, apiNotFound, apiUnauthorized, readJsonBody } from "@/lib/security/api-response";
+import { apiError, apiForbidden, apiNotFound, apiUnauthorized, validateBody } from "@/lib/security/api-response";
+import { RepurposePatchSchema, RepurposePostSchema } from "@/lib/validation/schemas";
 import { repurposeAndStore, advanceStage, REPURPOSE_TARGETS, type LifecycleStage } from "@/lib/engines/distribution-engine";
 import type { ContentAssetType } from "@/types/database";
 
@@ -31,11 +32,9 @@ export async function POST(request: NextRequest) {
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) return apiUnauthorized();
 
-  const { assetId, targets } = await readJsonBody(request) as {
-    assetId: string;
-    targets?: ContentAssetType[];
-  };
-  if (!assetId) return apiError("assetId required");
+  const v = await validateBody(request, RepurposePostSchema);
+  if (v.response) return v.response;
+  const { assetId, targets } = v.data;
 
   const { data: asset } = await supabase
     .from("content_assets")
@@ -74,13 +73,14 @@ export async function PATCH(request: NextRequest) {
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) return apiUnauthorized();
 
-  const { jobId, stage, publishedUrl, scheduledAt } = await readJsonBody(request) as {
+  const v = await validateBody(request, RepurposePatchSchema);
+  if (v.response) return v.response;
+  const { jobId, stage, publishedUrl, scheduledAt } = v.data as {
     jobId: string;
     stage: LifecycleStage;
     publishedUrl?: string;
     scheduledAt?: string;
   };
-  if (!jobId || !stage) return apiError("jobId and stage required");
 
   const { data: job } = await supabase
     .from("distribution_jobs")

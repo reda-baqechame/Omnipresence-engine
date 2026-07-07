@@ -1,7 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { verifyProjectAccess } from "@/lib/security/project-access";
-import { apiError, apiForbidden, apiUnauthorized, readJsonBody } from "@/lib/security/api-response";
+import { apiError, apiForbidden, apiUnauthorized, validateBody } from "@/lib/security/api-response";
+import { RankSchedulesPostSchema } from "@/lib/validation/schemas";
 import { runDueRankSchedules, ensureDefaultRankSchedule, syncScheduleKeywords } from "@/lib/engines/rank-schedule-service";
 import { runAllRankChecks } from "@/lib/engines/rank-tracker-service";
 
@@ -43,13 +44,9 @@ export async function POST(req: NextRequest) {
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) return apiUnauthorized();
 
-  const body = await readJsonBody(req);
-  const { projectId, cadence, action } = body as {
-    projectId: string;
-    cadence?: "daily" | "weekly";
-    action?: "ensure" | "run_now";
-  };
-  if (!projectId) return apiError("projectId required");
+  const v = await validateBody(req, RankSchedulesPostSchema);
+  if (v.response) return v.response;
+  const { projectId, cadence, action } = v.data;
 
   const access = await verifyProjectAccess(supabase, projectId, user.id, "member");
   if (!access) return apiForbidden();

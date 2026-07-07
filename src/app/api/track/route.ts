@@ -1,11 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
-import { readJsonBody } from "@/lib/security/api-response";
+import { TrackBeaconSchema } from "@/lib/validation/schemas";
 import { createServiceClient } from "@/lib/supabase/server";
 import { classifyReferrer } from "@/lib/tracking/ai-referrers";
 import { enrichVisitorFromIp } from "@/lib/engines/visitor-identity";
 import { guardPublicEndpoint } from "@/lib/security/public-guard";
-
-const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+import { verifyTrackingBeacon } from "@/lib/security/tracking-beacon";
 
 function clientIp(request: NextRequest): string {
   return (
@@ -20,28 +19,19 @@ export async function POST(request: NextRequest) {
   const limited = await guardPublicEndpoint(request, "track", 120, 60_000);
   if (limited) return limited;
 
-  let payload: {
-    projectId?: unknown;
-    referrer?: unknown;
-    path?: unknown;
-    sessionId?: unknown;
-  };
+  const rawBody = await request.text();
+  let parsed: unknown;
   try {
-    payload = await readJsonBody(request);
+    parsed = JSON.parse(rawBody);
   } catch {
-    // Malformed body from a public beacon → clean 400, not a noisy 500.
-    return NextResponse.json({ error: "Invalid JSON body" }, { status: 400 });
+    return NextResponse.json({ error: "Invalid JSON" }, { status: 400 });
   }
-  const { projectId, referrer, path, sessionId } = payload as {
-    projectId?: string;
-    referrer?: string;
-    path?: string;
-    sessionId?: string;
-  };
 
-  if (!projectId || typeof projectId !== "string" || !UUID_RE.test(projectId)) {
-    return NextResponse.json({ error: "valid projectId required" }, { status: 400 });
+  const v = TrackBeaconSchema.safeParse(parsed);
+  if (!v.success) {
+    return NextResponse.json({ error: "Invalid payload" }, { status: 400 });
   }
+  const { projectId, referrer, path, sessionId } = v.data;
 
   const source = classifyReferrer(referrer);
   const ip = clientIp(request);
@@ -49,15 +39,20 @@ export async function POST(request: NextRequest) {
   try {
     const supabase = await createServiceClient();
 
-    // Only record beacons for projects that actually exist — stops attackers
-    // from seeding analytics tables with fabricated project IDs.
     const { data: project } = await supabase
       .from("projects")
-      .select("id")
+      .select("id, tracking_hmac")
       .eq("id", projectId)
       .maybeSingle();
     if (!project) {
       return NextResponse.json({ tracked: false }, { status: 404 });
+    }
+
+    const signature = request.headers.get("x-tracking-signature");
+    if (project.tracking_hmac) {
+      if (!verifyTrackingBeacon(rawBody, project.tracking_hmac, signature)) {
+        return NextResponse.json({ error: "Invalid tracking signature" }, { status: 401 });
+      }
     }
 
     const enrichment = await enrichVisitorFromIp(ip);

@@ -9,8 +9,12 @@ import { submitIndexNow } from "@/lib/engines/indexnow";
 import { loadProjectIntegration, publishViaCms, type CmsCredentials, type CmsPlatform } from "@/lib/integrations/store";
 import { getValidOAuthToken } from "@/lib/oauth/tokens";
 import { verifyProjectAccess } from "@/lib/security/project-access";
-import { apiError, apiForbidden, apiNotFound, apiUnauthorized, readJsonBody, validateBody } from "@/lib/security/api-response";
-import { DistributionScheduleSchema } from "@/lib/validation/schemas";
+import { apiError, apiForbidden, apiNotFound, apiUnauthorized, validateBody } from "@/lib/security/api-response";
+import {
+  DistributionIndexPutSchema,
+  DistributionScheduleSchema,
+  DistributionSocialPatchSchema,
+} from "@/lib/validation/schemas";
 
 // Publishers are unified in @/lib/integrations/store (publishViaCms). This route
 // only needs the supported-platform allowlist for request validation.
@@ -112,15 +116,9 @@ export async function PUT(request: NextRequest) {
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) return apiUnauthorized();
 
-  const { urls, engines, projectId } = await readJsonBody(request) as {
-    urls: string[];
-    engines: ("google" | "bing" | "indexnow")[];
-    projectId: string;
-  };
-
-  if (!projectId || !urls?.length) {
-    return apiError("projectId and urls required");
-  }
+  const v = await validateBody(request, DistributionIndexPutSchema);
+  if (v.response) return v.response;
+  const { urls, engines, projectId } = v.data;
 
   const access = await verifyProjectAccess(supabase, projectId, user.id, "member");
   if (!access) return apiForbidden();
@@ -198,26 +196,9 @@ export async function PATCH(request: NextRequest) {
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) return apiUnauthorized();
 
-  const body = await readJsonBody(request) as {
-    platform: "ayrshare" | "buffer" | "gbp";
-    credentials: {
-      apiKey?: string;
-      accessToken?: string;
-      accountId?: string;
-      locationId?: string;
-      gbpToken?: string;
-      profileIds?: string[];
-    };
-    text: string;
-    platforms?: string[];
-    profileIds?: string[];
-    scheduleDate?: string;
-    projectId: string;
-  };
-
-  const { platform, credentials, text, platforms, profileIds, scheduleDate, projectId } = body;
-
-  if (!projectId) return apiError("projectId required");
+  const v = await validateBody(request, DistributionSocialPatchSchema);
+  if (v.response) return v.response;
+  const { platform, credentials, text, platforms, profileIds, scheduleDate, projectId } = v.data;
 
   const access = await verifyProjectAccess(supabase, projectId, user.id, "member");
   if (!access) return apiForbidden();

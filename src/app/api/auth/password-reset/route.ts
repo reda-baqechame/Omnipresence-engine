@@ -1,7 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createServiceClient } from "@/lib/supabase/server";
 import { sendEmail } from "@/lib/email/transport";
-import { apiError, readJsonBody } from "@/lib/security/api-response";
+import { apiError, validateBody } from "@/lib/security/api-response";
+import { PasswordResetSchema } from "@/lib/validation/schemas";
 import { guardPublicEndpoint, isValidEmail } from "@/lib/security/public-guard";
 
 const RESET_LIMIT = 5;
@@ -11,15 +12,10 @@ export async function POST(request: NextRequest) {
   const limited = await guardPublicEndpoint(request, "auth-password-reset", RESET_LIMIT, RESET_WINDOW_MS);
   if (limited) return limited;
 
-  let body: { email?: string };
-  try {
-    body = await readJsonBody(request);
-  } catch {
-    return apiError("Invalid JSON body");
-  }
-
-  const email = body.email?.trim().toLowerCase();
-  if (!email || !isValidEmail(email)) return apiError("Enter a valid email address");
+  const v = await validateBody(request, PasswordResetSchema);
+  if (v.response) return v.response;
+  const email = v.data.email.trim().toLowerCase();
+  if (!isValidEmail(email)) return apiError("Enter a valid email address");
 
   const origin = request.nextUrl.origin;
   const service = await createServiceClient();

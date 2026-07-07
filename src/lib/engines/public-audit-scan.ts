@@ -124,7 +124,7 @@ export async function runPublicAuditIntelligence(input: {
   const engines = selectPublicEngines();
   const runId = `public-${Date.now()}`;
 
-  const visibilityScan = await runVisibilityScan({
+  const { results: visibilityScan } = await runVisibilityScan({
     projectId: PUBLIC_PROJECT_ID,
     runId,
     brandName: input.brandName,

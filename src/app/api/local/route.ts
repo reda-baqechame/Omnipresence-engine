@@ -1,7 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { verifyProjectAccess } from "@/lib/security/project-access";
-import { apiError, apiForbidden, apiUnauthorized, readJsonBody } from "@/lib/security/api-response";
+import { apiError, apiForbidden, apiUnauthorized, validateBody } from "@/lib/security/api-response";
+import { LocalPostSchema } from "@/lib/validation/schemas";
 import {
   auditGbpProfile,
   runMapGrid,
@@ -44,8 +45,9 @@ export async function POST(request: NextRequest) {
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) return apiUnauthorized();
 
-  const body = await readJsonBody(request);
-  const { projectId, action, keyword, gridSize, radiusKm, service, city, category } = body as {
+  const v = await validateBody(request, LocalPostSchema);
+  if (v.response) return v.response;
+  const { projectId, action, keyword, gridSize, radiusKm, service, city, category } = v.data as {
     projectId: string;
     action: "gbp_audit" | "map_grid" | "reviews" | "nap" | "local_page" | "osm_discovery";
     keyword?: string;
@@ -55,7 +57,6 @@ export async function POST(request: NextRequest) {
     city?: string;
     category?: string;
   };
-  if (!projectId) return apiError("projectId required");
 
   const access = await verifyProjectAccess(supabase, projectId, user.id, "member");
   if (!access) return apiForbidden();

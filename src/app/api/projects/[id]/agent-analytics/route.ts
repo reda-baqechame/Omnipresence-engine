@@ -6,8 +6,9 @@ import {
   apiForbidden,
   apiServerError,
   apiUnauthorized,
-  readJsonBody,
+  validateBody,
 } from "@/lib/security/api-response";
+import { AgentAnalyticsIngestSchema } from "@/lib/validation/schemas";
 import { parseServerLogs, type ParsedLogHit } from "@/lib/engines/agent-analytics";
 import { classifyCrawler } from "@/lib/tracking/ai-crawlers";
 
@@ -62,7 +63,9 @@ export async function POST(
   const access = await verifyProjectAccess(supabase, id, user.id, "member");
   if (!access) return apiForbidden();
 
-  const body = await readJsonBody<{ logs?: unknown; hits?: unknown }>(request);
+  const v = await validateBody(request, AgentAnalyticsIngestSchema);
+  if (v.response) return v.response;
+  const body = v.data;
 
   let parsed: ParsedLogHit[] = [];
 

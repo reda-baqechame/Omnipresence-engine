@@ -3,25 +3,16 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { cn } from "@/lib/utils";
-
-/** Top-level hub tabs (mobile + quick nav). Full OS tree is in ProjectOsNav. */
-const TABS = [
-  { href: "", label: "Overview" },
-  { href: "/ai-visibility", label: "AEO/GEO" },
-  { href: "/search-performance", label: "Search" },
-  { href: "/content-site", label: "Content" },
-  { href: "/authority-presence", label: "Authority" },
-  { href: "/action-proof", label: "Execution" },
-  { href: "/trust", label: "Trust" },
-];
+import { filterProjectHubTabs } from "@/lib/navigation/capability-nav";
 
 export function ProjectTabs({ projectId }: { projectId: string }) {
   const pathname = usePathname();
   const base = `/app/projects/${projectId}`;
+  const tabs = filterProjectHubTabs();
 
   return (
     <nav className="flex flex-wrap gap-1 border-b border-border mb-8">
-      {TABS.map((tab) => {
+      {tabs.map((tab) => {
         const href = `${base}${tab.href}`;
         const isActive =
           tab.href === ""

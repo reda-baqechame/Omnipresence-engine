@@ -41,6 +41,12 @@ export interface VisibilityScanResult extends Omit<VisibilityResult, "id" | "cre
   data_source: DataQuality;
 }
 
+export interface VisibilityScanOutput {
+  results: VisibilityScanResult[];
+  /** True when the wall-clock scan budget was exhausted before all prompts ran. */
+  scanPartial: boolean;
+}
+
 const LLM_ENGINES = new Set<VisibilityEngine>(["chatgpt", "claude", "gemini"]);
 const LLM_PLATFORM_MAP: Partial<Record<VisibilityEngine, LLMPlatform>> = {
   chatgpt: "chat_gpt",
@@ -49,7 +55,7 @@ const LLM_PLATFORM_MAP: Partial<Record<VisibilityEngine, LLMPlatform>> = {
 
 export async function runVisibilityScan(
   config: VisibilityScanConfig
-): Promise<VisibilityScanResult[]> {
+): Promise<VisibilityScanOutput> {
   const engines = config.engines ?? getActiveScanEngines();
   const results: VisibilityScanResult[] = [];
   const scanLimit = config.maxPrompts ?? 30;
@@ -96,7 +102,7 @@ export async function runVisibilityScan(
     }
   }
 
-  return results;
+  return { results, scanPartial: budgetExhausted };
 }
 
 const CAPTURE_CREDITS = 2;

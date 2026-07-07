@@ -45,14 +45,21 @@ export default function BillingPage() {
         </p>
         <div className="grid gap-4 md:grid-cols-2">
           {PLAN_TIERS.map((tier) => (
-            <div key={tier.slug} className="bg-card border border-border rounded-xl p-5">
+            <div key={tier.slug} className="bg-card border border-border rounded-xl p-5 flex flex-col">
               <h2 className="text-lg font-semibold">{tier.name}</h2>
               <p className="text-sm text-muted-foreground mt-1">{tier.positioning}</p>
-              <ul className="mt-3 space-y-1 text-sm text-muted-foreground">
+              <ul className="mt-3 space-y-1 text-sm text-muted-foreground flex-1">
                 {tier.highlights.map((h) => (
                   <li key={h}>✓ {h}</li>
                 ))}
               </ul>
+              <button
+                type="button"
+                disabled
+                className="mt-4 border border-border px-4 py-2 rounded-lg text-sm text-muted-foreground cursor-not-allowed"
+              >
+                Coming soon
+              </button>
             </div>
           ))}
         </div>

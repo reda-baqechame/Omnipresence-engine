@@ -1,7 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { verifyProjectAccess } from "@/lib/security/project-access";
-import { apiError, apiForbidden, apiUnauthorized, readJsonBody } from "@/lib/security/api-response";
+import { apiError, apiForbidden, apiUnauthorized, validateBody } from "@/lib/security/api-response";
+import { PpcPostSchema } from "@/lib/validation/schemas";
 import { captureCompetitorAds, estimatePpcSavings } from "@/lib/engines/ppc-intelligence";
 
 export async function GET(request: NextRequest) {
@@ -29,23 +30,18 @@ export async function POST(request: NextRequest) {
   } = await supabase.auth.getUser();
   if (!user) return apiUnauthorized();
 
-  let body: {
-    projectId?: string;
-    action?: string;
-    keywords?: string[];
-    location?: string;
-    device?: "desktop" | "mobile";
-    organicSessions?: number;
-    aiReferralSessions?: number;
-    monthlyAdSpend?: number;
-  };
-  try {
-    body = await readJsonBody(request);
-  } catch {
-    return apiError("Invalid JSON body");
-  }
-  const { projectId, action } = body;
-  if (!projectId || !action) return apiError("projectId and action required");
+  const v = await validateBody(request, PpcPostSchema);
+  if (v.response) return v.response;
+  const {
+    projectId,
+    action,
+    keywords: bodyKeywords,
+    location,
+    device,
+    organicSessions,
+    aiReferralSessions,
+    monthlyAdSpend,
+  } = v.data;
 
   const access = await verifyProjectAccess(supabase, projectId, user.id, "viewer");
   if (!access) return apiForbidden();
@@ -58,7 +54,7 @@ export async function POST(request: NextRequest) {
 
   if (action === "competitor_ads") {
     // Default to the project's tracked keywords if none supplied.
-    let keywords = body.keywords || [];
+    let keywords = bodyKeywords || [];
     if (keywords.length === 0) {
       const { data: kws } = await supabase
         .from("keyword_opportunities")
@@ -67,17 +63,17 @@ export async function POST(request: NextRequest) {
         .limit(15);
       keywords = (kws || []).map((k) => k.keyword as string);
     }
-    const snapshot = await captureCompetitorAds(keywords, body.location || "United States", body.device || "desktop");
+    const snapshot = await captureCompetitorAds(keywords, location || "United States", device || "desktop");
     return NextResponse.json(snapshot);
   }
 
   if (action === "savings") {
     const savings = await estimatePpcSavings({
-      organicSessions: body.organicSessions || 0,
-      aiReferralSessions: body.aiReferralSessions || 0,
-      monthlyAdSpend: body.monthlyAdSpend,
+      organicSessions: organicSessions || 0,
+      aiReferralSessions: aiReferralSessions || 0,
+      monthlyAdSpend,
       industry: (project?.industry as string) || undefined,
-      keywords: body.keywords,
+      keywords: bodyKeywords,
     });
     return NextResponse.json(savings);
   }

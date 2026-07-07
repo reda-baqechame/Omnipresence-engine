@@ -1,6 +1,7 @@
 import { createHmac } from "crypto";
 import type { ProviderResult, SERPResult } from "./types";
 import { fetchWithTimeout } from "./http";
+import { assertOmniDataClientConfigured, resolveOmniDataApiKey } from "./omnidata-auth";
 
 const OMNIDATA_URL = process.env.OMNIDATA_BASE_URL?.replace(/\/$/, "");
 const USE_OMNIDATA = Boolean(OMNIDATA_URL);
@@ -12,10 +13,12 @@ function getBaseUrl(): string {
 
 function getAuthHeaders(body: unknown): Record<string, string> {
   if (USE_OMNIDATA) {
-    const key = process.env.OMNIDATA_API_KEY || "dev-local-key";
+    assertOmniDataClientConfigured();
+    const key = resolveOmniDataApiKey();
     const headers: Record<string, string> = {
       Authorization: `Bearer ${key}`,
       "Content-Type": "application/json",
+      "x-api-key": key,
     };
     const secret = process.env.OMNIDATA_SIGNING_SECRET;
     if (secret) {

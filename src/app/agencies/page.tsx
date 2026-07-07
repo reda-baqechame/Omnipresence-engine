@@ -71,9 +71,14 @@ export default function AgenciesPage() {
       </section>
 
       <section className="max-w-4xl mx-auto px-6 py-16 text-center border-t border-border">
-        <h2 className="text-3xl font-bold mb-4">Free for agencies</h2>
-        <div className="text-5xl font-bold text-primary mb-2">$0</div>
-        <p className="text-muted-foreground mb-8">Unlimited clients · White-label · All features included</p>
+        <h2 className="text-3xl font-bold mb-4">Professional beta</h2>
+        <p className="text-muted-foreground mb-2 max-w-xl mx-auto">
+          All features are unlocked during launch while we harden measurement, security, and billing.
+          Pricing will be announced before commercial launch.
+        </p>
+        <p className="text-sm text-muted-foreground mb-8">
+          Matches in-app billing settings — no charges until we exit beta.
+        </p>
         <div className="flex items-center justify-center gap-4">
           <Link href="/audit" className="border border-border px-6 py-2 rounded-lg font-medium hover:bg-secondary transition">
             Try Free Audit First

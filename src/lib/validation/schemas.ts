@@ -57,6 +57,69 @@ export type OpsPatchInput = z.infer<typeof OpsPatchSchema>;
 /** Project-scoped action triggers (fastest-path sync, attribution sync, etc.). */
 export const ProjectIdSchema = z.object({ projectId: uuid });
 
+/** Base for project-scoped mutation routes — validates projectId, passthrough extras. */
+export const ProjectMutationSchema = z.object({ projectId: uuid }).passthrough();
+
+export const RanksPostSchema = z.object({
+  projectId: uuid,
+  keyword: z.string().trim().max(200).optional(),
+  location: z.string().trim().max(120).optional(),
+  device: z.enum(["desktop", "mobile"]).optional(),
+  action: z.enum(["check_all", "import_prompts", "ack_alert"]).optional(),
+  alertId: uuid.optional(),
+});
+
+/** Public tools/* routes that accept a domain string. */
+export const ToolsDomainSchema = z.object({ domain: nonEmpty.max(253) }).passthrough();
+
+export const ToolsCanonicalSchema = z.object({
+  domain: nonEmpty.max(253),
+  path: z.string().trim().max(2048).optional(),
+});
+
+export const ToolsCitationPlannerSchema = z.object({
+  brand: nonEmpty.max(80),
+  industry: nonEmpty.max(80),
+  location: z.string().trim().max(80).optional(),
+  domain: z.string().trim().max(120).optional(),
+});
+
+export const ToolsRoiSchema = z
+  .object({
+    organicSessions: z.coerce.number().optional(),
+    aiReferralSessions: z.coerce.number().optional(),
+    monthlyAdSpend: z.coerce.number().optional(),
+    industry: z.string().optional(),
+    customCpc: z.coerce.number().optional(),
+  })
+  .refine(
+    (b) => b.monthlyAdSpend !== undefined || b.organicSessions !== undefined,
+    { message: "monthlyAdSpend or organicSessions required" }
+  );
+
+export const PublicAuditSchema = z.object({
+  domain: nonEmpty.max(253),
+  email: z.string().email().max(320),
+  brandName: z.string().trim().max(120).optional(),
+  industry: z.string().trim().max(80).optional(),
+  location: z.string().trim().max(80).optional(),
+  competitors: z.array(z.string().trim().max(80)).max(5).optional(),
+  orgToken: z.string().trim().max(256).optional(),
+});
+
+export const PasswordResetSchema = z.object({
+  email: z.string().email().max(320),
+});
+
+export const SignOutSchema = z.object({}).passthrough();
+
+export const TrackBeaconSchema = z.object({
+  projectId: uuid,
+  referrer: z.string().max(500).optional(),
+  path: z.string().max(500).optional(),
+  sessionId: z.string().max(100).optional(),
+});
+
 /** Keyword-intelligence actions the POST handler dispatches on. */
 export const KEYWORD_ACTIONS = [
   "research",
@@ -274,6 +337,287 @@ export const GeoRewriteSchema = z.object({
   projectId: uuid,
   url: urlish,
   passage: z.string().max(20_000).optional(),
+});
+
+export const ContentPatchSchema = z
+  .object({
+    assetId: uuid,
+    status: z.string().trim().max(64).optional(),
+    pipelineStep: z.string().trim().max(64).optional(),
+  })
+  .refine((b) => b.status !== undefined || b.pipelineStep !== undefined, {
+    message: "status or pipelineStep required",
+  });
+
+export const CoveragePatchSchema = z.object({
+  itemId: uuid,
+  submissionStatus: z.enum(["not_started", "in_progress", "submitted", "live"]).optional(),
+  profileUrl: z.string().trim().max(500).optional(),
+  notes: z.string().trim().max(500).optional(),
+});
+
+export const DistributionIndexPutSchema = z.object({
+  projectId: uuid,
+  urls: z.array(urlish).min(1).max(50),
+  engines: z.array(z.enum(["google", "bing", "indexnow"])).optional(),
+});
+
+export const DistributionSocialPatchSchema = z.object({
+  projectId: uuid,
+  platform: z.enum(["ayrshare", "buffer", "gbp"]),
+  credentials: z
+    .object({
+      apiKey: z.string().optional(),
+      accessToken: z.string().optional(),
+      accountId: z.string().optional(),
+      locationId: z.string().optional(),
+      gbpToken: z.string().optional(),
+      profileIds: z.array(z.string().trim().max(128)).optional(),
+    })
+    .passthrough(),
+  text: nonEmpty.max(5000),
+  platforms: z.array(z.string().trim().max(64)).optional(),
+  profileIds: z.array(z.string().trim().max(128)).optional(),
+  scheduleDate: z.string().trim().max(64).optional(),
+});
+
+export const AuthorityOutreachPostSchema = z.object({ opportunityId: uuid });
+export const AuthorityStatusPatchSchema = z.object({
+  opportunityId: uuid,
+  status: nonEmpty.max(64),
+});
+export const AuthorityEmailPutSchema = z.object({
+  opportunityId: uuid,
+  to: z.string().email().max(320),
+  subject: z.string().trim().max(300).optional(),
+});
+
+export const ContentScoreSchema = z.object({
+  projectId: uuid,
+  keyword: nonEmpty.max(200),
+  draftText: z.string().max(100_000).optional(),
+  targetUrl: urlish.optional(),
+});
+
+export const Ga4PropertiesPostSchema = z.object({
+  projectId: uuid,
+  propertyId: nonEmpty.max(128),
+});
+
+export const IndexingSubmitSchema = z.object({
+  projectId: uuid,
+  urls: z.array(urlish).max(50).optional(),
+  urlsCsv: z.string().max(10_000).optional(),
+  engines: z.array(z.string().trim().max(64)).max(10).optional(),
+});
+
+export const InternalLinksAnalyzeSchema = z.object({
+  projectId: uuid,
+  maxPages: z.number().int().min(1).max(100).optional(),
+});
+
+export const InternalLinksPatchSchema = z.object({
+  id: uuid,
+  status: nonEmpty.max(64),
+  apply: z.boolean().optional(),
+});
+
+export const LinkBuildingPostSchema = z.object({
+  projectId: uuid,
+  tier: z.enum(["growth", "scale"]).optional(),
+});
+
+export const LinkBuildingPatchSchema = z.object({
+  id: uuid,
+  status: nonEmpty.max(64),
+});
+
+export const OnPagePatchSchema = z.object({
+  queueId: uuid,
+  apply: z.boolean().optional(),
+});
+
+export const RepurposePostSchema = z.object({
+  assetId: uuid,
+  targets: z.array(z.string().trim().max(64)).optional(),
+});
+
+export const RepurposePatchSchema = z.object({
+  jobId: uuid,
+  stage: nonEmpty.max(64),
+  publishedUrl: urlish.optional(),
+  scheduledAt: z.string().trim().max(64).optional(),
+});
+
+export const ExecutionTaskPatchSchema = z
+  .object({
+    status: z.string().trim().max(64).optional(),
+    priority: z.string().trim().max(32).optional(),
+    owner: z.string().uuid().nullable().optional(),
+    due_date: z.string().trim().max(64).nullable().optional(),
+    description: z.string().trim().max(5000).optional(),
+  })
+  .refine((b) => Object.values(b).some((v) => v !== undefined), {
+    message: "no mutation supplied",
+  });
+
+export const PanelPatchSchema = z
+  .object({
+    name: boundedText.max(200).optional(),
+    description: z.string().trim().max(2000).optional(),
+    geos: z.array(z.string().trim().max(64)).optional(),
+    personas: z.array(z.string().trim().max(128)).optional(),
+    engines: z.array(z.string().trim().max(64)).optional(),
+    runsPerPrompt: z.number().int().min(1).max(20).optional(),
+    isActive: z.boolean().optional(),
+    prompts: z.array(nonEmpty.max(500)).optional(),
+  })
+  .refine((b) => Object.values(b).some((v) => v !== undefined), {
+    message: "no mutation supplied",
+  });
+
+export const PodcastGenerateSchema = z.object({
+  projectId: uuid,
+  assetId: uuid,
+});
+
+export const SerpExplorerSchema = z.object({
+  projectId: uuid,
+  keyword: nonEmpty.max(200),
+  location: z.string().trim().max(120).optional(),
+  device: z.enum(["desktop", "mobile"]).optional(),
+});
+
+export const SchemaGenerateSchema = z.object({
+  projectId: uuid,
+  pageUrl: urlish.optional(),
+  pageTitle: z.string().trim().max(300).optional(),
+  pageContent: z.string().max(100_000).optional(),
+});
+
+export const SchemaDeploySchema = z.object({
+  projectId: uuid,
+  platform: nonEmpty.max(64),
+  htmlSnippet: nonEmpty.max(50_000),
+  postId: z.string().trim().max(128).optional(),
+  itemId: uuid.optional(),
+});
+
+export const AgentAnalyticsIngestSchema = z
+  .object({
+    logs: z.string().max(500_000).optional(),
+    hits: z.array(z.record(z.string(), z.unknown())).optional(),
+  })
+  .refine((b) => b.logs !== undefined || b.hits !== undefined, {
+    message: "logs or hits required",
+  });
+
+export const ProviderBenchmarkSchema = z
+  .object({
+    urls: z.array(urlish).optional(),
+    domains: z.array(nonEmpty.max(253)).optional(),
+    queries: z.array(nonEmpty.max(200)).optional(),
+  })
+  .passthrough();
+
+export const RankSchedulesPostSchema = z.object({
+  projectId: uuid,
+  cadence: z.string().trim().max(32).optional(),
+  action: z.enum(["ensure", "run_now"]).optional(),
+});
+
+export const PromptsPostSchema = z.object({
+  projectId: uuid,
+  csv: z.string().max(500_000).optional(),
+  prompts: z.array(nonEmpty.max(500)).optional(),
+  action: z.enum(["import_gsc"]).optional(),
+});
+
+export const PseoCampaignSchema = z.object({
+  projectId: uuid,
+  name: nonEmpty.max(200),
+  templateType: nonEmpty.max(64),
+  urlPattern: z.string().trim().max(500).optional(),
+  servicesCsv: z.string().max(10_000).optional(),
+  locationsCsv: z.string().max(10_000).optional(),
+  keywordsCsv: z.string().max(10_000).optional(),
+  matrixCsv: z.string().max(50_000).optional(),
+  maxPages: z.number().int().min(1).max(500).optional(),
+  previewOnly: z.boolean().optional(),
+  generateContent: z.boolean().optional(),
+  seedFromKeywords: z.boolean().optional(),
+});
+
+export const AeoRewriteSchema = z.object({
+  projectId: uuid,
+  url: urlish.optional(),
+  publish: z.boolean().optional(),
+  platform: z.string().trim().max(64).optional(),
+});
+
+export const CommunityPostSchema = z.object({
+  projectId: uuid,
+  csv: z.string().max(500_000).optional(),
+  action: z.enum(["fetch_live", "fetch_firehose"]).optional(),
+});
+
+export const GuaranteePostSchema = z.object({
+  projectId: uuid,
+  action: z.enum(["lock_baseline", "verify", "claim"]),
+  snapshot: z.record(z.string(), z.unknown()).optional(),
+  currentMetrics: z.record(z.string(), z.number()).optional(),
+  evidence: z.array(z.unknown()).optional(),
+});
+
+export const IndexationPostSchema = z.object({
+  projectId: uuid,
+  action: z.enum(["coverage", "crawler_logs"]),
+  logText: z.string().max(100_000).optional(),
+});
+
+export const LocalPostSchema = z.object({
+  projectId: uuid,
+  action: nonEmpty.max(64),
+  keyword: z.string().trim().max(200).optional(),
+  gridSize: z.number().int().min(1).max(20).optional(),
+  radiusKm: z.number().min(0).max(500).optional(),
+  service: z.string().trim().max(120).optional(),
+  city: z.string().trim().max(120).optional(),
+  category: z.string().trim().max(120).optional(),
+});
+
+export const MerchantPostSchema = z.object({
+  projectId: uuid,
+  action: z.enum(["visibility"]).optional(),
+  content: z.string().max(100_000).optional(),
+  format: z.string().trim().max(32).optional(),
+  optimize: z.boolean().optional(),
+  optimizeLimit: z.number().int().min(1).max(100).optional(),
+});
+
+export const OperatingPlanPostSchema = z.object({
+  projectId: uuid,
+  action: z.enum(["generate_plan", "run_review"]),
+  businessModel: z.string().trim().max(120).optional(),
+  cadence: z.string().trim().max(64).optional(),
+});
+
+export const PpcPostSchema = z.object({
+  projectId: uuid,
+  action: nonEmpty.max(64),
+  keywords: z.array(nonEmpty.max(200)).optional(),
+  location: z.string().trim().max(120).optional(),
+  device: z.enum(["desktop", "mobile"]).optional(),
+  organicSessions: z.coerce.number().optional(),
+  aiReferralSessions: z.coerce.number().optional(),
+  monthlyAdSpend: z.coerce.number().optional(),
+});
+
+export const RoiPostSchema = z.object({
+  projectId: uuid,
+  action: z.enum(["landing_pages", "save_ux"]),
+  clarityProjectId: z.string().trim().max(128).optional(),
+  hotjarSiteId: z.string().trim().max(128).optional(),
 });
 
 /** Routes that must use validateBody + one of the schemas above (CI contract). */

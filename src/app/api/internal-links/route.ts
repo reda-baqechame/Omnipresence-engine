@@ -3,7 +3,8 @@ import { createClient } from "@/lib/supabase/server";
 import { analyzeInternalLinks } from "@/lib/engines/internal-linking";
 import { loadProjectIntegration, type CmsCredentials } from "@/lib/integrations/store";
 import { verifyProjectAccess } from "@/lib/security/project-access";
-import { apiError, apiForbidden, apiUnauthorized, readJsonBody } from "@/lib/security/api-response";
+import { apiError, apiForbidden, apiUnauthorized, validateBody } from "@/lib/security/api-response";
+import { InternalLinksAnalyzeSchema, InternalLinksPatchSchema } from "@/lib/validation/schemas";
 
 export async function GET(request: NextRequest) {
   const supabase = await createClient();
@@ -30,8 +31,9 @@ export async function POST(request: NextRequest) {
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) return apiUnauthorized();
 
-  const { projectId, maxPages } = await readJsonBody(request) as { projectId: string; maxPages?: number };
-  if (!projectId) return apiError("projectId required");
+  const v = await validateBody(request, InternalLinksAnalyzeSchema);
+  if (v.response) return v.response;
+  const { projectId, maxPages } = v.data;
 
   const access = await verifyProjectAccess(supabase, projectId, user.id, "member");
   if (!access) return apiForbidden();
@@ -69,8 +71,9 @@ export async function PATCH(request: NextRequest) {
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) return apiUnauthorized();
 
-  const { id, status, apply } = await readJsonBody(request) as { id: string; status: string; apply?: boolean };
-  if (!id || !status) return apiError("id and status required");
+  const v = await validateBody(request, InternalLinksPatchSchema);
+  if (v.response) return v.response;
+  const { id, status, apply } = v.data;
 
   const { data: row } = await supabase
     .from("internal_link_opportunities")

@@ -110,14 +110,16 @@ export const runFullScan = inngest.createFunction(
     const prep = await step.run("visibility-prep", () => prepareVisibilityScan(supabase, project));
     const activeEngines = getActiveScanEngines();
     const allVisibility: VisibilityScanResult[] = [];
+    let scanPartial = false;
     for (const engine of activeEngines) {
       const batch = await step.run(`visibility-${engine}`, () =>
         runVisibilityEngineBatch(supabase, project, prep, engine)
       );
-      allVisibility.push(...batch);
+      allVisibility.push(...batch.results);
+      scanPartial = scanPartial || batch.scanPartial;
     }
     await step.run("visibility-finalize", () =>
-      finalizeVisibilityScan(supabase, project, prep.runId, allVisibility)
+      finalizeVisibilityScan(supabase, project, prep.runId, allVisibility, { scanPartial })
     );
 
     const { score } = await step.run("score-roadmap", () =>
@@ -143,7 +145,30 @@ export const runFullScan = inngest.createFunction(
 
 /** Legacy monolithic scan fallback */
 export const runFullScanLegacy = inngest.createFunction(
-  { id: "run-full-scan-legacy", retries: 1, triggers: [{ event: "project/scan.legacy" }] },
+  {
+    id: "run-full-scan-legacy",
+    retries: 1,
+    triggers: [{ event: "project/scan.legacy" }],
+    onFailure: async ({ event, error }) => {
+      const original = (event.data as { event?: { data?: { projectId?: string } } }).event;
+      const projectId = original?.data?.projectId;
+      if (!projectId) return;
+      captureException("scan.legacy.failed", error ?? new Error("legacy scan failed after retries"), {
+        projectId,
+      });
+      try {
+        const supabase = await createServiceClient();
+        await supabase.from("projects").update({ status: "active" }).eq("id", projectId);
+        await supabase
+          .from("visibility_runs")
+          .update({ status: "failed" })
+          .eq("project_id", projectId)
+          .in("status", ["running", "pending"]);
+      } catch (err) {
+        captureException("scan.legacy.onFailure", err, { projectId });
+      }
+    },
+  },
   async ({ event, step }) => {
     const { projectId, organizationId } = event.data as { projectId: string; organizationId: string };
     return step.run("full-scan", async () => {
@@ -1434,7 +1459,49 @@ export const sloCheckCron = inngest.createFunction(
       }
     }
 
-    return { evidenceWrites, freshnessRate, fresh, total };
+    const providerP95Ms = await step.run("provider-latency-p95", async () => {
+      const since1h = new Date(Date.now() - 60 * 60 * 1000).toISOString();
+      const { data: rows } = await supabase
+        .from("provider_telemetry")
+        .select("latency_ms")
+        .gte("created_at", since1h)
+        .eq("success", true);
+      const latencies = (rows || []).map((r) => r.latency_ms).sort((a, b) => a - b);
+      if (!latencies.length) return 0;
+      const idx = Math.min(latencies.length - 1, Math.floor(latencies.length * 0.95));
+      const p95 = latencies[idx];
+      if (p95 > 8000) {
+        const { recordSloBreach } = await import("@/lib/observability/log");
+        recordSloBreach("provider.route.latency_ms", p95, 8000, { sampleSize: latencies.length });
+        const webhook = process.env.SLACK_ALERT_WEBHOOK_URL;
+        if (webhook) {
+          await sendSlackWebhook(webhook, {
+            text: `SLO breach: provider route P95 ${p95}ms (target 8000ms)`,
+          });
+        }
+      }
+      return p95;
+    });
+
+    const rateLimitSlo = await step.run("rate-limit-rejection-slo", async () => {
+      const { getMetricCounter } = await import("@/lib/observability/log");
+      const rejected = getMetricCounter("rate_limit.rejected");
+      const requests = getMetricCounter("api.request");
+      const rejectionRate = requests > 0 ? rejected / requests : 0;
+      if (requests > 0 && rejectionRate > 0.02) {
+        const { recordSloBreach } = await import("@/lib/observability/log");
+        recordSloBreach("rate_limit.rejection_rate", rejectionRate, 0.02, { rejected, requests });
+        const webhook = process.env.SLACK_ALERT_WEBHOOK_URL;
+        if (webhook) {
+          await sendSlackWebhook(webhook, {
+            text: `SLO breach: rate-limit rejection ${(rejectionRate * 100).toFixed(2)}% (target 2%)`,
+          });
+        }
+      }
+      return { rejected, requests, rejectionRate };
+    });
+
+    return { evidenceWrites, freshnessRate, fresh, total, providerP95Ms, rateLimitSlo };
   }
 );
 

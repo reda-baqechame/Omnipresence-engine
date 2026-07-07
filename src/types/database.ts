@@ -154,6 +154,7 @@ export interface Project {
   status: ProjectStatus;
   last_scan_at?: string;
   daily_rank_tracking?: boolean;
+  tracking_hmac?: string;
   created_at: string;
   updated_at: string;
 }

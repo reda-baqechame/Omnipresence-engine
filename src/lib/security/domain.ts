@@ -1,4 +1,5 @@
 import { lookup } from "dns/promises";
+import { isProductionDeploy } from "@/lib/config/production";
 import { normalizeDomain } from "@/lib/utils";
 
 const BLOCKED_HOSTS = new Set([
@@ -76,7 +77,10 @@ export async function assertDomainResolvesPublic(domain: string): Promise<void> 
   try {
     addrs = await lookup(host, { all: true });
   } catch {
-    return; // can't resolve → let the downstream fetch fail naturally
+    if (isProductionDeploy()) {
+      throw new DomainValidationError("Domain could not be resolved");
+    }
+    return; // dev: let the downstream fetch fail naturally
   }
   for (const { address } of addrs) {
     if (isPrivateIp(address)) {

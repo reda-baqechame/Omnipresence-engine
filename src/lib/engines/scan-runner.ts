@@ -122,7 +122,7 @@ export async function runProjectScan(
   await supabase.from("visibility_results").delete().eq("project_id", projectId);
   await supabase.from("ai_probe_traces").delete().eq("project_id", projectId);
 
-  const visibilityResults = await runVisibilityScan({
+  const { results: visibilityResults } = await runVisibilityScan({
     projectId,
     runId: run!.id,
     brandName: p.name,

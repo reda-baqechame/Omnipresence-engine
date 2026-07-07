@@ -1,15 +1,17 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { verifyProjectAccess } from "@/lib/security/project-access";
-import { apiError, apiForbidden, apiNotFound, apiUnauthorized, readJsonBody } from "@/lib/security/api-response";
+import { apiError, apiForbidden, apiNotFound, apiUnauthorized, validateBody } from "@/lib/security/api-response";
+import { PodcastGenerateSchema } from "@/lib/validation/schemas";
 
 export async function POST(request: NextRequest) {
   const supabase = await createClient();
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) return apiUnauthorized();
 
-  const { projectId, assetId } = await readJsonBody(request);
-  if (!projectId || !assetId) return apiError("projectId and assetId required");
+  const v = await validateBody(request, PodcastGenerateSchema);
+  if (v.response) return v.response;
+  const { projectId, assetId } = v.data;
 
   const access = await verifyProjectAccess(supabase, projectId, user.id, "member");
   if (!access) return apiForbidden();

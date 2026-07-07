@@ -1,4 +1,5 @@
 import { createHmac, timingSafeEqual } from "crypto";
+import { isProductionDeploy } from "@/lib/config/production";
 
 export interface OAuthStatePayload {
   provider: string;
@@ -8,14 +9,14 @@ export interface OAuthStatePayload {
 }
 
 function getSecret(): string {
-  const secret = process.env.OAUTH_STATE_SECRET || process.env.SUPABASE_SERVICE_ROLE_KEY;
+  const secret = process.env.OAUTH_STATE_SECRET;
   if (secret) return secret;
-  // Never sign OAuth state with a guessable default in production — an attacker
-  // who knows it could forge state and complete OAuth flows against a victim.
-  if (process.env.NODE_ENV === "production") {
-    throw new Error("OAUTH_STATE_SECRET is required in production");
+  // Never sign OAuth state with a guessable default in production deploy — an
+  // attacker who knows it could forge state and complete OAuth flows against a victim.
+  if (isProductionDeploy()) {
+    throw new Error("OAUTH_STATE_SECRET is required in production deploy");
   }
-  return "presenceos-dev-oauth-secret";
+  return process.env.SUPABASE_SERVICE_ROLE_KEY || "presenceos-dev-oauth-secret";
 }
 
 export function signOAuthState(payload: Omit<OAuthStatePayload, "exp">): string {

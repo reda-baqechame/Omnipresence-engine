@@ -1,5 +1,6 @@
 import type { NextRequest } from "next/server";
 import { checkRateLimitDistributed } from "@/lib/security/rate-limit";
+import { recordApiRequest, recordRateLimitRejected } from "@/lib/observability/log";
 
 function rateLimitResponse(retryAfterSec: number): Response {
   return new Response(JSON.stringify({ error: "Rate limit exceeded. Try again later." }), {
@@ -21,8 +22,10 @@ export async function guardApiKeyEndpoint(
 ): Promise<Response | null> {
   const result = await checkRateLimitDistributed(`api-v1:${namespace}:${organizationId}`, limit, windowMs);
   if (!result.allowed) {
+    recordRateLimitRejected(`api-v1:${namespace}`);
     return rateLimitResponse(result.retryAfterSec || 60);
   }
+  recordApiRequest();
   return null;
 }
 
@@ -35,7 +38,9 @@ export async function guardOrgEndpoint(
 ): Promise<Response | null> {
   const result = await checkRateLimitDistributed(`org:${namespace}:${organizationId}`, limit, windowMs);
   if (!result.allowed) {
+    recordRateLimitRejected(`org:${namespace}`);
     return rateLimitResponse(result.retryAfterSec || 60);
   }
+  recordApiRequest();
   return null;
 }

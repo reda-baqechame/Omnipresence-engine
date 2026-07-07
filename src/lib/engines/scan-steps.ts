@@ -139,7 +139,7 @@ export async function stepVisibilityScan(supabase: SupabaseClient, project: Proj
   await supabase.from("visibility_results").delete().eq("project_id", project.id);
   await supabase.from("ai_probe_traces").delete().eq("project_id", project.id);
 
-  const visibilityResults = await runVisibilityScan({
+  const { results: visibilityResults, scanPartial } = await runVisibilityScan({
     projectId: project.id,
     runId: run!.id,
     brandName: project.name,
@@ -213,7 +213,9 @@ export async function stepVisibilityScan(supabase: SupabaseClient, project: Proj
     .update({
       status: runStatus,
       completed_at: new Date().toISOString(),
-      error_message: quality.message,
+      error_message: scanPartial
+        ? `scan_partial: true${quality.message ? `. ${quality.message}` : ""}`
+        : quality.message,
       brand_sov: brandSov,
     })
     .eq("id", run!.id);

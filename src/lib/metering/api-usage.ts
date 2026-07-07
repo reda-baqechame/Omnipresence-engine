@@ -24,11 +24,17 @@ export async function trackApiUsage(
 
   const { data: org } = await supabase
     .from("organizations")
-    .select("api_credits_used")
+    .select("api_credits_used, api_credit_limit")
     .eq("id", organizationId)
     .single();
 
   const used = org?.api_credits_used || 0;
+  const limit = org?.api_credit_limit ?? 0;
+  const remaining = Math.max(0, limit - used);
+
+  if (used + credits > limit) {
+    return { allowed: false, remaining };
+  }
 
   await supabase.from("api_usage").insert({
     organization_id: organizationId,
@@ -42,7 +48,7 @@ export async function trackApiUsage(
     .update({ api_credits_used: used + credits })
     .eq("id", organizationId);
 
-  return { allowed: true, remaining: UNLIMITED_API_CREDITS };
+  return { allowed: true, remaining: remaining - credits };
 }
 
 export class ApiCreditExceededError extends Error {
@@ -62,11 +68,24 @@ export class TenantBudgetExceededError extends Error {
 }
 
 export async function assertApiCredits(
-  _supabase: SupabaseClient,
-  _organizationId: string,
-  _credits: number
+  supabase: SupabaseClient,
+  organizationId: string,
+  credits: number
 ): Promise<void> {
   if (FREE_ACCESS_MODE) return;
+
+  const { data: org } = await supabase
+    .from("organizations")
+    .select("api_credits_used, api_credit_limit")
+    .eq("id", organizationId)
+    .single();
+
+  const used = org?.api_credits_used || 0;
+  const limit = org?.api_credit_limit ?? 0;
+
+  if (used + credits > limit) {
+    throw new ApiCreditExceededError();
+  }
 }
 
 /**
@@ -112,7 +131,7 @@ export async function getApiUsageSummary(
 ): Promise<{ used: number; limit: number; byProvider: Record<string, number> }> {
   const { data: org } = await supabase
     .from("organizations")
-    .select("api_credits_used")
+    .select("api_credits_used, api_credit_limit")
     .eq("id", organizationId)
     .single();
 
@@ -127,10 +146,11 @@ export async function getApiUsageSummary(
   }
 
   const used = org?.api_credits_used || Object.values(byProvider).reduce((a, b) => a + b, 0);
+  const limit = FREE_ACCESS_MODE ? UNLIMITED_API_CREDITS : (org?.api_credit_limit ?? 0);
 
   return {
     used,
-    limit: UNLIMITED_API_CREDITS,
+    limit,
     byProvider,
   };
 }

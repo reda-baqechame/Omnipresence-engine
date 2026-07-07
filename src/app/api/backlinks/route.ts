@@ -5,6 +5,7 @@ import {
   getLatestBacklinkDiff,
 } from "@/lib/engines/backlink-monitor";
 import { analyzeAuthorityDistribution } from "@/lib/engines/link-intelligence";
+import { getWebgraphStatus } from "@/lib/providers/webgraph";
 import { verifyProjectAccess } from "@/lib/security/project-access";
 import { apiError, apiForbidden, apiUnauthorized, validateBody } from "@/lib/security/api-response";
 import { BacklinksQuerySchema } from "@/lib/validation/schemas";
@@ -33,6 +34,7 @@ export async function GET(request: NextRequest) {
     .filter((b) => typeof b.rank === "number")
     .map((b) => ({ rank: b.rank as number }));
   const authority = rows.length ? analyzeAuthorityDistribution(rows) : null;
+  const webgraph = await getWebgraphStatus();
 
   return NextResponse.json({
     latest: latest
@@ -44,7 +46,13 @@ export async function GET(request: NextRequest) {
         }
       : null,
     diff,
-    authority,
+    authority: webgraph.ready ? authority : null,
+    webgraph: {
+      ready: webgraph.ready,
+      available: webgraph.available,
+      ingestInProgress: webgraph.ingestInProgress,
+      edgeCount: webgraph.edgeCount,
+    },
   });
 }
 

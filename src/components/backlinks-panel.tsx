@@ -60,6 +60,8 @@ export function BacklinksPanel({ projectId }: BacklinksPanelProps) {
   } | null>(null);
   const [diff, setDiff] = useState<BacklinkDiff | null>(null);
   const [authority, setAuthority] = useState<AuthorityDist | null>(null);
+  const [webgraphReady, setWebgraphReady] = useState<boolean | null>(null);
+  const [webgraphIngest, setWebgraphIngest] = useState(false);
   const [loading, setLoading] = useState(false);
   const [work, setWork] = useState("");
   const [gaps, setGaps] = useState<{ available: boolean; reason?: string; gaps: LinkGap[] } | null>(null);
@@ -90,6 +92,8 @@ export function BacklinksPanel({ projectId }: BacklinksPanelProps) {
     setLatest(data.latest);
     setDiff(data.diff);
     setAuthority(data.authority);
+    setWebgraphReady(Boolean(data.webgraph?.ready));
+    setWebgraphIngest(Boolean(data.webgraph?.ingestInProgress));
   }
 
   useEffect(() => {
@@ -101,6 +105,8 @@ export function BacklinksPanel({ projectId }: BacklinksPanelProps) {
         setLatest(data.latest);
         setDiff(data.diff);
         setAuthority(data.authority);
+        setWebgraphReady(Boolean(data.webgraph?.ready));
+        setWebgraphIngest(Boolean(data.webgraph?.ingestInProgress));
       });
     return () => {
       active = false;
@@ -167,6 +173,17 @@ export function BacklinksPanel({ projectId }: BacklinksPanelProps) {
             label="Last checked"
             value={latest.created_at ? new Date(latest.created_at).toLocaleDateString() : "—"}
           />
+        </div>
+      )}
+
+      {webgraphReady === false && (
+        <div className="bg-amber-500/10 border border-amber-500/30 rounded-xl p-4 text-sm">
+          <p className="font-medium text-amber-200">Backlink index not ingested — authority unavailable</p>
+          <p className="text-muted-foreground mt-1">
+            {webgraphIngest
+              ? "Common Crawl webgraph ingest is in progress on OmniData."
+              : "Full referring-domain authority requires the Common Crawl webgraph ingest (Railway volume 20GB+). Snapshot counts may still update via fallback providers."}
+          </p>
         </div>
       )}
 

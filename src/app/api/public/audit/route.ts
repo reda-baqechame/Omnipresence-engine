@@ -7,8 +7,9 @@ import { createServiceClient } from "@/lib/supabase/server";
 import { sendAuditLeadEmail } from "@/lib/email/reports";
 import { logProviderError } from "@/lib/observability/log";
 import { assertPublicDomain, assertDomainResolvesPublic, DomainValidationError } from "@/lib/security/domain";
-import { guardPublicEndpoint, isValidEmail } from "@/lib/security/public-guard";
-import { apiError, readJsonBody } from "@/lib/security/api-response";
+import { guardPublicEndpoint } from "@/lib/security/public-guard";
+import { apiError, validateBody } from "@/lib/security/api-response";
+import { PublicAuditSchema } from "@/lib/validation/schemas";
 import { runPublicAuditIntelligenceWithBudget } from "@/lib/engines/public-audit-scan";
 import { preferLiveData } from "@/lib/config/capabilities";
 import { resolveOrgFromAuditToken } from "@/lib/security/audit-referral";
@@ -19,29 +20,9 @@ export async function POST(request: NextRequest) {
   const limited = await guardPublicEndpoint(request, "public-audit", 5, 60 * 60 * 1000);
   if (limited) return limited;
 
-  let body: {
-    domain?: string;
-    brandName?: string;
-    industry?: string;
-    email?: string;
-    location?: string;
-    competitors?: string[];
-    orgToken?: string;
-  };
-  try {
-    body = await readJsonBody(request);
-  } catch {
-    return apiError("Invalid JSON body");
-  }
-  const { domain, brandName, industry, email, location, competitors, orgToken } = body;
-
-  if (!domain || !email) {
-    return apiError("Domain and email required");
-  }
-
-  if (!isValidEmail(email)) {
-    return apiError("Invalid email address");
-  }
+  const v = await validateBody(request, PublicAuditSchema);
+  if (v.response) return v.response;
+  const { domain, brandName, industry, email, location, competitors, orgToken } = v.data;
 
   let normalized: string;
   try {

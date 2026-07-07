@@ -1,7 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { verifyProjectAccess } from "@/lib/security/project-access";
-import { apiError, apiForbidden, apiUnauthorized, readJsonBody } from "@/lib/security/api-response";
+import { apiError, apiForbidden, apiUnauthorized, validateBody } from "@/lib/security/api-response";
+import { SerpExplorerSchema } from "@/lib/validation/schemas";
 import { getSerpIntelligence, isOmniDataActive } from "@/lib/providers/dataforseo";
 import { getActiveSerpProvider } from "@/lib/providers/serp-router";
 import { recordMeasurementEvidence } from "@/lib/engines/evidence";
@@ -16,16 +17,11 @@ export async function POST(request: NextRequest) {
   } = await supabase.auth.getUser();
   if (!user) return apiUnauthorized();
 
-  let body: { projectId?: string; keyword?: string; location?: string; device?: "desktop" | "mobile" };
-  try {
-    body = await readJsonBody(request);
-  } catch {
-    return apiError("Invalid JSON body");
-  }
-  const { projectId, keyword } = body;
-  const location = body.location || "United States";
-  const device = body.device === "mobile" ? "mobile" : "desktop";
-  if (!projectId || !keyword?.trim()) return apiError("projectId and keyword required");
+  const v = await validateBody(request, SerpExplorerSchema);
+  if (v.response) return v.response;
+  const { projectId, keyword } = v.data;
+  const location = v.data.location || "United States";
+  const device = v.data.device === "mobile" ? "mobile" : "desktop";
 
   const access = await verifyProjectAccess(supabase, projectId, user.id, "viewer");
   if (!access) return apiForbidden();

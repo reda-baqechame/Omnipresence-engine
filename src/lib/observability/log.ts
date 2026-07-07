@@ -36,6 +36,36 @@ export function recordMetric(name: string, value: number, tags?: MetricTags): vo
     at: new Date().toISOString(),
   };
   console.log(`[metric] ${JSON.stringify(payload)}`);
+  bumpMetricCounter(name, value);
+}
+
+const METRIC_WINDOW_MS = 60 * 60 * 1000;
+const metricCounters = new Map<string, number>();
+let metricWindowStart = Date.now();
+
+function bumpMetricCounter(name: string, delta = 1): void {
+  rotateMetricWindowIfNeeded();
+  metricCounters.set(name, (metricCounters.get(name) ?? 0) + delta);
+}
+
+function rotateMetricWindowIfNeeded(): void {
+  if (Date.now() - metricWindowStart <= METRIC_WINDOW_MS) return;
+  metricCounters.clear();
+  metricWindowStart = Date.now();
+}
+
+/** Hourly rolling counters for SLO checks (rate_limit.rejected / api.request). */
+export function getMetricCounter(name: string): number {
+  rotateMetricWindowIfNeeded();
+  return metricCounters.get(name) ?? 0;
+}
+
+export function recordApiRequest(): void {
+  recordMetric("api.request", 1);
+}
+
+export function recordRateLimitRejected(namespace?: string): void {
+  recordMetric("rate_limit.rejected", 1, namespace ? { namespace } : undefined);
 }
 
 export function recordSloBreach(slo: string, actual: number, target: number, tags?: MetricTags): void {

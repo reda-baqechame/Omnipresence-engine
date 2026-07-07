@@ -68,6 +68,19 @@ export function getProductionReadiness(): {
   });
 
   checks.push({
+    id: "upstash",
+    label: "Distributed rate limiting (Upstash Redis)",
+    status:
+      hasEnv("UPSTASH_REDIS_REST_URL") && hasEnv("UPSTASH_REDIS_REST_TOKEN")
+        ? "ok"
+        : isProductionDeploy()
+          ? "error"
+          : "warning",
+    message:
+      "Required in production — without Upstash, rate limits are per-instance and bypassable",
+  });
+
+  checks.push({
     id: "live_data",
     label: "Live visibility & SERP data",
     status: preferLiveData() ? "ok" : isProductionDeploy() ? "error" : "warning",

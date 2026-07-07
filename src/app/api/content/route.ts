@@ -4,8 +4,8 @@ import { generateContent } from "@/lib/engines/content-generator";
 import { assertContentGenerationAllowed } from "@/lib/engines/content-guardrails";
 import { verifyProjectAccess } from "@/lib/security/project-access";
 import { trackApiUsage } from "@/lib/metering/api-usage";
-import { apiError, apiForbidden, apiNotFound, apiServerError, apiUnauthorized, readJsonBody, validateBody } from "@/lib/security/api-response";
-import { ContentAnalyzeSchema } from "@/lib/validation/schemas";
+import { apiError, apiForbidden, apiNotFound, apiServerError, apiUnauthorized, validateBody } from "@/lib/security/api-response";
+import { ContentAnalyzeSchema, ContentPatchSchema } from "@/lib/validation/schemas";
 import { advancePipeline, type BlogPipelineStepKey } from "@/lib/engines/blog-pipeline";
 import type { ContentAssetType } from "@/types/database";
 
@@ -165,13 +165,9 @@ export async function PATCH(request: NextRequest) {
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) return apiUnauthorized();
 
-  const { assetId, status, pipelineStep } = await readJsonBody(request) as {
-    assetId: string;
-    status?: string;
-    pipelineStep?: BlogPipelineStepKey;
-  };
-  if (!assetId) return apiError("assetId required");
-  if (!status && !pipelineStep) return apiError("status or pipelineStep required");
+  const v = await validateBody(request, ContentPatchSchema);
+  if (v.response) return v.response;
+  const { assetId, status, pipelineStep } = v.data;
   if (status && !VALID_STATUSES.has(status)) return apiError("Invalid status");
 
   const { data: asset } = await supabase
@@ -190,7 +186,7 @@ export async function PATCH(request: NextRequest) {
   if (pipelineStep) {
     updates.metadata = advancePipeline(
       (asset.metadata || {}) as Record<string, unknown>,
-      pipelineStep
+      pipelineStep as BlogPipelineStepKey
     );
   }
 

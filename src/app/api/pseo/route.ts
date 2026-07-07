@@ -13,7 +13,8 @@ import {
 } from "@/lib/engines/programmatic-seo";
 import { generateContent } from "@/lib/engines/content-generator";
 import { verifyProjectAccess } from "@/lib/security/project-access";
-import { apiError, apiForbidden, apiUnauthorized, readJsonBody } from "@/lib/security/api-response";
+import { apiError, apiForbidden, apiUnauthorized, validateBody } from "@/lib/security/api-response";
+import { PseoCampaignSchema } from "@/lib/validation/schemas";
 
 const VALID_TYPES = new Set<PseoTemplateType>([
   "location_page",
@@ -47,7 +48,8 @@ export async function POST(request: NextRequest) {
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) return apiUnauthorized();
 
-  const body = await readJsonBody(request);
+  const v = await validateBody(request, PseoCampaignSchema);
+  if (v.response) return v.response;
   const {
     projectId,
     name,
@@ -61,25 +63,9 @@ export async function POST(request: NextRequest) {
     previewOnly,
     generateContent: shouldGenerate,
     seedFromKeywords,
-  } = body as {
-    projectId: string;
-    name: string;
-    templateType: PseoTemplateType;
-    urlPattern?: string;
-    servicesCsv?: string;
-    locationsCsv?: string;
-    keywordsCsv?: string;
-    matrixCsv?: string;
-    maxPages?: number;
-    previewOnly?: boolean;
-    generateContent?: boolean;
-    seedFromKeywords?: boolean;
-  };
+  } = v.data;
 
-  if (!projectId || !name || !templateType) {
-    return apiError("projectId, name, templateType required");
-  }
-  if (!VALID_TYPES.has(templateType)) return apiError("Invalid templateType");
+  if (!VALID_TYPES.has(templateType as PseoTemplateType)) return apiError("Invalid templateType");
 
   const access = await verifyProjectAccess(supabase, projectId, user.id, "member");
   if (!access) return apiForbidden();
@@ -125,7 +111,7 @@ export async function POST(request: NextRequest) {
 
   const input = {
     name,
-    templateType,
+    templateType: templateType as PseoTemplateType,
     urlPattern,
     services,
     locations,

@@ -1,7 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { verifyProjectAccess } from "@/lib/security/project-access";
-import { apiError, apiForbidden, apiUnauthorized, readJsonBody } from "@/lib/security/api-response";
+import { apiError, apiForbidden, apiUnauthorized, validateBody } from "@/lib/security/api-response";
+import { MerchantPostSchema } from "@/lib/validation/schemas";
 import { getOrganizationPlan, hasMerchantAccess } from "@/lib/plans/limits";
 import {
   parseProductFeed,
@@ -53,14 +54,9 @@ export async function POST(request: NextRequest) {
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) return apiUnauthorized();
 
-  let body: { projectId?: string; action?: string; content?: string; format?: FeedFormat; optimize?: boolean; optimizeLimit?: number };
-  try {
-    body = await readJsonBody(request);
-  } catch {
-    return apiError("Invalid JSON body");
-  }
-  const { projectId, action, content, format, optimize, optimizeLimit } = body;
-  if (!projectId) return apiError("projectId required");
+  const v = await validateBody(request, MerchantPostSchema);
+  if (v.response) return v.response;
+  const { projectId, action, content, format, optimize, optimizeLimit } = v.data;
 
   const access = await verifyProjectAccess(supabase, projectId, user.id, "member");
   if (!access) return apiForbidden();
@@ -80,7 +76,7 @@ export async function POST(request: NextRequest) {
 
   if (!content || !format) return apiError("content and format (xml|tsv) required");
 
-  const products = parseProductFeed(content, format).slice(0, 1000);
+  const products = parseProductFeed(content, format as FeedFormat).slice(0, 1000);
   if (products.length === 0) return apiError("No products parsed from feed");
 
   const audits = products.map(auditProduct);

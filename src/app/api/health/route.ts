@@ -9,6 +9,7 @@ import { SCAN_ENGINES, getActiveScanEngines, isEngineConfigured } from "@/lib/co
 import { hasCcWebGraphCapability } from "@/lib/providers/ccwebgraph";
 import { hasOpenPageRankCapability } from "@/lib/providers/openpagerank";
 import { hasCloudflareRadarCapability } from "@/lib/providers/cloudflare-radar";
+import { getWebgraphStatus } from "@/lib/providers/webgraph";
 
 async function isHealthAuthorized(request: NextRequest): Promise<boolean> {
   const adminSecret = process.env.HEALTH_ADMIN_SECRET;
@@ -123,6 +124,13 @@ export async function GET(request: NextRequest) {
   }
 
   const spend = await getSpendSnapshot().catch(() => null);
+  const webgraph = await getWebgraphStatus().catch(() => null);
+
+  const gitSha =
+    process.env.VERCEL_GIT_COMMIT_SHA ||
+    process.env.RAILWAY_GIT_COMMIT_SHA ||
+    process.env.GIT_COMMIT_SHA ||
+    null;
 
   const scanEngineStatus = Object.fromEntries(
     SCAN_ENGINES.map((e) => [e, isEngineConfigured(e) ? "active" : "unavailable"])
@@ -141,6 +149,14 @@ export async function GET(request: NextRequest) {
     {
       status: healthy ? "healthy" : "degraded",
       version: caps.version,
+      gitSha,
+      deployment: {
+        gitSha,
+        vercelEnv: process.env.VERCEL_ENV ?? null,
+        railwayEnv: process.env.RAILWAY_ENVIRONMENT ?? null,
+      },
+      capabilities: caps,
+      webgraph,
       engines: caps.engines,
       scanEngines: {
         configured: activeEngines,

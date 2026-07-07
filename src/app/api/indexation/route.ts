@@ -1,7 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { verifyProjectAccess } from "@/lib/security/project-access";
-import { apiError, apiForbidden, apiUnauthorized, readJsonBody } from "@/lib/security/api-response";
+import { apiError, apiForbidden, apiUnauthorized, validateBody } from "@/lib/security/api-response";
+import { IndexationPostSchema } from "@/lib/validation/schemas";
 import { getValidOAuthToken } from "@/lib/oauth/tokens";
 import { fetchGscPagePerformance, type GscPageRow } from "@/lib/engines/gsc-queries";
 import {
@@ -48,13 +49,9 @@ export async function POST(request: NextRequest) {
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) return apiUnauthorized();
 
-  const body = await readJsonBody(request);
-  const { projectId, action, logText } = body as {
-    projectId: string;
-    action: "coverage" | "crawler_logs";
-    logText?: string;
-  };
-  if (!projectId) return apiError("projectId required");
+  const v = await validateBody(request, IndexationPostSchema);
+  if (v.response) return v.response;
+  const { projectId, action, logText } = v.data;
 
   const access = await verifyProjectAccess(supabase, projectId, user.id, "member");
   if (!access) return apiForbidden();

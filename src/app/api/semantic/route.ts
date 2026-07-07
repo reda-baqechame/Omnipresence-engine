@@ -1,7 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { verifyProjectAccess } from "@/lib/security/project-access";
-import { apiError, apiForbidden, apiUnauthorized, readJsonBody } from "@/lib/security/api-response";
+import { apiError, apiForbidden, apiUnauthorized, validateBody } from "@/lib/security/api-response";
+import { ProjectMutationSchema } from "@/lib/validation/schemas";
 import { detectCannibalization, clusterTexts, hasEmbeddingsCapability } from "@/lib/engines/semantic";
 import { runSiteCrawl } from "@/lib/engines/site-crawler";
 
@@ -10,14 +11,10 @@ export async function POST(request: NextRequest) {
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) return apiUnauthorized();
 
-  let body: { projectId?: string; action?: string };
-  try {
-    body = await readJsonBody(request);
-  } catch {
-    return apiError("Invalid JSON body");
-  }
-  const { projectId, action } = body;
-  if (!projectId || !action) return apiError("projectId and action required");
+  const v = await validateBody(request, ProjectMutationSchema);
+  if (v.response) return v.response;
+  const { projectId, action } = v.data;
+  if (!action) return apiError("projectId and action required");
 
   const access = await verifyProjectAccess(supabase, projectId, user.id, "member");
   if (!access) return apiForbidden();

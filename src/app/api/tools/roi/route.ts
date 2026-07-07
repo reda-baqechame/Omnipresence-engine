@@ -1,26 +1,16 @@
 import { NextRequest, NextResponse } from "next/server";
 import { calculateAdsEquivalent } from "@/lib/engines/ads-equivalent";
 import { guardPublicEndpoint } from "@/lib/security/public-guard";
-import { apiError, readJsonBody } from "@/lib/security/api-response";
+import { apiError, validateBody } from "@/lib/security/api-response";
+import { ToolsRoiSchema } from "@/lib/validation/schemas";
 
 export async function POST(request: NextRequest) {
   const limited = await guardPublicEndpoint(request, "tools-roi", 20, 60 * 60 * 1000);
   if (limited) return limited;
 
-  let organicSessions: unknown;
-  let aiReferralSessions: unknown;
-  let monthlyAdSpend: unknown;
-  let industry: unknown;
-  let customCpc: unknown;
-  try {
-    ({ organicSessions, aiReferralSessions, monthlyAdSpend, industry, customCpc } = await readJsonBody(request));
-  } catch {
-    return apiError("Invalid JSON body");
-  }
-
-  if (monthlyAdSpend === undefined && organicSessions === undefined) {
-    return apiError("monthlyAdSpend or organicSessions required");
-  }
+  const v = await validateBody(request, ToolsRoiSchema);
+  if (v.response) return v.response;
+  const { organicSessions, aiReferralSessions, monthlyAdSpend, industry, customCpc } = v.data;
 
   const result = calculateAdsEquivalent({
     organicSessions: Number(organicSessions) || 0,

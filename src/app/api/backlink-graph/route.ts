@@ -2,7 +2,8 @@ import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { snapshotProjectBacklinkGraph } from "@/lib/engines/backlink-monitor";
 import { verifyProjectAccess } from "@/lib/security/project-access";
-import { apiError, apiForbidden, apiUnauthorized, readJsonBody } from "@/lib/security/api-response";
+import { apiError, apiForbidden, apiUnauthorized, validateBody } from "@/lib/security/api-response";
+import { ProjectMutationSchema } from "@/lib/validation/schemas";
 
 interface TopLink {
   source_url?: string;
@@ -107,8 +108,9 @@ export async function POST(request: NextRequest) {
   } = await supabase.auth.getUser();
   if (!user) return apiUnauthorized();
 
-  const { projectId } = (await readJsonBody(request)) as { projectId?: string };
-  if (!projectId) return apiError("projectId required");
+  const v = await validateBody(request, ProjectMutationSchema);
+  if (v.response) return v.response;
+  const { projectId } = v.data;
 
   const access = await verifyProjectAccess(supabase, projectId, user.id, "member");
   if (!access) return apiForbidden();

@@ -106,13 +106,18 @@ export async function persistVisibilityBatch(
   await persistProbeTraces(supabase, visibilityResults);
 }
 
+export interface VisibilityEngineBatchResult {
+  results: VisibilityScanResult[];
+  scanPartial: boolean;
+}
+
 export async function runVisibilityEngineBatch(
   supabase: SupabaseClient,
   project: Project,
   prep: VisibilityScanPrep,
   engine: VisibilityEngine
-): Promise<VisibilityScanResult[]> {
-  const results = await runVisibilityScan({
+): Promise<VisibilityEngineBatchResult> {
+  const { results, scanPartial } = await runVisibilityScan({
     projectId: project.id,
     runId: prep.runId,
     organizationId: project.organization_id,
@@ -125,14 +130,15 @@ export async function runVisibilityEngineBatch(
     maxPrompts: prep.maxScanPrompts,
   });
   await persistVisibilityBatch(supabase, project.id, prep.runId, results);
-  return results;
+  return { results, scanPartial };
 }
 
 export async function finalizeVisibilityScan(
   supabase: SupabaseClient,
   project: Project,
   runId: string,
-  visibilityResults: VisibilityScanResult[]
+  visibilityResults: VisibilityScanResult[],
+  options?: { scanPartial?: boolean }
 ) {
   const quality = assessVisibilityRunQuality(visibilityResults);
   const runStatus = visibilityRunStatusFromQuality(quality);
@@ -158,7 +164,9 @@ export async function finalizeVisibilityScan(
     .update({
       status: runStatus,
       completed_at: new Date().toISOString(),
-      error_message: quality.message,
+      error_message: options?.scanPartial
+        ? `scan_partial: true${quality.message ? `. ${quality.message}` : ""}`
+        : quality.message,
       brand_sov: brandSov,
     })
     .eq("id", runId);
