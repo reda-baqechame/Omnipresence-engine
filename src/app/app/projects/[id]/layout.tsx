@@ -1,8 +1,9 @@
 import { notFound } from "next/navigation";
 import Link from "next/link";
-import { ArrowLeft, Download, RefreshCw } from "lucide-react";
+import { ArrowLeft, RefreshCw } from "lucide-react";
 import { ProjectTabs } from "@/components/project-tabs";
 import { ProjectOsNav } from "@/components/project-os-nav";
+import { ExportReportButton } from "@/components/export-report-button";
 import { getProject } from "@/lib/projects";
 
 export default async function ProjectLayout({
@@ -52,14 +53,7 @@ export default async function ProjectLayout({
               <RefreshCw className="h-4 w-4" /> Re-scan
             </button>
           </form>
-          <form action={`/api/projects/${id}/report`} method="POST">
-            <button
-              type="submit"
-              className="bg-primary text-primary-foreground px-3 py-2 rounded-lg text-sm flex items-center gap-1 hover:opacity-90 transition"
-            >
-              <Download className="h-4 w-4" /> Export Report
-            </button>
-          </form>
+          <ExportReportButton projectId={id} />
         </div>
       </div>
 

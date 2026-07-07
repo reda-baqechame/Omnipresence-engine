@@ -157,33 +157,41 @@ export async function saveReportArtifacts(
   const htmlFileName = `reports/${projectId}/${reportId}.html`;
   const pdfFileName = `reports/${projectId}/${reportId}.pdf`;
 
-  let publicUrl: string | null = null;
+  let pdfStoragePath: string | null = null;
+  let htmlStoragePath: string | null = null;
 
   try {
     const pdfBuffer = await generateReportPDF(reportData, whiteLabel);
-    await supabase.storage.from("reports").upload(pdfFileName, pdfBuffer, {
-      contentType: "application/pdf",
-      upsert: true,
-    });
-    const { data: pdfUrlData } = supabase.storage.from("reports").getPublicUrl(pdfFileName);
-    publicUrl = pdfUrlData.publicUrl;
+    const { error: uploadError } = await supabase.storage
+      .from("reports")
+      .upload(pdfFileName, pdfBuffer, { contentType: "application/pdf", upsert: true });
+    if (!uploadError) pdfStoragePath = pdfFileName;
   } catch {
-    // PDF optional
+    // PDF optional — degraded state recorded below
   }
 
   try {
-    await supabase.storage.from("reports").upload(htmlFileName, html, {
-      contentType: "text/html",
-      upsert: true,
-    });
-    const { data: urlData } = supabase.storage.from("reports").getPublicUrl(htmlFileName);
-    publicUrl = publicUrl || urlData.publicUrl;
+    const { error: uploadError } = await supabase.storage
+      .from("reports")
+      .upload(htmlFileName, html, { contentType: "text/html", upsert: true });
+    if (!uploadError) htmlStoragePath = htmlFileName;
   } catch {
-    publicUrl = publicUrl || `data:text/html;base64,${Buffer.from(html).toString("base64")}`;
+    // HTML upload failed — the report row still records `ready`; the download
+    // route falls back to regenerating HTML on demand from live project data.
   }
 
-  await supabase.from("reports").update({ pdf_url: publicUrl, white_label: !!whiteLabel, status: "ready" }).eq("id", reportId);
-  return publicUrl;
+  await supabase
+    .from("reports")
+    .update({
+      pdf_storage_path: pdfStoragePath,
+      html_storage_path: htmlStoragePath,
+      pdf_degraded: !pdfStoragePath,
+      white_label: !!whiteLabel,
+      status: "ready",
+    })
+    .eq("id", reportId);
+
+  return pdfStoragePath || htmlStoragePath || "";
 }
 
 export async function saveIntelligenceReportArtifacts(
@@ -205,40 +213,41 @@ export async function saveIntelligenceReportArtifacts(
   const htmlFileName = `reports/${projectId}/${reportId}.html`;
   const pdfFileName = `reports/${projectId}/${reportId}.pdf`;
 
-  let publicUrl: string | null = null;
-  let htmlUrl: string | null = null;
+  let pdfStoragePath: string | null = null;
+  let htmlStoragePath: string | null = null;
 
   const pdfBuffer = await renderReportPdf(html);
   if (pdfBuffer) {
-    await supabase.storage.from("reports").upload(pdfFileName, pdfBuffer, {
-      contentType: "application/pdf",
-      upsert: true,
-    });
-    const { data: pdfUrlData } = supabase.storage.from("reports").getPublicUrl(pdfFileName);
-    publicUrl = pdfUrlData.publicUrl;
+    const { error: uploadError } = await supabase.storage
+      .from("reports")
+      .upload(pdfFileName, pdfBuffer, { contentType: "application/pdf", upsert: true });
+    if (!uploadError) pdfStoragePath = pdfFileName;
   }
 
   try {
-    await supabase.storage.from("reports").upload(htmlFileName, html, {
-      contentType: "text/html",
-      upsert: true,
-    });
-    const { data: urlData } = supabase.storage.from("reports").getPublicUrl(htmlFileName);
-    htmlUrl = urlData.publicUrl;
-    publicUrl = publicUrl || htmlUrl;
+    const { error: uploadError } = await supabase.storage
+      .from("reports")
+      .upload(htmlFileName, html, { contentType: "text/html", upsert: true });
+    if (!uploadError) htmlStoragePath = htmlFileName;
   } catch {
-    publicUrl = publicUrl || `data:text/html;base64,${Buffer.from(html).toString("base64")}`;
+    // HTML upload failed — download route falls back to on-demand HTML render.
   }
 
   await supabase.from("reports").update({
-    pdf_url: publicUrl,
-    html_url: htmlUrl,
+    pdf_storage_path: pdfStoragePath,
+    html_storage_path: htmlStoragePath,
+    // Deep PDF rendering depends on the external ai-ui-capture Playwright
+    // service (ENABLE_AI_UI_CAPTURE + AI_UI_CAPTURE_URL). When it's not
+    // configured or fails, renderReportPdf returns null and the user must be
+    // told the download will be HTML, not silently handed an .html file
+    // dressed up as a PDF download.
+    pdf_degraded: !pdfStoragePath,
     white_label: !!gathered.branding,
     status: "ready",
     error_message: null,
   }).eq("id", reportId);
 
-  return publicUrl;
+  return pdfStoragePath || htmlStoragePath || "";
 }
 
 /** Render HTML for a report row (standard or deep intelligence). */
