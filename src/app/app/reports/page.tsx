@@ -67,11 +67,40 @@ export default async function ReportsPage() {
                       Generating…
                     </span>
                   )}
+                  {report.status === "cancelling" && (
+                    <span className="text-xs bg-amber-100 text-amber-700 px-2 py-0.5 rounded-full">
+                      Stopping…
+                    </span>
+                  )}
+                  {report.status === "cancelled" && (
+                    <span className="text-xs bg-secondary text-muted-foreground px-2 py-0.5 rounded-full">
+                      Cancelled
+                    </span>
+                  )}
+                  {report.status === "failed" && (
+                    <span className="text-xs bg-red-100 text-red-700 px-2 py-0.5 rounded-full">
+                      Failed
+                    </span>
+                  )}
+                  {report.status === "ready" && report.pdf_degraded && (
+                    <span
+                      className="text-xs bg-amber-100 text-amber-700 px-2 py-0.5 rounded-full"
+                      title="PDF renderer was unavailable when this report was generated — the download link serves the HTML artifact instead."
+                    >
+                      HTML only
+                    </span>
+                  )}
                 </h3>
                 <p className="text-sm text-muted-foreground">
                   {(report.projects as { name: string; domain: string })?.name} ·{" "}
                   {new Date(report.created_at).toLocaleDateString()}
                 </p>
+                {report.status === "failed" && report.error_message && (
+                  <p className="text-sm text-red-600 mt-1">{report.error_message}</p>
+                )}
+                {report.status === "cancelled" && report.error_message && (
+                  <p className="text-sm text-muted-foreground mt-1">{report.error_message}</p>
+                )}
               </div>
               <div className="flex gap-2">
                 {report.status === "ready" && (
@@ -80,7 +109,7 @@ export default async function ReportsPage() {
                       href={`/api/report/${report.share_token}/pdf`}
                       className="text-sm text-primary hover:underline flex items-center gap-1"
                     >
-                      PDF <ExternalLink className="h-3 w-3" />
+                      {report.pdf_degraded ? "HTML" : "PDF"} <ExternalLink className="h-3 w-3" />
                     </a>
                     <Link
                       href={`/portal/${report.share_token}`}
