@@ -9,10 +9,13 @@ import {
 } from "@/lib/metering/api-usage";
 import { apiError, apiForbidden, apiNotFound, apiServerError, apiUnauthorized } from "@/lib/security/api-response";
 import { guardOrgEndpoint } from "@/lib/security/api-v1-guard";
+import { finalizeStalledScan } from "@/lib/engines/scan-finalize-stalled";
 
 const DEFAULT_STALE_SCAN_MS = 6 * 60 * 1000;
 /** Visibility run with zero persisted results after this long is treated as wedged. */
 const DEFAULT_STALE_VISIBILITY_RUN_MS = 25 * 60 * 1000;
+/** Partial scan with no new probes for this long gets force-finalized. */
+const DEFAULT_STALLED_PARTIAL_SCAN_MS = 12 * 60 * 1000;
 
 export async function POST(
   _request: NextRequest,
@@ -99,19 +102,51 @@ export async function GET(
     const runStartedAt = activeRun?.started_at ? new Date(activeRun.started_at).getTime() : 0;
     const runAgeMs = runStartedAt > 0 ? Date.now() - runStartedAt : 0;
     let wedgedVisibilityRun = false;
+    let stalledPartialScan = false;
+    let resultCount = 0;
 
-    if (activeRun?.id && runAgeMs > staleVisibilityRunMs) {
+    if (activeRun?.id) {
       const { count } = await supabase
         .from("visibility_results")
         .select("id", { count: "exact", head: true })
         .eq("run_id", activeRun.id);
-      wedgedVisibilityRun = (count ?? 0) === 0;
+      resultCount = count ?? 0;
+      if (runAgeMs > staleVisibilityRunMs) {
+        wedgedVisibilityRun = resultCount === 0;
+      }
     }
 
-    if (wedgedVisibilityRun || (isStale && !activeRun)) {
+    const stalledPartialMs = Number(
+      process.env.SCAN_STALLED_PARTIAL_MS ?? DEFAULT_STALLED_PARTIAL_SCAN_MS
+    );
+    if (activeRun?.id && resultCount > 0 && runAgeMs > staleVisibilityRunMs) {
+      const { data: latestResult } = await supabase
+        .from("visibility_results")
+        .select("created_at")
+        .eq("run_id", activeRun.id)
+        .order("created_at", { ascending: false })
+        .limit(1)
+        .maybeSingle();
+      const lastProbeAt = latestResult?.created_at
+        ? new Date(latestResult.created_at).getTime()
+        : 0;
+      if (lastProbeAt > 0 && Date.now() - lastProbeAt > stalledPartialMs) {
+        stalledPartialScan = true;
+      }
+    }
+
+    if (wedgedVisibilityRun || stalledPartialScan || (isStale && !activeRun)) {
       const recoveryStatus = project.last_scan_at ? "active" : "draft";
       const serviceClient = await createServiceClient();
-      if (activeRun?.id && wedgedVisibilityRun) {
+      if (activeRun?.id && stalledPartialScan) {
+        const finalized = await finalizeStalledScan(serviceClient, id, activeRun.id);
+        if (finalized) {
+          status = "active";
+          recovered = true;
+          message = "Scan completed with partial visibility data.";
+        }
+      }
+      if (status === "scanning" && activeRun?.id && wedgedVisibilityRun) {
         await serviceClient
           .from("visibility_runs")
           .update({
@@ -122,16 +157,20 @@ export async function GET(
           .eq("id", activeRun.id)
           .in("status", ["pending", "running"]);
       }
-      await serviceClient
-        .from("projects")
-        .update({ status: recoveryStatus })
-        .eq("id", id)
-        .eq("status", "scanning");
-      status = recoveryStatus;
-      recovered = true;
-      message = wedgedVisibilityRun
-        ? "Scan timed out during AI visibility checks. Please retry the scan."
-        : "Scan did not start. Please retry the scan.";
+      if (status === "scanning") {
+        await serviceClient
+          .from("projects")
+          .update({ status: recoveryStatus })
+          .eq("id", id)
+          .eq("status", "scanning");
+        status = recoveryStatus;
+        recovered = true;
+        message =
+          message ||
+          (wedgedVisibilityRun
+            ? "Scan timed out during AI visibility checks. Please retry the scan."
+            : "Scan did not start. Please retry the scan.");
+      }
     }
   }
 

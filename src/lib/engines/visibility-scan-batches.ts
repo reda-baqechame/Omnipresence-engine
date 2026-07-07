@@ -19,6 +19,20 @@ import {
 import { computeBrandSovFromResults } from "@/lib/engines/share-of-voice";
 import type { VisibilityResult } from "@/types/database";
 
+async function withStepTimeout<T>(promise: Promise<T>, ms: number, label: string): Promise<T> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  try {
+    return await Promise.race([
+      promise,
+      new Promise<T>((_, reject) => {
+        timer = setTimeout(() => reject(new Error(`${label}_timeout`)), ms);
+      }),
+    ]);
+  } finally {
+    if (timer) clearTimeout(timer);
+  }
+}
+
 export interface VisibilityScanPrep {
   runId: string;
   prompts: Array<{ id?: string; text: string; priority?: number }>;
@@ -127,7 +141,6 @@ export async function runVisibilityEngineBatch(
   prep: VisibilityScanPrep,
   engine: VisibilityEngine
 ): Promise<VisibilityEngineBatchResult> {
-  const engineResults: VisibilityScanResult[] = [];
   const { results, scanPartial } = await runVisibilityScan({
     projectId: project.id,
     runId: prep.runId,
@@ -140,16 +153,9 @@ export async function runVisibilityEngineBatch(
     engines: [engine],
     maxPrompts: prep.maxScanPrompts,
     onProbeResult: async (result) => {
-      engineResults.push(result);
       await insertVisibilityResultRows(supabase, [result]);
     },
   });
-  await attachEvidenceToResults(
-    supabase,
-    project.id,
-    prep.runId,
-    engineResults as unknown as Parameters<typeof attachEvidenceToResults>[3]
-  ).catch(() => 0);
   return { results, scanPartial };
 }
 
@@ -174,10 +180,27 @@ export async function finalizeVisibilityScan(
   await supabase.from("citation_sources").delete().eq("project_id", project.id);
   if (citationRows.length) await supabase.from("citation_sources").insert(citationRows);
 
-  await buildSourceGraph(project.id).catch(() => undefined);
-  await enrichSourceDomainAuthority(supabase, project.id).catch(() => undefined);
-  await scoreSourceInfluenceV2(supabase, project.id).catch(() => undefined);
-  await createTopInfluenceOutreachTasks(supabase, project.id, 3).catch(() => undefined);
+  await withStepTimeout(
+    attachEvidenceToResults(
+      supabase,
+      project.id,
+      runId,
+      visibilityResults as unknown as Parameters<typeof attachEvidenceToResults>[3]
+    ),
+    Number(process.env.SCAN_EVIDENCE_TIMEOUT_MS) || 120_000,
+    "attach_evidence"
+  ).catch(() => 0);
+
+  await withStepTimeout(buildSourceGraph(project.id), 60_000, "source_graph").catch(() => undefined);
+  await withStepTimeout(enrichSourceDomainAuthority(supabase, project.id), 60_000, "source_authority").catch(
+    () => undefined
+  );
+  await withStepTimeout(scoreSourceInfluenceV2(supabase, project.id), 45_000, "source_influence").catch(
+    () => undefined
+  );
+  await withStepTimeout(createTopInfluenceOutreachTasks(supabase, project.id, 3), 30_000, "outreach_tasks").catch(
+    () => undefined
+  );
 
   await supabase
     .from("visibility_runs")
