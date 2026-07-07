@@ -64,6 +64,13 @@ test("webgraph query layer returns real referring domains + authority", async (t
     const count = await wg.getReferringDomainCount("example.com");
     assert.equal(count, 3, "referring-domain count must exclude self-links");
 
+    const verified = await wg.verifyReferringSources("example.com", [
+      "wikipedia.org",
+      "linker-a.com",
+      "missing.com",
+    ]);
+    assert.deepEqual(verified.sort(), ["linker-a.com", "wikipedia.org"]);
+
     // 3) Real authority from harmonic centrality (lower pos = more authoritative).
     const wiki = await wg.getDomainAuthority("wikipedia.org");
     assert.ok(wiki, "wikipedia authority missing");

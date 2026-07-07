@@ -14,7 +14,7 @@ import { findContentGaps } from "../engines/content-gaps.js";
 import { findBacklinkGaps } from "../engines/backlink-gaps.js";
 import { runMapsLive } from "../engines/maps-serp.js";
 import { getRankHistoryHydrated } from "../store.js";
-import { isWebgraphReady, getWebgraphMeta, triggerIngestAsync, isIngestInFlight, isWebgraphEdgesReady, getDomainAuthority, getReferringDomainCount, getLastIngestError, isDuckDbAvailable, getLiveWebgraphCounts } from "../engines/webgraph.js";
+import { isWebgraphReady, getWebgraphMeta, triggerIngestAsync, isIngestInFlight, isWebgraphEdgesReady, getDomainAuthority, getReferringDomainCount, verifyReferringSources, getLastIngestError, isDuckDbAvailable, getLiveWebgraphCounts } from "../engines/webgraph.js";
 import { getKeywordMetrics, hasKeywordPlanner, type GoogleAdsCreds } from "../engines/keyword-planner.js";
 import { getTrends } from "../engines/trends.js";
 import { detectTechStack } from "../engines/techstack.js";
@@ -139,17 +139,21 @@ router.post("/v3/backlinks/intersection/live", async (req, res) => {
 // replacement for DataForSEO/Ahrefs: harmonic-centrality authority (0-100) plus
 // the real distinct referring-domain total, straight from the ingested webgraph.
 router.post("/v3/domain/authority/live", async (req, res) => {
-  const item = (req.body as Array<{ target?: string; domain?: string }>)?.[0];
+  const item = (req.body as Array<{ target?: string; domain?: string; verify_referrers?: string[] }>)?.[0];
   const raw = item?.target || item?.domain;
   if (!raw) {
     res.status(400).json(dfsResponse([], 40000));
     return;
   }
   const clean = raw.replace(/^https?:\/\//, "").replace(/^www\./, "").split("/")[0].toLowerCase();
-  const [authority, referringDomains, ready] = await Promise.all([
+  const verifyReferrers = Array.isArray(item?.verify_referrers)
+    ? item.verify_referrers.slice(0, 20).map((h) => String(h).trim()).filter(Boolean)
+    : [];
+  const [authority, referringDomains, ready, verifiedReferrers] = await Promise.all([
     getDomainAuthority(clean),
     getReferringDomainCount(clean),
     isWebgraphReady(),
+    verifyReferrers.length > 0 ? verifyReferringSources(clean, verifyReferrers) : Promise.resolve([]),
   ]);
   res.json(
     dfsResponse([
@@ -161,6 +165,7 @@ router.post("/v3/domain/authority/live", async (req, res) => {
             harmonic_pos: authority?.harmonic_pos ?? null,
             pr_pos: authority?.pr_pos ?? null,
             referring_domains: referringDomains ?? null,
+            verified_referrers: verifiedReferrers,
             data_source: ready && authority ? "commoncrawl_webgraph" : "unavailable",
           },
         ],

@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { ProvenanceBadge } from "@/components/provenance-badge";
 import { EvidenceDrawer } from "@/components/evidence-drawer";
 import { DataTableToolbar } from "@/components/data-table-toolbar";
@@ -71,20 +71,27 @@ export function BacklinksPanel({ projectId }: BacklinksPanelProps) {
   const [searchQ, setSearchQ] = useState("");
   const [linkFilter, setLinkFilter] = useState("all");
 
-  const filterLinks = (items: BacklinkRow[]) =>
-    items.filter((l) => {
-      if (searchQ && !l.domain.toLowerCase().includes(searchQ.toLowerCase()) && !l.url.toLowerCase().includes(searchQ.toLowerCase())) {
-        return false;
-      }
-      return true;
-    });
+  const filterLinks = useCallback(
+    (items: BacklinkRow[]) =>
+      items.filter((l) => {
+        if (
+          searchQ &&
+          !l.domain.toLowerCase().includes(searchQ.toLowerCase()) &&
+          !l.url.toLowerCase().includes(searchQ.toLowerCase())
+        ) {
+          return false;
+        }
+        return true;
+      }),
+    [searchQ]
+  );
 
   const filteredDiff = useMemo(() => {
     if (!diff) return null;
     if (linkFilter === "new") return { newLinks: filterLinks(diff.newLinks), lostLinks: [], totalCurrent: diff.totalCurrent, totalPrevious: diff.totalPrevious };
     if (linkFilter === "lost") return { newLinks: [], lostLinks: filterLinks(diff.lostLinks), totalCurrent: diff.totalCurrent, totalPrevious: diff.totalPrevious };
     return { ...diff, newLinks: filterLinks(diff.newLinks), lostLinks: filterLinks(diff.lostLinks) };
-  }, [diff, searchQ, linkFilter]);
+  }, [diff, linkFilter, filterLinks]);
 
   async function load() {
     const res = await fetch(`/api/backlinks?projectId=${projectId}`);

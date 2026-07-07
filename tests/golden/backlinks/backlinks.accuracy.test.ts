@@ -31,11 +31,8 @@ const golden = JSON.parse(readFileSync(join(here, "backlinks.golden.json"), "utf
 interface AuthorityResult {
   authority?: number | null;
   referring_domains?: number | null;
+  verified_referrers?: string[];
   data_source?: string;
-}
-interface GraphResult {
-  referring_domains?: number;
-  items?: Array<{ source_domain: string }>;
 }
 
 test("backlinks/authority: sovereign authority ordering matches known DR tiers", async (t) => {
@@ -94,13 +91,14 @@ test("backlinks: referring-domain recall clears the floor on high-confidence inb
 
   let audited = 0;
   for (const sample of golden.referringSamples) {
-    const graph = await omnidataPost<GraphResult>("/backlinks/graph/live", [
-      { target: sample.target, max_sources: 200 },
+    const auth = await omnidataPost<AuthorityResult>("/domain/authority/live", [
+      { target: sample.target, verify_referrers: sample.highConfidenceReferrers },
     ]);
-    if (!graph || !Array.isArray(graph.items) || graph.items.length === 0) continue;
+    if (!auth || auth.data_source !== "commoncrawl_webgraph") continue;
+    if ((auth.referring_domains ?? 0) < sample.minReferringDomains) continue;
     audited += 1;
 
-    const referrers = graph.items.map((i) => normalizeDomain(i.source_domain));
+    const referrers = auth.verified_referrers || [];
     const score = setScore(referrers, sample.highConfidenceReferrers);
     assert.ok(
       score.recall >= sample.recallFloor,

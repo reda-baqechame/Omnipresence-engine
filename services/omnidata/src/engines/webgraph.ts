@@ -608,3 +608,34 @@ export async function getReferringDomainCount(host: string): Promise<number | nu
     return null;
   }
 }
+
+/**
+ * Which of `sourceHosts` have at least one inbound edge to `targetHost` in the
+ * webgraph index. Used by golden accuracy audits to verify known referrers exist
+ * without sampling the top-N-by-link-count list (which skews toward repeat links).
+ */
+export async function verifyReferringSources(
+  targetHost: string,
+  sourceHosts: string[]
+): Promise<string[]> {
+  const conn = await getConnection();
+  if (!conn || !(await isWebgraphEdgesReady()) || sourceHosts.length === 0) return [];
+  try {
+    const targetRev = sanitizeRevHost(reverseHost(targetHost));
+    const sourceRevs = Array.from(
+      new Set(sourceHosts.map((h) => sanitizeRevHost(reverseHost(h))).filter(Boolean))
+    );
+    if (sourceRevs.length === 0) return [];
+    const inList = sourceRevs.map((r) => `'${r}'`).join(", ");
+    const reader = await conn.runAndReadAll(
+      `SELECT DISTINCT v2.rev_host AS source_rev
+         FROM edges e
+         JOIN vertices v1 ON v1.id = e.to_id
+         JOIN vertices v2 ON v2.id = e.from_id
+        WHERE v1.rev_host = '${targetRev}' AND v2.rev_host IN (${inList});`
+    );
+    return reader.getRowObjects().map((r) => unreverseHost(String(r.source_rev)));
+  } catch {
+    return [];
+  }
+}
