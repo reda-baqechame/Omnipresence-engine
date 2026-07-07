@@ -53,7 +53,7 @@ export interface ScanResult {
 export async function runProjectScan(
   supabase: SupabaseClient,
   projectId: string,
-  options?: { notifyEmail?: string }
+  options?: { notifyEmail?: string; idempotencyKey?: string }
 ): Promise<ScanResult> {
   const { data: project } = await supabase.from("projects").select("*").eq("id", projectId).single();
   if (!project) throw new Error("Project not found");
@@ -116,6 +116,7 @@ export async function runProjectScan(
       engines: getActiveScanEngines(),
       prompt_count: prompts.length,
       started_at: new Date().toISOString(),
+      idempotency_key: options?.idempotencyKey ?? null,
     })
     .select()
     .single();

@@ -172,6 +172,10 @@ export const ReportGenerateSchema = z.object({
   report_type: z.enum(["standard", "deep"]).optional(),
   sections: z.array(z.string().trim().max(64)).max(32).optional(),
   preset: z.string().trim().max(64).optional(),
+  /** Client-generated UUID so a double-clicked Generate button (or a
+   * retried request) reuses the in-flight/completed report instead of
+   * creating a duplicate row. Scoped per-project via a unique index. */
+  idempotency_key: uuid.optional(),
 });
 
 export const ProjectCreateSchema = z.object({
@@ -334,6 +338,11 @@ export const TrafficPanelIngestSchema = z.object({
 
 export const RescanSchema = z.object({
   engines: z.array(z.string().trim().max(64)).max(20).optional(),
+  /** Client-generated UUID so a double-clicked Rescan button doesn't
+   * trigger a second concurrent scan. Combined with an atomic
+   * status != 'scanning' guard so the protection also holds for callers
+   * that omit the key. */
+  idempotency_key: uuid.optional(),
 });
 
 export const GeoRewriteSchema = z.object({

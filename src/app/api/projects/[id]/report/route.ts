@@ -34,12 +34,14 @@ export async function POST(
 
   let reportType: "standard" | "deep" = "standard";
   let sections: IntelligenceReportSectionId[] | undefined;
+  let idempotencyKey: string | undefined;
 
   const contentType = request.headers.get("content-type") || "";
   if (contentType.includes("application/json")) {
     const parsed = await validateBody(request, ReportGenerateSchema);
     if (parsed.response) return parsed.response;
     const body = parsed.data;
+    idempotencyKey = body.idempotency_key;
     if (body.preset) {
       const preset = getReportPreset(body.preset);
       if (preset) {
@@ -49,6 +51,28 @@ export async function POST(
     } else {
       reportType = body.report_type === "deep" ? "deep" : "standard";
       sections = body.sections as IntelligenceReportSectionId[] | undefined;
+    }
+  }
+
+  const appUrl = process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000";
+
+  // Idempotency: a double-clicked Generate button (or a retried request from
+  // a flaky client) supplying the same key must reuse the existing report
+  // instead of creating a duplicate row and re-triggering generation/spend.
+  if (idempotencyKey) {
+    const { data: existing } = await supabase
+      .from("reports")
+      .select("id, status, share_token")
+      .eq("project_id", id)
+      .eq("idempotency_key", idempotencyKey)
+      .maybeSingle();
+    if (existing) {
+      return NextResponse.json({
+        url: `${appUrl}/report/${existing.share_token}`,
+        status: existing.status,
+        token: existing.share_token,
+        idempotent: true,
+      });
     }
   }
 
@@ -79,13 +103,13 @@ export async function POST(
       report_type: reportType,
       sections: sections || [],
       status: reportType === "deep" ? "pending" : "generating",
+      idempotency_key: idempotencyKey ?? null,
     })
     .select()
     .single();
 
   if (reportError || !report) return apiServerError("report create failed", reportError);
 
-  const appUrl = process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000";
   const reportUrl = `${appUrl}/report/${report.share_token}`;
 
   const useInngest = Boolean(process.env.INNGEST_EVENT_KEY) || reportType === "deep";

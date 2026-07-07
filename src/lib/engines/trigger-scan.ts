@@ -71,8 +71,32 @@ function scheduleInngestScanWatchdog(projectId: string, organizationId: string) 
 
 export async function triggerProjectScan(
   projectId: string,
-  organizationId: string
-): Promise<{ mode: "inngest" | "sync" }> {
+  organizationId: string,
+  options?: { idempotencyKey?: string }
+): Promise<{ mode: "inngest" | "sync" | "duplicate" }> {
+  const idempotencyKey = options?.idempotencyKey;
+
+  // A double-clicked Rescan button (or a retried request from a flaky client)
+  // supplying the same key must not spin up a second scan pipeline — mirrors
+  // the report-generate idempotency check in
+  // src/app/api/projects/[id]/report/route.ts. This only catches the case
+  // where the run row already exists (e.g. the first request already got far
+  // enough to create it, or a prior Inngest run completed); the
+  // in-flight/pre-row-creation race is closed by the atomic
+  // status != 'scanning' guard callers apply before invoking this function.
+  if (idempotencyKey) {
+    const supabase = await createServiceClient();
+    const { data: existingRun } = await supabase
+      .from("visibility_runs")
+      .select("id")
+      .eq("project_id", projectId)
+      .eq("idempotency_key", idempotencyKey)
+      .maybeSingle();
+    if (existingRun) {
+      return { mode: "duplicate" };
+    }
+  }
+
   const scanTriggerMode = process.env.SCAN_TRIGGER_MODE?.toLowerCase();
   const useInngest =
     process.env.INNGEST_EVENT_KEY &&
@@ -82,7 +106,7 @@ export async function triggerProjectScan(
     try {
       await inngest.send({
         name: "project/scan.requested",
-        data: { projectId, organizationId },
+        data: { projectId, organizationId, idempotencyKey },
       });
       scheduleInngestScanWatchdog(projectId, organizationId);
       return { mode: "inngest" };
@@ -96,7 +120,7 @@ export async function triggerProjectScan(
     const supabase = await createServiceClient();
     const email = await getOwnerEmail(supabase, organizationId);
     try {
-      await runProjectScan(supabase, projectId, { notifyEmail: email });
+      await runProjectScan(supabase, projectId, { notifyEmail: email, idempotencyKey });
     } catch (error) {
       console.error("Background scan failed:", error);
       await supabase.from("projects").update({ status: "draft" }).eq("id", projectId);

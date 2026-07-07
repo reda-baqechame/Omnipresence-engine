@@ -121,6 +121,18 @@ test("run-full-scan checks cancellation between engine batches and skips scoring
   assert.match(batches, /status:\s*"cancelled"/, "finalizeVisibilityScan must mark a cancelled run's status cancelled");
 });
 
+test("run-full-scan checks idempotency-key before doing any audit/brand/prompt work, memoized as a step", () => {
+  const scan = functionChunks().find((c) => idOf(c) === "run-full-scan")!;
+  assert.ok(scan, "run-full-scan must exist");
+  const idempIdx = scan.indexOf('step.run("idempotency-check"');
+  const loadProjectIdx = scan.indexOf('step.run("load-project"');
+  assert.ok(
+    idempIdx !== -1 && loadProjectIdx !== -1 && idempIdx < loadProjectIdx,
+    "the idempotency check must run before load-project/technical-audit/brand-extract, and be wrapped in step.run so Inngest's own retries of this run don't re-evaluate it against their own memoized prep step"
+  );
+  assert.match(scan, /duplicate:\s*true/, "a duplicate-key run must short-circuit and report itself as a duplicate");
+});
+
 test("cancel routes gate the status transition to in-flight statuses only (never flip a completed job)", () => {
   const root = join(here, "..", "..", "..", "app", "api");
   const reportCancel = readFileSync(

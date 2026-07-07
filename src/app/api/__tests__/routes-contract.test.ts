@@ -25,10 +25,29 @@ const ROUTES: Array<{ path: string; mustInclude: string[] }> = [
     // status: "failed" on the catch path guards against the orphaned-row
     // regression where a null gatherReportData() result (or any thrown
     // error) left the row stuck at pending/generating forever while the
-    // response still claimed "ready".
-    mustInclude: ["getReportPreset", "canUseDeepReport", "guardOrgEndpoint", "validateBody", 'status: "failed"'],
+    // response still claimed "ready". idempotency_key must both be read
+    // from the request AND persisted on insert — a double-clicked Generate
+    // button must reuse the existing report instead of creating (and
+    // re-billing) a duplicate.
+    mustInclude: [
+      "getReportPreset",
+      "canUseDeepReport",
+      "guardOrgEndpoint",
+      "validateBody",
+      'status: "failed"',
+      "idempotencyKey",
+      "idempotent: true",
+    ],
   },
   { path: "app/api/projects/[id]/scan/route.ts", mustInclude: ["guardOrgEndpoint", "verifyProjectAccess"] },
+  {
+    path: "app/api/projects/[id]/rescan/route.ts",
+    // Two protections against a double-clicked Rescan button: an atomic
+    // status != "scanning" claim (works even without a key) and the
+    // idempotency_key threaded through to triggerProjectScan for the
+    // already-in-flight-row case.
+    mustInclude: ['neq("status", "scanning")', "idempotencyKey: parsed.data.idempotency_key"],
+  },
   {
     path: "app/api/projects/[id]/report/[reportId]/cancel/route.ts",
     // Cancellation must gate on the in-flight statuses only — a ready/failed

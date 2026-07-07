@@ -71,7 +71,8 @@ async function loadPromptsForScan(supabase: SupabaseClient, project: Project) {
 
 export async function prepareVisibilityScan(
   supabase: SupabaseClient,
-  project: Project
+  project: Project,
+  options?: { idempotencyKey?: string }
 ): Promise<VisibilityScanPrep> {
   const { prompts, maxScanPrompts } = await loadPromptsForScan(supabase, project);
 
@@ -83,6 +84,7 @@ export async function prepareVisibilityScan(
       engines: getActiveScanEngines(),
       prompt_count: prompts.length,
       started_at: new Date().toISOString(),
+      idempotency_key: options?.idempotencyKey ?? null,
     })
     .select()
     .single();

@@ -1,5 +1,5 @@
--- PresenceOS combined migration (78 files)
--- Generated 2026-07-07T20:45:30.582Z
+-- PresenceOS combined migration (80 files)
+-- Generated 2026-07-07T21:27:46.722Z
 
 -- ========== 0001_init.sql ==========
 
@@ -3272,5 +3272,59 @@ AS $$
       provider_calls_count = provider_calls_count + p_calls
   WHERE id = p_run_id;
 $$;
+
+
+-- ========== 0079_reports_bucket_rls_path_fix.sql ==========
+
+-- 0073_reports_bucket_private.sql wrote a policy assuming storage object
+-- paths look like {orgId}/{projectId}/{file}, but report-builder.ts has
+-- always written (and still writes) paths as reports/{projectId}/{file} —
+-- i.e. storage.foldername(name) = ARRAY['reports', projectId], not
+-- ARRAY[orgId, projectId]. The policy's org/project match therefore never
+-- matched any real object. In practice this was masked because the only
+-- reader (the report PDF download route) uses the service-role client,
+-- which bypasses RLS entirely — but the policy should still describe the
+-- access it actually grants, for any future authenticated-client read path.
+
+DROP POLICY IF EXISTS reports_org_read ON storage.objects;
+
+CREATE POLICY reports_org_read ON storage.objects
+  FOR SELECT
+  TO authenticated
+  USING (
+    bucket_id = 'reports'
+    AND EXISTS (
+      SELECT 1
+      FROM public.projects p
+      JOIN public.memberships m ON m.organization_id = p.organization_id
+      WHERE m.user_id = auth.uid()
+        AND (storage.foldername(name))[2] = p.id::text
+    )
+  );
+
+
+-- ========== 0080_generation_idempotency.sql ==========
+
+-- Idempotency for report-generate and scan-trigger: double-clicking Generate
+-- (or a retried client request) currently creates a second `reports` row /
+-- triggers a second scan with no way to detect the duplicate. Mirrors the
+-- existing webhook idempotency pattern (webhook_events UNIQUE(provider,
+-- event_id), 0005_webhook_events.sql) — a client-generated key, scoped to
+-- the project, deduplicated via a partial unique index so omitting the key
+-- (existing callers) is unaffected.
+
+ALTER TABLE reports
+  ADD COLUMN IF NOT EXISTS idempotency_key TEXT;
+
+CREATE UNIQUE INDEX IF NOT EXISTS reports_project_idempotency_key
+  ON reports(project_id, idempotency_key)
+  WHERE idempotency_key IS NOT NULL;
+
+ALTER TABLE visibility_runs
+  ADD COLUMN IF NOT EXISTS idempotency_key TEXT;
+
+CREATE UNIQUE INDEX IF NOT EXISTS visibility_runs_project_idempotency_key
+  ON visibility_runs(project_id, idempotency_key)
+  WHERE idempotency_key IS NOT NULL;
 
 
