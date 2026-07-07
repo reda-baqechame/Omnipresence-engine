@@ -39,6 +39,7 @@ function has(key) {
 }
 
 loadEnvLocal();
+loadEnvFile(".env.providers");
 
 const checks = [
   {

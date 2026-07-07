@@ -34,30 +34,40 @@ DECLARE
     'backlink_graph_snapshots',
     'measurement_evidence'
   ];
-  full_check TEXT := $$data_source IS NULL OR data_source IN (
+  full_check TEXT := $check$data_source IS NULL OR data_source IN (
     'measured', 'estimated', 'model_knowledge', 'simulated', 'unavailable'
-  )$$;
-  full_check_nn TEXT := $$data_source IN (
+  )$check$;
+  full_check_nn TEXT := $check$data_source IN (
     'measured', 'estimated', 'model_knowledge', 'simulated', 'unavailable'
-  )$$;
+  )$check$;
 BEGIN
   FOREACH t IN ARRAY nullable_tables LOOP
-    EXECUTE format('ALTER TABLE %I DROP CONSTRAINT IF EXISTS %I', t, t || '_data_source_check');
     IF EXISTS (
-      SELECT 1 FROM information_schema.columns
-      WHERE table_schema = 'public' AND table_name = t AND column_name = 'data_source'
+      SELECT 1 FROM information_schema.tables
+      WHERE table_schema = 'public' AND table_name = t
     ) THEN
-      EXECUTE format('ALTER TABLE %I ADD CONSTRAINT %I CHECK (%s)', t, t || '_data_source_check', full_check);
+      EXECUTE format('ALTER TABLE %I DROP CONSTRAINT IF EXISTS %I', t, t || '_data_source_check');
+      IF EXISTS (
+        SELECT 1 FROM information_schema.columns
+        WHERE table_schema = 'public' AND table_name = t AND column_name = 'data_source'
+      ) THEN
+        EXECUTE format('ALTER TABLE %I ADD CONSTRAINT %I CHECK (%s)', t, t || '_data_source_check', full_check);
+      END IF;
     END IF;
   END LOOP;
 
   FOREACH t IN ARRAY not_null_tables LOOP
-    EXECUTE format('ALTER TABLE %I DROP CONSTRAINT IF EXISTS %I', t, t || '_data_source_check');
     IF EXISTS (
-      SELECT 1 FROM information_schema.columns
-      WHERE table_schema = 'public' AND table_name = t AND column_name = 'data_source'
+      SELECT 1 FROM information_schema.tables
+      WHERE table_schema = 'public' AND table_name = t
     ) THEN
-      EXECUTE format('ALTER TABLE %I ADD CONSTRAINT %I CHECK (%s)', t, t || '_data_source_check', full_check_nn);
+      EXECUTE format('ALTER TABLE %I DROP CONSTRAINT IF EXISTS %I', t, t || '_data_source_check');
+      IF EXISTS (
+        SELECT 1 FROM information_schema.columns
+        WHERE table_schema = 'public' AND table_name = t AND column_name = 'data_source'
+      ) THEN
+        EXECUTE format('ALTER TABLE %I ADD CONSTRAINT %I CHECK (%s)', t, t || '_data_source_check', full_check_nn);
+      END IF;
     END IF;
   END LOOP;
 END $$;

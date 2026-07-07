@@ -76,11 +76,12 @@ if (migSrc.includes("visitor_sessions") && migSrc.includes("memberships")) {
 }
 
 console.log("\n6. Project nav — Prompts");
+const hubNavSrc = readFileSync(join(root, "src/lib/navigation/capability-nav.ts"), "utf8");
 const osNavSrc = readFileSync(join(root, "src/components/project-os-nav.tsx"), "utf8");
-if (osNavSrc.includes("/prompts")) {
-  console.log("  ✓ Prompts route wired in project OS nav");
+if (hubNavSrc.includes("/prompts") && osNavSrc.includes("filterProjectHubNav")) {
+  console.log("  ✓ Prompts route wired in project hub nav");
 } else {
-  console.log("  ✗ Prompts route missing from project OS nav");
+  console.log("  ✗ Prompts route missing from project hub nav");
   failed++;
 }
 

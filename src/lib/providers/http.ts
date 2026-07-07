@@ -5,6 +5,8 @@
  * transient 429/5xx failures.
  */
 
+import { resolveUpstashRedisRest } from "@/lib/security/upstash-env";
+
 export interface FetchWithTimeoutInit extends RequestInit {
   /** Abort the request after this many ms (default 15000). */
   timeoutMs?: number;
@@ -89,9 +91,9 @@ const breakerCache = new Map<string, { state: BreakerState; fetchedAt: number }>
 const BREAKER_CACHE_MS = 2_000;
 
 async function redisGetBreaker(key: string): Promise<BreakerState | null> {
-  const url = process.env.UPSTASH_REDIS_REST_URL?.replace(/\/$/, "");
-  const token = process.env.UPSTASH_REDIS_REST_TOKEN;
-  if (!url || !token) return null;
+  const creds = resolveUpstashRedisRest();
+  if (!creds) return null;
+  const { url, token } = creds;
   try {
     const res = await fetch(`${url}/get/${encodeURIComponent(`cb:${key}`)}`, {
       headers: { Authorization: `Bearer ${token}` },
@@ -107,9 +109,9 @@ async function redisGetBreaker(key: string): Promise<BreakerState | null> {
 }
 
 async function redisSetBreaker(key: string, state: BreakerState | null): Promise<void> {
-  const url = process.env.UPSTASH_REDIS_REST_URL?.replace(/\/$/, "");
-  const token = process.env.UPSTASH_REDIS_REST_TOKEN;
-  if (!url || !token) return;
+  const creds = resolveUpstashRedisRest();
+  if (!creds) return;
+  const { url, token } = creds;
   try {
     if (!state) {
       await fetch(`${url}/del/${encodeURIComponent(`cb:${key}`)}`, {

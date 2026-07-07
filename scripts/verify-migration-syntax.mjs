@@ -101,7 +101,8 @@ function checkFile(path) {
     lower.includes("insert ") ||
     lower.includes("update ") ||
     lower.includes("grant ") ||
-    lower.includes("policy ");
+    lower.includes("policy ") ||
+    lower.includes("select ");
   if (!hasDdl) errors.push(`${rel}: no recognizable SQL statements`);
 
   errors.push(...checkBalancedDelimiters(sql, rel));

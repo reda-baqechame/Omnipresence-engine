@@ -22,7 +22,7 @@ if (existsSync(operatorPath)) {
     if ((v.startsWith('"') && v.endsWith('"')) || (v.startsWith("'") && v.endsWith("'"))) {
       v = v.slice(1, -1);
     }
-    if (v && !process.env[key]) process.env[key] = v;
+    if (v) process.env[key] = v;
   }
 }
 

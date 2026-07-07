@@ -37,10 +37,10 @@ const steps = [
     ok: () => run("railway:verify", "npm", ["run", "railway:verify"]),
   },
   {
-    name: "webgraph:verify (WEBGRAPH_REQUIRE_FULL=0)",
+    name: "webgraph:verify (WEBGRAPH_REQUIRE_FULL=1)",
     ok: () =>
       run("webgraph:verify", "npm", ["run", "webgraph:verify"], {
-        WEBGRAPH_REQUIRE_FULL: "0",
+        WEBGRAPH_REQUIRE_FULL: "1",
       }),
   },
 ];

@@ -23,8 +23,8 @@ jobs:
       GOOGLE_CLIENT_ID: ${{ secrets.GOOGLE_CLIENT_ID }}
       GOOGLE_CLIENT_SECRET: ${{ secrets.GOOGLE_CLIENT_SECRET }}
       ENABLE_AI_UI_CAPTURE: "true"
-      # Auth must pass in CI; full Common Crawl ingest is tracked separately (webgraph:verify / ops runbook).
-      WEBGRAPH_REQUIRE_FULL: "0"
+      # Full Common Crawl webgraph ingested on Railway (edges_ready + vertex/edge counts).
+      WEBGRAPH_REQUIRE_FULL: "1"
       NEXT_PUBLIC_SUPABASE_URL: https://placeholder.supabase.co
       NEXT_PUBLIC_SUPABASE_ANON_KEY: placeholder
       SUPABASE_SERVICE_ROLE_KEY: placeholder
@@ -60,6 +60,6 @@ jobs:
           CI: "true"
           VERIFY_REQUIRE_FILES: "1"
       - name: claims strict (prod)
-        if: github.event_name == 'workflow_dispatch'
+        if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch' || github.event_name == 'push'
         run: CLAIMS_STRICT_PROD=1 npm run check:claims-backed
         continue-on-error: true

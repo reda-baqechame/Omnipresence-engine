@@ -18,11 +18,12 @@ const testDomain = process.env.WEBGRAPH_TEST_DOMAIN || "example.com";
 const pullPath = ".env.webgraph.verify.tmp";
 
 function run(cmd, args, opts = {}) {
+  const useShell = process.platform === "win32" && cmd === "npx";
   const result = spawnSync(cmd, args, {
     cwd: opts.cwd || root,
     encoding: "utf8",
     stdio: opts.capture ? ["pipe", "pipe", "pipe"] : "inherit",
-    shell: process.platform === "win32",
+    shell: useShell,
   });
   return { ok: result.status === 0, out: (result.stdout || "") + (result.stderr || "") };
 }
@@ -211,4 +212,4 @@ if (live.ok && live.json) {
 }
 
 console.log("\nPASS — webgraph verification complete\n");
-process.exit(0);
+process.exitCode = 0;

@@ -34,7 +34,7 @@ const results = [
   ["Phase 8 audit", run("Phase 8", "scripts/audit-phase8.mjs", [base])],
   ["Phase 9 audit", run("Phase 9", "scripts/audit-phase9.mjs", [base])],
   ["Phase 10 audit", run("Phase 10", "scripts/audit-phase10.mjs", [base])],
-  ["verify:prod", run("verify:prod", "scripts/verify-production.mjs", [base])],
+  ["verify:prod", run("verify:prod", "scripts/verify-production-with-env.mjs", [base])],
 ];
 
 console.log("\n========================================");

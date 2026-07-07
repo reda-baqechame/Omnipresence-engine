@@ -8,6 +8,7 @@ import {
 import { hasIntelligenceApi } from "@/lib/providers/intelligence-api";
 import { hasIntegrationEncryptionKey } from "@/lib/security/credential-vault";
 import { hasResendCapability, hasSmtpCapability } from "@/lib/email/transport";
+import { hasUpstashRedisRest } from "@/lib/security/upstash-env";
 
 export type ProductionCheckStatus = "ok" | "warning" | "error" | "skipped";
 
@@ -70,8 +71,7 @@ export function getProductionReadiness(): {
   checks.push({
     id: "upstash",
     label: "Distributed rate limiting (Upstash Redis)",
-    status:
-      hasEnv("UPSTASH_REDIS_REST_URL") && hasEnv("UPSTASH_REDIS_REST_TOKEN")
+    status: hasUpstashRedisRest()
         ? "ok"
         : isProductionDeploy()
           ? "error"

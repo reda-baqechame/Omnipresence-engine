@@ -1,4 +1,5 @@
 import type { NextRequest } from "next/server";
+import { resolveUpstashRedisRest } from "@/lib/security/upstash-env";
 
 interface Bucket {
   count: number;
@@ -62,12 +63,12 @@ export async function checkRateLimitDistributed(
   limit: number,
   windowMs: number
 ): Promise<{ allowed: boolean; retryAfterSec?: number; backend: "redis" | "memory" }> {
-  const url = process.env.UPSTASH_REDIS_REST_URL?.replace(/\/$/, "");
-  const token = process.env.UPSTASH_REDIS_REST_TOKEN;
+  const creds = resolveUpstashRedisRest();
 
-  if (!url || !token) {
+  if (!creds) {
     return { ...checkRateLimit(key, limit, windowMs), backend: "memory" };
   }
+  const { url, token } = creds;
 
   const redisKey = `rl:${key}`;
   try {
