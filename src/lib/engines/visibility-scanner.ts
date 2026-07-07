@@ -1,4 +1,5 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
+import { withJobContext } from "@/lib/observability/job-context";
 import { queryLLMForVisibility } from "@/lib/providers/ai-gateway";
 import {
   searchLLMMentions,
@@ -99,6 +100,16 @@ const LLM_PLATFORM_MAP: Partial<Record<VisibilityEngine, LLMPlatform>> = {
 };
 
 export async function runVisibilityScan(
+  config: VisibilityScanConfig
+): Promise<VisibilityScanOutput> {
+  // Job context wrapper so every recordSpend()/provider_telemetry call made
+  // transitively during this scan (queryLLMForVisibility, captureAiUiSurface,
+  // etc.) is attributed to this run_id without threading it through every
+  // provider call signature.
+  return withJobContext({ runId: config.runId }, () => runVisibilityScanImpl(config));
+}
+
+async function runVisibilityScanImpl(
   config: VisibilityScanConfig
 ): Promise<VisibilityScanOutput> {
   const engines = config.engines ?? getActiveScanEngines();

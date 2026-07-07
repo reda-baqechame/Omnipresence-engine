@@ -19,6 +19,7 @@
  */
 
 import { logProviderError } from "@/lib/observability/log";
+import { getJobContext } from "@/lib/observability/job-context";
 
 export type GuardProvider =
   | "openai"
@@ -220,6 +221,28 @@ export async function recordSpend(
       p_out: outTok,
       p_cost: cost,
     });
+
+    // Per-job rollup: so "what did THIS report/scan cost" is a column read,
+    // not a cross-table aggregation. Best-effort — a job not currently
+    // in-flight (no active context) simply skips this, same fail-open
+    // posture as the rest of this module.
+    const job = getJobContext();
+    if (job?.reportId) {
+      await sb.rpc("increment_report_usage", {
+        p_report_id: job.reportId,
+        p_cost: cost,
+        p_tokens: inTok + outTok,
+        p_calls: 1,
+      });
+    }
+    if (job?.runId) {
+      await sb.rpc("increment_run_usage", {
+        p_run_id: job.runId,
+        p_cost: cost,
+        p_tokens: inTok + outTok,
+        p_calls: 1,
+      });
+    }
   } catch (e) {
     logProviderError("cost-guard.record", e, { provider, model });
   }

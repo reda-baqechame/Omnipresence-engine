@@ -5,6 +5,7 @@ import { calculateAdsEquivalent } from "@/lib/engines/ads-equivalent";
 import { getRealKeywordCpc } from "@/lib/providers/dataforseo";
 import { buildProofReport, renderProofHTML } from "@/lib/engines/proof-report";
 import { canUseWhiteLabel } from "@/lib/plans/features";
+import { withJobContext } from "@/lib/observability/job-context";
 import type { RoadmapItem, SubscriptionPlan, VisibilityResult } from "@/types/database";
 
 export interface WhiteLabelBranding {
@@ -153,45 +154,47 @@ export async function saveReportArtifacts(
   reportData: ReportData,
   whiteLabel?: WhiteLabelBranding
 ): Promise<string> {
-  const html = generateReportHTML(reportData, whiteLabel);
-  const htmlFileName = `reports/${projectId}/${reportId}.html`;
-  const pdfFileName = `reports/${projectId}/${reportId}.pdf`;
+  return withJobContext({ reportId }, async () => {
+    const html = generateReportHTML(reportData, whiteLabel);
+    const htmlFileName = `reports/${projectId}/${reportId}.html`;
+    const pdfFileName = `reports/${projectId}/${reportId}.pdf`;
 
-  let pdfStoragePath: string | null = null;
-  let htmlStoragePath: string | null = null;
+    let pdfStoragePath: string | null = null;
+    let htmlStoragePath: string | null = null;
 
-  try {
-    const pdfBuffer = await generateReportPDF(reportData, whiteLabel);
-    const { error: uploadError } = await supabase.storage
+    try {
+      const pdfBuffer = await generateReportPDF(reportData, whiteLabel);
+      const { error: uploadError } = await supabase.storage
+        .from("reports")
+        .upload(pdfFileName, pdfBuffer, { contentType: "application/pdf", upsert: true });
+      if (!uploadError) pdfStoragePath = pdfFileName;
+    } catch {
+      // PDF optional — degraded state recorded below
+    }
+
+    try {
+      const { error: uploadError } = await supabase.storage
+        .from("reports")
+        .upload(htmlFileName, html, { contentType: "text/html", upsert: true });
+      if (!uploadError) htmlStoragePath = htmlFileName;
+    } catch {
+      // HTML upload failed — the report row still records `ready`; the download
+      // route falls back to regenerating HTML on demand from live project data.
+    }
+
+    await supabase
       .from("reports")
-      .upload(pdfFileName, pdfBuffer, { contentType: "application/pdf", upsert: true });
-    if (!uploadError) pdfStoragePath = pdfFileName;
-  } catch {
-    // PDF optional — degraded state recorded below
-  }
+      .update({
+        pdf_storage_path: pdfStoragePath,
+        html_storage_path: htmlStoragePath,
+        pdf_degraded: !pdfStoragePath,
+        white_label: !!whiteLabel,
+        status: "ready",
+      })
+      .eq("id", reportId);
 
-  try {
-    const { error: uploadError } = await supabase.storage
-      .from("reports")
-      .upload(htmlFileName, html, { contentType: "text/html", upsert: true });
-    if (!uploadError) htmlStoragePath = htmlFileName;
-  } catch {
-    // HTML upload failed — the report row still records `ready`; the download
-    // route falls back to regenerating HTML on demand from live project data.
-  }
-
-  await supabase
-    .from("reports")
-    .update({
-      pdf_storage_path: pdfStoragePath,
-      html_storage_path: htmlStoragePath,
-      pdf_degraded: !pdfStoragePath,
-      white_label: !!whiteLabel,
-      status: "ready",
-    })
-    .eq("id", reportId);
-
-  return pdfStoragePath || htmlStoragePath || "";
+    return pdfStoragePath || htmlStoragePath || "";
+  });
 }
 
 export async function saveIntelligenceReportArtifacts(
@@ -200,54 +203,56 @@ export async function saveIntelligenceReportArtifacts(
   reportId: string,
   organizationId: string
 ): Promise<string> {
-  const { gatherIntelligenceReport } = await import("@/lib/engines/intelligence-report-builder");
-  const { generateIntelligenceReportHTML } = await import("@/lib/engines/intelligence-report-template");
-  const { generateReportNarrative } = await import("@/lib/engines/intelligence-report-narrative");
-  const { renderReportPdf } = await import("@/lib/providers/ai-ui-capture");
+  return withJobContext({ reportId }, async () => {
+    const { gatherIntelligenceReport } = await import("@/lib/engines/intelligence-report-builder");
+    const { generateIntelligenceReportHTML } = await import("@/lib/engines/intelligence-report-template");
+    const { generateReportNarrative } = await import("@/lib/engines/intelligence-report-narrative");
+    const { renderReportPdf } = await import("@/lib/providers/ai-ui-capture");
 
-  const gathered = await gatherIntelligenceReport(supabase, projectId);
-  if (!gathered) throw new Error("No intelligence report data");
+    const gathered = await gatherIntelligenceReport(supabase, projectId);
+    if (!gathered) throw new Error("No intelligence report data");
 
-  const narrative = await generateReportNarrative(gathered.report, { useLlm: true });
-  const html = generateIntelligenceReportHTML(gathered.report, gathered.branding, narrative);
-  const htmlFileName = `reports/${projectId}/${reportId}.html`;
-  const pdfFileName = `reports/${projectId}/${reportId}.pdf`;
+    const narrative = await generateReportNarrative(gathered.report, { useLlm: true });
+    const html = generateIntelligenceReportHTML(gathered.report, gathered.branding, narrative);
+    const htmlFileName = `reports/${projectId}/${reportId}.html`;
+    const pdfFileName = `reports/${projectId}/${reportId}.pdf`;
 
-  let pdfStoragePath: string | null = null;
-  let htmlStoragePath: string | null = null;
+    let pdfStoragePath: string | null = null;
+    let htmlStoragePath: string | null = null;
 
-  const pdfBuffer = await renderReportPdf(html);
-  if (pdfBuffer) {
-    const { error: uploadError } = await supabase.storage
-      .from("reports")
-      .upload(pdfFileName, pdfBuffer, { contentType: "application/pdf", upsert: true });
-    if (!uploadError) pdfStoragePath = pdfFileName;
-  }
+    const pdfBuffer = await renderReportPdf(html);
+    if (pdfBuffer) {
+      const { error: uploadError } = await supabase.storage
+        .from("reports")
+        .upload(pdfFileName, pdfBuffer, { contentType: "application/pdf", upsert: true });
+      if (!uploadError) pdfStoragePath = pdfFileName;
+    }
 
-  try {
-    const { error: uploadError } = await supabase.storage
-      .from("reports")
-      .upload(htmlFileName, html, { contentType: "text/html", upsert: true });
-    if (!uploadError) htmlStoragePath = htmlFileName;
-  } catch {
-    // HTML upload failed — download route falls back to on-demand HTML render.
-  }
+    try {
+      const { error: uploadError } = await supabase.storage
+        .from("reports")
+        .upload(htmlFileName, html, { contentType: "text/html", upsert: true });
+      if (!uploadError) htmlStoragePath = htmlFileName;
+    } catch {
+      // HTML upload failed — download route falls back to on-demand HTML render.
+    }
 
-  await supabase.from("reports").update({
-    pdf_storage_path: pdfStoragePath,
-    html_storage_path: htmlStoragePath,
-    // Deep PDF rendering depends on the external ai-ui-capture Playwright
-    // service (ENABLE_AI_UI_CAPTURE + AI_UI_CAPTURE_URL). When it's not
-    // configured or fails, renderReportPdf returns null and the user must be
-    // told the download will be HTML, not silently handed an .html file
-    // dressed up as a PDF download.
-    pdf_degraded: !pdfStoragePath,
-    white_label: !!gathered.branding,
-    status: "ready",
-    error_message: null,
-  }).eq("id", reportId);
+    await supabase.from("reports").update({
+      pdf_storage_path: pdfStoragePath,
+      html_storage_path: htmlStoragePath,
+      // Deep PDF rendering depends on the external ai-ui-capture Playwright
+      // service (ENABLE_AI_UI_CAPTURE + AI_UI_CAPTURE_URL). When it's not
+      // configured or fails, renderReportPdf returns null and the user must be
+      // told the download will be HTML, not silently handed an .html file
+      // dressed up as a PDF download.
+      pdf_degraded: !pdfStoragePath,
+      white_label: !!gathered.branding,
+      status: "ready",
+      error_message: null,
+    }).eq("id", reportId);
 
-  return pdfStoragePath || htmlStoragePath || "";
+    return pdfStoragePath || htmlStoragePath || "";
+  });
 }
 
 /** Render HTML for a report row (standard or deep intelligence). */
