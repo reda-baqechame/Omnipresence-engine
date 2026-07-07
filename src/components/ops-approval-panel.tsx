@@ -58,7 +58,7 @@ export function OpsApprovalPanel({ projectId }: { projectId: string }) {
     await fetch("/api/ops", {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ id, status: "cancelled" }),
+      body: JSON.stringify({ id, status: "rejected" }),
     });
     await load();
     setBusy(null);

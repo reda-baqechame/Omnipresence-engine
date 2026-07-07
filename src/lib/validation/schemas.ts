@@ -25,8 +25,11 @@ const nonEmpty = z.string().trim().min(1);
 /** Known SLA risk levels for queued ops. */
 export const RISK_LEVELS = ["low", "medium", "high"] as const;
 
-/** Mutable ops-queue statuses a client is allowed to set via PATCH. */
-export const OPS_PATCH_STATUSES = ["approved", "rejected", "pending", "cancelled"] as const;
+/** Mutable ops-queue statuses a client is allowed to set via PATCH. Must match
+ * the ops_queue.status CHECK constraint (0009_v2_real_results.sql) exactly —
+ * "cancelled" was previously listed here but rejected by that constraint,
+ * which the DFY approval panel's reject button hit on every use. */
+export const OPS_PATCH_STATUSES = ["approved", "rejected", "pending"] as const;
 
 export const OpsCreateSchema = z.object({
   projectId: uuid,
