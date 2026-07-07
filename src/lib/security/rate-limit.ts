@@ -1,5 +1,6 @@
 import type { NextRequest } from "next/server";
-import { resolveUpstashRedisRest } from "@/lib/security/upstash-env";
+import { hasUpstashRedisRest, hasDistributedRateLimitBackend, resolveUpstashRedisRest } from "@/lib/security/upstash-env";
+import { getOmniDataHeaders } from "@/lib/security/engine-auth";
 
 interface Bucket {
   count: number;
@@ -62,47 +63,75 @@ export async function checkRateLimitDistributed(
   key: string,
   limit: number,
   windowMs: number
-): Promise<{ allowed: boolean; retryAfterSec?: number; backend: "redis" | "memory" }> {
+): Promise<{ allowed: boolean; retryAfterSec?: number; backend: "redis" | "omnidata" | "memory" }> {
   const creds = resolveUpstashRedisRest();
 
-  if (!creds) {
-    return { ...checkRateLimit(key, limit, windowMs), backend: "memory" };
-  }
-  const { url, token } = creds;
-
-  const redisKey = `rl:${key}`;
-  try {
-    // Pipeline: INCR then read TTL so we can set expiry only on the first hit.
-    const res = await fetch(`${url}/pipeline`, {
-      method: "POST",
-      headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
-      body: JSON.stringify([
-        ["INCR", redisKey],
-        ["PTTL", redisKey],
-      ]),
-      signal: AbortSignal.timeout(2000),
-    });
-    if (!res.ok) throw new Error(`upstash ${res.status}`);
-    const out = (await res.json()) as Array<{ result: number }>;
-    const count = Number(out?.[0]?.result ?? 0);
-    let ttl = Number(out?.[1]?.result ?? -1);
-
-    // First hit (or key without TTL): set the window expiry.
-    if (count === 1 || ttl < 0) {
-      await fetch(`${url}/pexpire/${encodeURIComponent(redisKey)}/${windowMs}`, {
+  if (creds) {
+    const { url, token } = creds;
+    const redisKey = `rl:${key}`;
+    try {
+      const res = await fetch(`${url}/pipeline`, {
         method: "POST",
-        headers: { Authorization: `Bearer ${token}` },
+        headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+        body: JSON.stringify([
+          ["INCR", redisKey],
+          ["PTTL", redisKey],
+        ]),
         signal: AbortSignal.timeout(2000),
       });
-      ttl = windowMs;
-    }
+      if (!res.ok) throw new Error(`upstash ${res.status}`);
+      const out = (await res.json()) as Array<{ result: number }>;
+      const count = Number(out?.[0]?.result ?? 0);
+      let ttl = Number(out?.[1]?.result ?? -1);
 
-    if (count > limit) {
-      return { allowed: false, retryAfterSec: Math.max(1, Math.ceil(ttl / 1000)), backend: "redis" };
+      if (count === 1 || ttl < 0) {
+        await fetch(`${url}/pexpire/${encodeURIComponent(redisKey)}/${windowMs}`, {
+          method: "POST",
+          headers: { Authorization: `Bearer ${token}` },
+          signal: AbortSignal.timeout(2000),
+        });
+        ttl = windowMs;
+      }
+
+      if (count > limit) {
+        return { allowed: false, retryAfterSec: Math.max(1, Math.ceil(ttl / 1000)), backend: "redis" };
+      }
+      return { allowed: true, backend: "redis" };
+    } catch {
+      /* fall through to OmniData / memory */
     }
-    return { allowed: true, backend: "redis" };
-  } catch {
-    // Fail-open to the in-memory limiter so a Redis blip never hard-blocks users.
-    return { ...checkRateLimit(key, limit, windowMs), backend: "memory" };
   }
+
+  const base = process.env.OMNIDATA_BASE_URL?.replace(/\/$/, "");
+  if (base && hasDistributedRateLimitBackend()) {
+    try {
+      const body = [{ key, limit, window_ms: windowMs }];
+      const res = await fetch(`${base}/v3/internal/ratelimit`, {
+        method: "POST",
+        headers: getOmniDataHeaders(body),
+        body: JSON.stringify(body),
+        signal: AbortSignal.timeout(2500),
+      });
+      if (res.ok) {
+        const json = (await res.json()) as {
+          tasks?: Array<{ result?: Array<{ allowed?: boolean; retry_after_sec?: number | null }> }>;
+        };
+        const row = json?.tasks?.[0]?.result?.[0];
+        if (typeof row?.allowed === "boolean") {
+          if (!row.allowed && row.retry_after_sec) {
+            return {
+              allowed: false,
+              retryAfterSec: row.retry_after_sec,
+              backend: "omnidata",
+            };
+          }
+          return { allowed: row.allowed, backend: "omnidata" };
+        }
+      }
+    } catch {
+      /* fail-open below */
+    }
+  }
+
+  return { ...checkRateLimit(key, limit, windowMs), backend: "memory" };
 }

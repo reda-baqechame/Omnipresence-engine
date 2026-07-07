@@ -73,6 +73,12 @@ jobs:
             @tailwindcss/oxide-linux-x64-gnu@4.3.1 \
             lightningcss-linux-x64-gnu@1.32.0 \
             @next/swc-linux-x64-gnu@16.2.9
+      - name: Build for smoke
+        run: npm run build
+        env:
+          NEXT_PUBLIC_SUPABASE_URL: https://placeholder.supabase.co
+          NEXT_PUBLIC_SUPABASE_ANON_KEY: placeholder
+          SUPABASE_SERVICE_ROLE_KEY: placeholder
       - run: npm run start &
       - run: npx wait-on http://localhost:3000 -t 120000
       - run: npm run smoke

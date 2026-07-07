@@ -4,6 +4,7 @@ import presence from "./api/presence.js";
 import { verifySignedRequest, assertProductionAuth } from "./middleware/auth.js";
 import { startWorker } from "./queue.js";
 import { wipeWebgraphStorage, isWebgraphReady, triggerIngestAsync } from "./engines/webgraph.js";
+import { isRateLimitRedisEnabled } from "./rate-limit-redis.js";
 
 // Fail fast on insecure production config before binding the port.
 assertProductionAuth();
@@ -40,7 +41,12 @@ app.use(express.json({ limit: "2mb" }));
 // Public health endpoint — must be reachable WITHOUT auth so Railway/Docker/Fly
 // healthchecks (which send no API key) don't fail the deploy.
 app.get("/health", (_req, res) => {
-  res.json({ ok: true, service: "omnidata", version: "0.5.0" });
+  res.json({
+    ok: true,
+    service: "omnidata",
+    version: "0.5.0",
+    redis_rate_limit: isRateLimitRedisEnabled(),
+  });
 });
 
 app.use(verifySignedRequest);

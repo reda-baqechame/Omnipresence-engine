@@ -18,3 +18,17 @@ export function resolveUpstashRedisRest(): { url: string; token: string } | null
 export function hasUpstashRedisRest(): boolean {
   return resolveUpstashRedisRest() !== null;
 }
+
+/** Upstash REST (preferred) or OmniData shared Redis on Railway. */
+export function hasDistributedRateLimitBackend(): boolean {
+  if (hasUpstashRedisRest()) return true;
+  const base = process.env.OMNIDATA_BASE_URL?.trim();
+  const key = process.env.OMNIDATA_API_KEY?.trim();
+  return Boolean(
+    base &&
+      key &&
+      key.length >= 24 &&
+      key !== "dev-local-key" &&
+      !base.includes("localhost")
+  );
+}

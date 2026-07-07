@@ -42,6 +42,16 @@ if (hasUpstash()) {
   process.exit(0);
 }
 
+if (
+  process.env.OMNIDATA_BASE_URL?.trim() &&
+  process.env.OMNIDATA_API_KEY?.trim() &&
+  process.env.OMNIDATA_API_KEY.length >= 24
+) {
+  console.log("✓ OmniData + Railway Redis rate-limit path available (no Upstash REST vars).\n");
+  console.log("  Optional upgrade: Vercel → Integrations → Upstash for Redis\n");
+  process.exit(0);
+}
+
 console.log("Upstash Redis is not configured (UPSTASH_REDIS_REST_URL + token or KV_REST_API_*).\n");
 console.log("Production readiness requires distributed rate limiting.\n");
 

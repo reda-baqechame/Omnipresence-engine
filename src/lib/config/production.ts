@@ -8,7 +8,7 @@ import {
 import { hasIntelligenceApi } from "@/lib/providers/intelligence-api";
 import { hasIntegrationEncryptionKey } from "@/lib/security/credential-vault";
 import { hasResendCapability, hasSmtpCapability } from "@/lib/email/transport";
-import { hasUpstashRedisRest } from "@/lib/security/upstash-env";
+import { hasDistributedRateLimitBackend } from "@/lib/security/upstash-env";
 
 export type ProductionCheckStatus = "ok" | "warning" | "error" | "skipped";
 
@@ -70,14 +70,14 @@ export function getProductionReadiness(): {
 
   checks.push({
     id: "upstash",
-    label: "Distributed rate limiting (Upstash Redis)",
-    status: hasUpstashRedisRest()
+    label: "Distributed rate limiting (Upstash or OmniData Redis)",
+    status: hasDistributedRateLimitBackend()
         ? "ok"
         : isProductionDeploy()
           ? "error"
           : "warning",
     message:
-      "Required in production — without Upstash, rate limits are per-instance and bypassable",
+      "Required in production — configure Upstash REST or OmniData + Railway Redis",
   });
 
   checks.push({

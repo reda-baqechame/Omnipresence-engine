@@ -22,6 +22,7 @@ import { runPopularity } from "../engines/popularity.js";
 import { getPageSpeed } from "../engines/pagespeed.js";
 import { embedTexts, isEmbeddingsReady } from "../engines/embeddings.js";
 import { clusterTexts as clusterTopics } from "../engines/clustering.js";
+import { checkRateLimitRedis, isRateLimitRedisEnabled } from "../rate-limit-redis.js";
 import { dfsResponse } from "./response.js";
 
 const router = Router();
@@ -452,6 +453,40 @@ router.post("/v3/on_page/instant_pages", async (req, res) => {
       status_message: err instanceof Error ? err.message : "Instant page failed",
     });
   }
+});
+
+// Shared Redis rate limiter for Vercel app instances (INCR + PEXPIRE).
+router.post("/v3/internal/ratelimit", async (req, res) => {
+  const item = (req.body as Array<{ key?: string; limit?: number; window_ms?: number }>)?.[0];
+  const key = item?.key?.trim();
+  const limit = Number(item?.limit);
+  const windowMs = Number(item?.window_ms);
+  if (!key || !Number.isFinite(limit) || limit < 1 || !Number.isFinite(windowMs) || windowMs < 1000) {
+    res.status(400).json(dfsResponse([], 40000));
+    return;
+  }
+  if (!isRateLimitRedisEnabled()) {
+    res.status(503).json(dfsResponse([], 50300));
+    return;
+  }
+  const out = await checkRateLimitRedis(key, limit, windowMs);
+  if (!out) {
+    res.status(503).json(dfsResponse([], 50301));
+    return;
+  }
+  res.json(
+    dfsResponse([
+      {
+        result: [
+          {
+            allowed: out.allowed,
+            retry_after_sec: out.retryAfterSec ?? null,
+            count: out.count,
+          },
+        ],
+      },
+    ])
+  );
 });
 
 export default router;
