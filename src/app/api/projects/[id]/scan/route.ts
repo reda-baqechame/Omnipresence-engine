@@ -11,6 +11,8 @@ import { apiError, apiForbidden, apiNotFound, apiServerError, apiUnauthorized } 
 import { guardOrgEndpoint } from "@/lib/security/api-v1-guard";
 
 const DEFAULT_STALE_SCAN_MS = 6 * 60 * 1000;
+/** Visibility run with zero persisted results after this long is treated as wedged. */
+const DEFAULT_STALE_VISIBILITY_RUN_MS = 25 * 60 * 1000;
 
 export async function POST(
   _request: NextRequest,
@@ -79,31 +81,57 @@ export async function GET(
 
   if (project.status === "scanning") {
     const staleScanMs = Number(process.env.SCAN_STALE_MS ?? DEFAULT_STALE_SCAN_MS);
+    const staleVisibilityRunMs = Number(
+      process.env.SCAN_STALE_VISIBILITY_RUN_MS ?? DEFAULT_STALE_VISIBILITY_RUN_MS
+    );
     const updatedAt = project.updated_at ? new Date(project.updated_at).getTime() : 0;
     const isStale = updatedAt > 0 && Date.now() - updatedAt > staleScanMs;
 
-    if (isStale) {
-      const { data: activeRun } = await supabase
-        .from("visibility_runs")
-        .select("id, status")
-        .eq("project_id", id)
-        .in("status", ["pending", "running"])
-        .order("started_at", { ascending: false })
-        .limit(1)
-        .maybeSingle();
+    const { data: activeRun } = await supabase
+      .from("visibility_runs")
+      .select("id, status, started_at")
+      .eq("project_id", id)
+      .in("status", ["pending", "running"])
+      .order("started_at", { ascending: false })
+      .limit(1)
+      .maybeSingle();
 
-      if (!activeRun) {
-        const recoveryStatus = project.last_scan_at ? "active" : "draft";
-        const serviceClient = await createServiceClient();
+    const runStartedAt = activeRun?.started_at ? new Date(activeRun.started_at).getTime() : 0;
+    const runAgeMs = runStartedAt > 0 ? Date.now() - runStartedAt : 0;
+    let wedgedVisibilityRun = false;
+
+    if (activeRun?.id && runAgeMs > staleVisibilityRunMs) {
+      const { count } = await supabase
+        .from("visibility_results")
+        .select("id", { count: "exact", head: true })
+        .eq("run_id", activeRun.id);
+      wedgedVisibilityRun = (count ?? 0) === 0;
+    }
+
+    if (wedgedVisibilityRun || (isStale && !activeRun)) {
+      const recoveryStatus = project.last_scan_at ? "active" : "draft";
+      const serviceClient = await createServiceClient();
+      if (activeRun?.id && wedgedVisibilityRun) {
         await serviceClient
-          .from("projects")
-          .update({ status: recoveryStatus })
-          .eq("id", id)
-          .eq("status", "scanning");
-        status = recoveryStatus;
-        recovered = true;
-        message = "Scan did not start. Please retry the scan.";
+          .from("visibility_runs")
+          .update({
+            status: "failed",
+            completed_at: new Date().toISOString(),
+            error_message: "scan_stuck: visibility phase produced no results before timeout",
+          })
+          .eq("id", activeRun.id)
+          .in("status", ["pending", "running"]);
       }
+      await serviceClient
+        .from("projects")
+        .update({ status: recoveryStatus })
+        .eq("id", id)
+        .eq("status", "scanning");
+      status = recoveryStatus;
+      recovered = true;
+      message = wedgedVisibilityRun
+        ? "Scan timed out during AI visibility checks. Please retry the scan."
+        : "Scan did not start. Please retry the scan.";
     }
   }
 
@@ -115,11 +143,43 @@ export async function GET(
     .limit(1)
     .single();
 
+  let progress: {
+    visibilityResults: number;
+    runStatus: string | null;
+    runAgeMinutes: number | null;
+  } | null = null;
+
+  if (status === "scanning") {
+    const { data: latestRun } = await supabase
+      .from("visibility_runs")
+      .select("id, status, started_at")
+      .eq("project_id", id)
+      .order("started_at", { ascending: false })
+      .limit(1)
+      .maybeSingle();
+
+    if (latestRun?.id) {
+      const { count } = await supabase
+        .from("visibility_results")
+        .select("id", { count: "exact", head: true })
+        .eq("run_id", latestRun.id);
+      const runAgeMs = latestRun.started_at
+        ? Date.now() - new Date(latestRun.started_at).getTime()
+        : 0;
+      progress = {
+        visibilityResults: count ?? 0,
+        runStatus: latestRun.status,
+        runAgeMinutes: runAgeMs > 0 ? Math.round(runAgeMs / 60_000) : null,
+      };
+    }
+  }
+
   return NextResponse.json({
     status,
     lastScanAt: project.last_scan_at,
     score: score?.omnipresence_score ?? null,
     recovered,
     message,
+    progress,
   });
 }

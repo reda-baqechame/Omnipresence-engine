@@ -3,6 +3,72 @@ import { createServiceClient } from "@/lib/supabase/server";
 import { runProjectScan, getOwnerEmail } from "@/lib/engines/scan-runner";
 import { inngest } from "@/lib/inngest/client";
 
+const DEFAULT_INNGEST_WATCHDOG_MS = 10 * 60 * 1000;
+
+function sleep(ms: number) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+/**
+ * If Inngest accepted the scan but never produces visibility rows (wedged queue
+ * or hung step), take over with the local background runner so users aren't stuck.
+ */
+function scheduleInngestScanWatchdog(projectId: string, organizationId: string) {
+  const watchdogMs = Math.max(
+    5 * 60 * 1000,
+    Number(process.env.SCAN_INNGEST_WATCHDOG_MS) || DEFAULT_INNGEST_WATCHDOG_MS
+  );
+
+  after(async () => {
+    await sleep(watchdogMs);
+    const supabase = await createServiceClient();
+
+    const { data: project } = await supabase
+      .from("projects")
+      .select("status, last_scan_at")
+      .eq("id", projectId)
+      .single();
+    if (!project || project.status !== "scanning") return;
+
+    const { data: activeRun } = await supabase
+      .from("visibility_runs")
+      .select("id, status, started_at")
+      .eq("project_id", projectId)
+      .in("status", ["pending", "running"])
+      .order("started_at", { ascending: false })
+      .limit(1)
+      .maybeSingle();
+
+    if (activeRun?.id) {
+      const { count } = await supabase
+        .from("visibility_results")
+        .select("id", { count: "exact", head: true })
+        .eq("run_id", activeRun.id);
+      if ((count ?? 0) > 0) return;
+
+      await supabase
+        .from("visibility_runs")
+        .update({
+          status: "failed",
+          completed_at: new Date().toISOString(),
+          error_message: "scan_watchdog: inngest stalled with zero visibility results; sync takeover",
+        })
+        .eq("id", activeRun.id)
+        .in("status", ["pending", "running"]);
+    }
+
+    const email = await getOwnerEmail(supabase, organizationId);
+    try {
+      console.warn(`Scan watchdog: sync takeover for project ${projectId}`);
+      await runProjectScan(supabase, projectId, { notifyEmail: email });
+    } catch (error) {
+      console.error("Scan watchdog sync takeover failed:", error);
+      const recoveryStatus = project.last_scan_at ? "active" : "draft";
+      await supabase.from("projects").update({ status: recoveryStatus }).eq("id", projectId);
+    }
+  });
+}
+
 export async function triggerProjectScan(
   projectId: string,
   organizationId: string
@@ -18,6 +84,7 @@ export async function triggerProjectScan(
         name: "project/scan.requested",
         data: { projectId, organizationId },
       });
+      scheduleInngestScanWatchdog(projectId, organizationId);
       return { mode: "inngest" };
     } catch (error) {
       console.error("Inngest scan trigger failed; falling back to background scan:", error);

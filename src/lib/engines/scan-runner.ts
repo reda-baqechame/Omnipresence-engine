@@ -4,7 +4,7 @@ import { analyzePassageReadiness } from "@/lib/engines/passage-readiness";
 import { computeAndRecordFindingDiff } from "@/lib/engines/finding-diff";
 import { extractBrandProfile } from "@/lib/engines/brand-extraction";
 import { generatePromptUniverse } from "@/lib/engines/prompt-generator";
-import { runVisibilityScan, extractCitationSources, persistProbeTraces } from "@/lib/engines/visibility-scanner";
+import { runVisibilityScan, extractCitationSources } from "@/lib/engines/visibility-scanner";
 import { getActiveScanEngines } from "@/lib/config/scan-engines";
 import { checkPlatformCoverage } from "@/lib/engines/coverage-checker";
 import { findAuthorityOpportunities } from "@/lib/engines/authority-finder";
@@ -14,7 +14,7 @@ import { sendScanCompleteEmail, sendScoreDropAlert } from "@/lib/email/reports";
 import { trackApiUsage } from "@/lib/metering/api-usage";
 import {
   getPromptGenerationLimit,
-  getVisibilityScanPromptLimit,
+  getEffectiveVisibilityScanPromptLimit,
   getOrganizationPlan,
 } from "@/lib/plans/limits";
 import { resolveAndPersistCompetitors } from "@/lib/engines/competitor-resolver";
@@ -27,6 +27,7 @@ import {
 import { computeBrandSovFromResults } from "@/lib/engines/share-of-voice";
 import { emitWebhookEvent } from "@/lib/notifications/webhooks";
 import { buildSourceGraph } from "@/lib/engines/source-graph";
+import { insertVisibilityResultRows } from "@/lib/engines/visibility-scan-batches";
 import type {
   Project,
   TechnicalFinding,
@@ -59,7 +60,7 @@ export async function runProjectScan(
   const p = project as Project;
   const plan = await getOrganizationPlan(supabase, p.organization_id);
   const promptCount = getPromptGenerationLimit(plan);
-  const maxScanPrompts = getVisibilityScanPromptLimit(plan);
+  const maxScanPrompts = getEffectiveVisibilityScanPromptLimit(plan, !p.last_scan_at);
 
   await supabase.from("projects").update({ status: "scanning" }).eq("id", projectId);
 
@@ -125,29 +126,17 @@ export async function runProjectScan(
   const { results: visibilityResults } = await runVisibilityScan({
     projectId,
     runId: run!.id,
+    organizationId: p.organization_id,
     brandName: p.name,
     brandDomain: p.domain,
     competitors: p.competitors || [],
     location: p.location || "United States",
     prompts: prompts.map((pr) => ({ text: pr.text, priority: pr.priority })),
     maxPrompts: maxScanPrompts,
+    onProbeResult: async (result) => {
+      await insertVisibilityResultRows(supabase, [result]);
+    },
   });
-
-  if (visibilityResults.length > 0) {
-    const now = new Date().toISOString();
-    const rows = (visibilityResults as unknown as Array<Record<string, unknown>>).map((r) => {
-      const ds = (r.data_source as string | undefined) ?? "unavailable";
-      return { ...r, data_source: ds, is_estimated: ds !== "measured", last_checked_at: now };
-    });
-    await supabase.from("visibility_results").insert(rows as never[]);
-  }
-
-  if (visibilityResults.length > 0) {
-    await persistProbeTraces(
-      supabase,
-      visibilityResults as import("@/lib/engines/visibility-scanner").VisibilityScanResult[]
-    );
-  }
 
   const citationRows = extractCitationSources(
     visibilityResults as import("@/lib/engines/visibility-scanner").VisibilityScanResult[],
