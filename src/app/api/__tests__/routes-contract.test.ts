@@ -42,6 +42,14 @@ const ROUTES: Array<{ path: string; mustInclude: string[] }> = [
     path: "app/api/projects/[id]/scan/cancel/route.ts",
     mustInclude: ['verifyProjectAccess', '"cancelling"', 'cancel_requested_at', 'in("status", ["pending", "running"])'],
   },
+  {
+    path: "app/api/report/[token]/pdf/route.ts",
+    // Public, token-gated route that can invoke a real Playwright render
+    // (REPORT_PDF_TIMEOUT_MS, default 90s) on the legacy regeneration
+    // fallback — without an explicit nodejs runtime + generous maxDuration,
+    // a host's mismatched default can hard-cut the response mid-render.
+    mustInclude: ['export const runtime = "nodejs"', "export const maxDuration ="],
+  },
   { path: "app/api/capabilities/route.ts", mustInclude: ["describeProviders"] },
   { path: "app/api/keywords/route.ts", mustInclude: ["verifyProjectAccess"] },
   { path: "app/api/ranks/route.ts", mustInclude: ["verifyProjectAccess"] },
