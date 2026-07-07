@@ -20,7 +20,14 @@ const ROUTES: Array<{ path: string; mustInclude: string[] }> = [
   { path: "app/api/webhooks/stripe/route.ts", mustInclude: ["checkout.session.completed"] },
   { path: "app/api/attribution/sync/route.ts", mustInclude: ["verifyProjectAccess"] },
   { path: "app/api/leads/convert/route.ts", mustInclude: ["organization_id"] },
-  { path: "app/api/projects/[id]/report/route.ts", mustInclude: ["getReportPreset", "canUseDeepReport", "guardOrgEndpoint", "validateBody"] },
+  {
+    path: "app/api/projects/[id]/report/route.ts",
+    // status: "failed" on the catch path guards against the orphaned-row
+    // regression where a null gatherReportData() result (or any thrown
+    // error) left the row stuck at pending/generating forever while the
+    // response still claimed "ready".
+    mustInclude: ["getReportPreset", "canUseDeepReport", "guardOrgEndpoint", "validateBody", 'status: "failed"'],
+  },
   { path: "app/api/projects/[id]/scan/route.ts", mustInclude: ["guardOrgEndpoint", "verifyProjectAccess"] },
   { path: "app/api/capabilities/route.ts", mustInclude: ["describeProviders"] },
   { path: "app/api/keywords/route.ts", mustInclude: ["verifyProjectAccess"] },

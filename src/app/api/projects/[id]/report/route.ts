@@ -104,11 +104,24 @@ export async function POST(
       await saveIntelligenceReportArtifacts(service, id, report.id, "");
     } else {
       const gathered = await gatherReportData(service, id);
-      if (gathered) {
-        await saveReportArtifacts(service, id, report.id, gathered.reportData, gathered.whiteLabel);
+      if (!gathered) {
+        // Previously silent: the row was left at status "generating" forever
+        // and the caller was told "ready" anyway. No score data yet means
+        // there is nothing to render — fail the row explicitly.
+        throw new Error("No score data available yet — run a scan before generating a report.");
       }
+      await saveReportArtifacts(service, id, report.id, gathered.reportData, gathered.whiteLabel);
     }
   } catch (err) {
+    // Any failure in the synchronous path (including the "no data" case
+    // above) must not leave the row orphaned at pending/generating — mark it
+    // failed with a message so the Reports list and /report/[token] page can
+    // tell the user honestly instead of spinning forever.
+    const message = err instanceof Error ? err.message : "Report generation failed";
+    await service
+      .from("reports")
+      .update({ status: "failed", error_message: message })
+      .eq("id", report.id);
     return apiServerError("report generation failed", err);
   }
 
