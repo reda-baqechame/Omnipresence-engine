@@ -7,7 +7,12 @@ import { buildProofReport, renderProofHTML } from "@/lib/engines/proof-report";
 import { canUseWhiteLabel } from "@/lib/plans/features";
 import { withJobContext } from "@/lib/observability/job-context";
 import type { RoadmapItem, SubscriptionPlan, VisibilityResult } from "@/types/database";
-import type { IntelligenceReportSectionId } from "@/types/intelligence-report";
+import type {
+  IntelligenceReport,
+  IntelligenceReportBranding,
+  IntelligenceReportSectionId,
+} from "@/types/intelligence-report";
+import type { ReportNarrative } from "@/lib/engines/intelligence-report-narrative";
 
 export interface WhiteLabelBranding {
   name: string;
@@ -198,11 +203,133 @@ export async function saveReportArtifacts(
   });
 }
 
+type IntelligenceGathered = { report: IntelligenceReport; branding?: IntelligenceReportBranding };
+
+interface FinalizeIntelligenceReportDeps {
+  generateReportNarrative: (report: IntelligenceReport, opts: { useLlm?: boolean }) => Promise<ReportNarrative>;
+  generateIntelligenceReportHTML: (
+    report: IntelligenceReport,
+    branding: IntelligenceReportBranding | undefined,
+    narrative: ReportNarrative
+  ) => string;
+  renderReportPdf: (html: string) => Promise<Buffer | null>;
+}
+
+/**
+ * Cancellation-aware "finish the deep report" step, split out from
+ * saveIntelligenceReportArtifacts so it can be unit tested with stubbed deps
+ * instead of the real dynamic-imported provider/PDF-rendering chain (mirrors
+ * why report-section-selection.ts was extracted from
+ * intelligence-report-builder.ts). Given already-gathered report data, this
+ * runs narrative generation + PDF/HTML rendering + upload + the final status
+ * write — the exact span of work a cancelled job must not pay for or present
+ * as "ready".
+ */
+export async function finalizeIntelligenceReport(
+  supabase: SupabaseClient,
+  projectId: string,
+  reportId: string,
+  gathered: IntelligenceGathered,
+  deps: FinalizeIntelligenceReportDeps,
+  isCancelled?: () => Promise<boolean>
+): Promise<string> {
+  const markCancelled = async () => {
+    await supabase
+      .from("reports")
+      .update({
+        status: "cancelled",
+        cancelled_at: new Date().toISOString(),
+        error_message: "Cancelled by user",
+      })
+      .eq("id", reportId);
+    return "";
+  };
+
+  // Cooperative cancellation checkpoint (P0 fix): gatherIntelligenceReport's
+  // internal Promise.all fan-out cannot be interrupted mid-flight without a
+  // larger architectural change (splitting it into a sequential per-section
+  // pipeline — tracked separately), but the narrative LLM call and PDF
+  // render that follow are both real, billable, avoidable work. A user who
+  // clicked Stop while the fan-out was in flight must not still get a final
+  // "ready" report and must not be billed for the narrative/PDF step.
+  if (isCancelled && (await isCancelled())) {
+    return markCancelled();
+  }
+
+  const narrative = await deps.generateReportNarrative(gathered.report, { useLlm: true });
+  const html = deps.generateIntelligenceReportHTML(gathered.report, gathered.branding, narrative);
+  const htmlFileName = `reports/${projectId}/${reportId}.html`;
+  const pdfFileName = `reports/${projectId}/${reportId}.pdf`;
+
+  let pdfStoragePath: string | null = null;
+  let htmlStoragePath: string | null = null;
+
+  const pdfBuffer = await deps.renderReportPdf(html);
+  if (pdfBuffer) {
+    const { error: uploadError } = await supabase.storage
+      .from("reports")
+      .upload(pdfFileName, pdfBuffer, { contentType: "application/pdf", upsert: true });
+    if (!uploadError) pdfStoragePath = pdfFileName;
+  }
+
+  try {
+    const { error: uploadError } = await supabase.storage
+      .from("reports")
+      .upload(htmlFileName, html, { contentType: "text/html", upsert: true });
+    if (!uploadError) htmlStoragePath = htmlFileName;
+  } catch {
+    // HTML upload failed — download route falls back to on-demand HTML render.
+  }
+
+  // Second checkpoint: the narrative LLM call and (especially) the Playwright
+  // PDF render above can take tens of seconds — long enough for a cancel
+  // requested mid-render to still land before we'd otherwise flip the row to
+  // "ready". Re-check and, if cancelled, discard the artifacts we just
+  // generated (they're already paid for, but we must not present a
+  // cancelled job as a completed one) instead of finalizing.
+  if (isCancelled && (await isCancelled())) {
+    return markCancelled();
+  }
+
+  // Guard the final write with an atomic status check: never flip a row that
+  // a concurrent cancel request already moved to cancelling/cancelled between
+  // our read above and this write.
+  const { data: finalized } = await supabase
+    .from("reports")
+    .update({
+      pdf_storage_path: pdfStoragePath,
+      html_storage_path: htmlStoragePath,
+      // Deep PDF rendering depends on the external ai-ui-capture Playwright
+      // service (ENABLE_AI_UI_CAPTURE + AI_UI_CAPTURE_URL). When it's not
+      // configured or fails, renderReportPdf returns null and the user must be
+      // told the download will be HTML, not silently handed an .html file
+      // dressed up as a PDF download.
+      pdf_degraded: !pdfStoragePath,
+      white_label: !!gathered.branding,
+      status: "ready",
+      error_message: null,
+    })
+    .eq("id", reportId)
+    .not("status", "in", "(cancelling,cancelled)")
+    .select("id")
+    .maybeSingle();
+
+  if (!finalized) {
+    // Lost the race to a cancel that landed between our checkpoint read and
+    // this write — leave the row however the cancel route left it (cancelled)
+    // rather than clobbering it back to ready.
+    return "";
+  }
+
+  return pdfStoragePath || htmlStoragePath || "";
+}
+
 export async function saveIntelligenceReportArtifacts(
   supabase: SupabaseClient,
   projectId: string,
   reportId: string,
-  organizationId: string
+  organizationId: string,
+  options?: { isCancelled?: () => Promise<boolean> }
 ): Promise<string> {
   return withJobContext({ reportId }, async () => {
     const { gatherIntelligenceReport } = await import("@/lib/engines/intelligence-report-builder");
@@ -220,46 +347,14 @@ export async function saveIntelligenceReportArtifacts(
     const gathered = await gatherIntelligenceReport(supabase, projectId, { sections });
     if (!gathered) throw new Error("No intelligence report data");
 
-    const narrative = await generateReportNarrative(gathered.report, { useLlm: true });
-    const html = generateIntelligenceReportHTML(gathered.report, gathered.branding, narrative);
-    const htmlFileName = `reports/${projectId}/${reportId}.html`;
-    const pdfFileName = `reports/${projectId}/${reportId}.pdf`;
-
-    let pdfStoragePath: string | null = null;
-    let htmlStoragePath: string | null = null;
-
-    const pdfBuffer = await renderReportPdf(html);
-    if (pdfBuffer) {
-      const { error: uploadError } = await supabase.storage
-        .from("reports")
-        .upload(pdfFileName, pdfBuffer, { contentType: "application/pdf", upsert: true });
-      if (!uploadError) pdfStoragePath = pdfFileName;
-    }
-
-    try {
-      const { error: uploadError } = await supabase.storage
-        .from("reports")
-        .upload(htmlFileName, html, { contentType: "text/html", upsert: true });
-      if (!uploadError) htmlStoragePath = htmlFileName;
-    } catch {
-      // HTML upload failed — download route falls back to on-demand HTML render.
-    }
-
-    await supabase.from("reports").update({
-      pdf_storage_path: pdfStoragePath,
-      html_storage_path: htmlStoragePath,
-      // Deep PDF rendering depends on the external ai-ui-capture Playwright
-      // service (ENABLE_AI_UI_CAPTURE + AI_UI_CAPTURE_URL). When it's not
-      // configured or fails, renderReportPdf returns null and the user must be
-      // told the download will be HTML, not silently handed an .html file
-      // dressed up as a PDF download.
-      pdf_degraded: !pdfStoragePath,
-      white_label: !!gathered.branding,
-      status: "ready",
-      error_message: null,
-    }).eq("id", reportId);
-
-    return pdfStoragePath || htmlStoragePath || "";
+    return finalizeIntelligenceReport(
+      supabase,
+      projectId,
+      reportId,
+      gathered,
+      { generateReportNarrative, generateIntelligenceReportHTML, renderReportPdf },
+      options?.isCancelled
+    );
   });
 }
 

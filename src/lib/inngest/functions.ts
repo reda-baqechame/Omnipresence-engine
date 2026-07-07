@@ -374,7 +374,16 @@ export const generateReport = inngest.createFunction(
     try {
       if (reportType === "deep") {
         await step.run("save-intelligence-report", async () => {
-          await saveIntelligenceReportArtifacts(supabase, projectId, reportId, "");
+          await saveIntelligenceReportArtifacts(supabase, projectId, reportId, "", {
+            isCancelled: async () => {
+              const { data } = await supabase
+                .from("reports")
+                .select("cancel_requested_at, status")
+                .eq("id", reportId)
+                .single();
+              return Boolean(data?.cancel_requested_at) || data?.status === "cancelling" || data?.status === "cancelled";
+            },
+          });
         });
       } else {
         const gathered = await step.run("gather-report-data", async () => {
