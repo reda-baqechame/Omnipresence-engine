@@ -7,6 +7,7 @@ import { buildProofReport, renderProofHTML } from "@/lib/engines/proof-report";
 import { canUseWhiteLabel } from "@/lib/plans/features";
 import { withJobContext } from "@/lib/observability/job-context";
 import type { RoadmapItem, SubscriptionPlan, VisibilityResult } from "@/types/database";
+import type { IntelligenceReportSectionId } from "@/types/intelligence-report";
 
 export interface WhiteLabelBranding {
   name: string;
@@ -209,7 +210,14 @@ export async function saveIntelligenceReportArtifacts(
     const { generateReportNarrative } = await import("@/lib/engines/intelligence-report-narrative");
     const { renderReportPdf } = await import("@/lib/providers/ai-ui-capture");
 
-    const gathered = await gatherIntelligenceReport(supabase, projectId);
+    const { data: reportRow } = await supabase
+      .from("reports")
+      .select("sections")
+      .eq("id", reportId)
+      .single();
+    const sections = (reportRow?.sections as IntelligenceReportSectionId[] | null) || undefined;
+
+    const gathered = await gatherIntelligenceReport(supabase, projectId, { sections });
     if (!gathered) throw new Error("No intelligence report data");
 
     const narrative = await generateReportNarrative(gathered.report, { useLlm: true });
@@ -259,13 +267,14 @@ export async function saveIntelligenceReportArtifacts(
 export async function renderReportHtmlForView(
   supabase: SupabaseClient,
   projectId: string,
-  reportType: "standard" | "deep" = "standard"
+  reportType: "standard" | "deep" = "standard",
+  sections?: IntelligenceReportSectionId[]
 ): Promise<string | null> {
   if (reportType === "deep") {
     const { gatherIntelligenceReport } = await import("@/lib/engines/intelligence-report-builder");
     const { generateIntelligenceReportHTML } = await import("@/lib/engines/intelligence-report-template");
     const { generateReportNarrative } = await import("@/lib/engines/intelligence-report-narrative");
-    const gathered = await gatherIntelligenceReport(supabase, projectId);
+    const gathered = await gatherIntelligenceReport(supabase, projectId, { sections });
     if (!gathered) return null;
     const narrative = await generateReportNarrative(gathered.report, { useLlm: false });
     return generateIntelligenceReportHTML(gathered.report, gathered.branding, narrative);

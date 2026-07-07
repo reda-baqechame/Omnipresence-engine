@@ -1,6 +1,7 @@
 import { createServiceClient } from "@/lib/supabase/server";
 import { renderReportHtmlForView, getOrgWhiteLabel } from "@/lib/engines/report-builder";
 import { notFound } from "next/navigation";
+import type { IntelligenceReportSectionId } from "@/types/intelligence-report";
 
 /**
  * White-label client portal — the branded, client-facing view of a project's
@@ -17,7 +18,7 @@ export default async function ClientPortalPage({
 
   const { data: report } = await supabase
     .from("reports")
-    .select("project_id, is_public, report_type, status, error_message, title")
+    .select("project_id, is_public, report_type, status, error_message, title, sections")
     .eq("share_token", token)
     .single();
 
@@ -56,7 +57,8 @@ export default async function ClientPortalPage({
   const html = await renderReportHtmlForView(
     supabase,
     report.project_id,
-    (report.report_type as "standard" | "deep") || "standard"
+    (report.report_type as "standard" | "deep") || "standard",
+    (report.sections as IntelligenceReportSectionId[] | null) || undefined
   );
   if (!html) notFound();
 

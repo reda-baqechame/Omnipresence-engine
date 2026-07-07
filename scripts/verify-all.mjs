@@ -69,6 +69,7 @@ const steps = [
         "src/lib/engines/__tests__/roi-provenance.test.ts",
         "src/lib/config/__tests__/claims-reality.test.ts",
         "src/lib/engines/__tests__/visibility-scanner.test.ts",
+        "src/lib/engines/__tests__/intelligence-report-sections.test.ts",
         "tests/security/tenant-isolation.test.ts",
         "src/lib/engines/__tests__/keyword-intelligence.test.ts",
         "src/lib/engines/__tests__/source-influence.test.ts",

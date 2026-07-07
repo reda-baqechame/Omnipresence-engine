@@ -4,6 +4,7 @@ import { renderReportHtmlForView } from "@/lib/engines/report-builder";
 import { renderReportPdf } from "@/lib/providers/ai-ui-capture";
 import { generateReportPDF } from "@/lib/engines/report-pdf";
 import { gatherReportData } from "@/lib/engines/report-builder";
+import type { IntelligenceReportSectionId } from "@/types/intelligence-report";
 
 export const runtime = "nodejs";
 // The deep-report PDF path calls out to the ai-ui-capture Playwright service
@@ -31,7 +32,7 @@ export async function GET(
   const { data: report } = await supabase
     .from("reports")
     .select(
-      "project_id, is_public, report_type, status, pdf_storage_path, html_storage_path, pdf_degraded"
+      "project_id, is_public, report_type, status, pdf_storage_path, html_storage_path, pdf_degraded, sections"
     )
     .eq("share_token", token)
     .single();
@@ -93,7 +94,12 @@ export async function GET(
   // Legacy fallback for reports generated before artifact paths were
   // persisted: regenerate on demand. This path is expected to shrink to zero
   // as old reports age out via report-retention pruning.
-  const html = await renderReportHtmlForView(supabase, report.project_id, reportType);
+  const html = await renderReportHtmlForView(
+    supabase,
+    report.project_id,
+    reportType,
+    (report.sections as IntelligenceReportSectionId[] | null) || undefined
+  );
   if (!html) {
     return NextResponse.json({ error: "No report data" }, { status: 404 });
   }
