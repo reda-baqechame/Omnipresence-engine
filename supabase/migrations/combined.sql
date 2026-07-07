@@ -1,5 +1,5 @@
--- PresenceOS combined migration (76 files)
--- Generated 2026-07-07T20:25:50.903Z
+-- PresenceOS combined migration (77 files)
+-- Generated 2026-07-07T20:39:48.244Z
 
 -- ========== 0001_init.sql ==========
 
@@ -3176,5 +3176,38 @@ COMMENT ON COLUMN reports.html_storage_path IS 'Object path within the private "
 COMMENT ON COLUMN reports.pdf_degraded IS 'True when PDF rendering failed at generation time and only an HTML artifact is available for download.';
 COMMENT ON COLUMN reports.pdf_url IS 'Deprecated: historically a getPublicUrl() result against the reports bucket, which has been private since 0073_reports_bucket_private.sql. Do not treat as a fetchable link — use pdf_storage_path via the service role client instead.';
 COMMENT ON COLUMN reports.html_url IS 'Deprecated: see pdf_url. Use html_storage_path.';
+
+
+-- ========== 0077_generation_cancellation.sql ==========
+
+-- Generation cancellation: reports and visibility scans currently have no way
+-- to be stopped once started. Add cancelling/cancelled states plus timestamps
+-- so a user-initiated stop can be recorded, checked cooperatively inside the
+-- long-running loops, and reflected honestly in report/scan status.
+
+ALTER TABLE reports DROP CONSTRAINT IF EXISTS reports_status_check;
+ALTER TABLE reports
+  ADD CONSTRAINT reports_status_check
+    CHECK (status IN ('pending', 'generating', 'ready', 'failed', 'cancelling', 'cancelled'));
+
+ALTER TABLE reports
+  ADD COLUMN IF NOT EXISTS cancel_requested_at TIMESTAMPTZ,
+  ADD COLUMN IF NOT EXISTS cancelled_at TIMESTAMPTZ;
+
+-- visibility_runs.status is the scan_status ENUM (0001_init.sql), not a CHECK
+-- constraint — new enum values must be added outside the same transaction
+-- that uses them (fine here; this migration only adds the values).
+ALTER TYPE scan_status ADD VALUE IF NOT EXISTS 'cancelling';
+ALTER TYPE scan_status ADD VALUE IF NOT EXISTS 'cancelled';
+
+ALTER TABLE visibility_runs
+  ADD COLUMN IF NOT EXISTS cancel_requested_at TIMESTAMPTZ,
+  ADD COLUMN IF NOT EXISTS cancelled_at TIMESTAMPTZ;
+
+CREATE INDEX IF NOT EXISTS idx_reports_cancel_requested
+  ON reports(id) WHERE cancel_requested_at IS NOT NULL AND cancelled_at IS NULL;
+
+CREATE INDEX IF NOT EXISTS idx_visibility_runs_cancel_requested
+  ON visibility_runs(id) WHERE cancel_requested_at IS NOT NULL AND cancelled_at IS NULL;
 
 
