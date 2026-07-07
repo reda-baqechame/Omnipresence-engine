@@ -62,4 +62,3 @@ jobs:
       - name: claims strict (prod)
         if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch' || github.event_name == 'push'
         run: CLAIMS_STRICT_PROD=1 npm run check:claims-backed
-        continue-on-error: true

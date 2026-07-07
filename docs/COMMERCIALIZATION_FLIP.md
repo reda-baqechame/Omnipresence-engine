@@ -24,8 +24,10 @@ The gate runs:
 
 1. `verify:all` — full CI parity (tests, typecheck, lint, build)
 2. `railway:verify` — app + OmniData health
-3. `webgraph:verify` with `WEBGRAPH_REQUIRE_FULL=0` (auth OK; full CC ingest tracked separately)
-4. `check:claims-backed` with `CLAIMS_STRICT_PROD=1` — **optional**, only when `CLAIMS_STRICT=1`
+3. `webgraph:verify` with `WEBGRAPH_REQUIRE_FULL=1` (full Common Crawl ingest required)
+4. `check:claims-backed` with `CLAIMS_STRICT_PROD=1` — **optional locally**, enforced in Production Gate CI
+
+Measured claims must be backed (11/11). `attribution_proof` is `first_party_when_connected` and passes strict when it is the only unbacked claim.
 
 ## Staging billing E2E
 
@@ -57,8 +59,23 @@ No code revert required — the flag is the kill switch.
 
 ## Checklist
 
-- [ ] `commercialization:gate` green
-- [ ] Staging Stripe E2E documented in BILLING.md completed
+### Production-ready (gates green — free mode stays on)
+
+- [x] Production Gate: `verify:all` + `railway:verify` + `production:ready` green on `main`
+- [x] `WEBGRAPH_REQUIRE_FULL=1` — full webgraph ingested (~1.68B edges)
+- [x] Supabase migrations through 0075 applied on production
+- [x] Live production readiness 100% (`npm run verify:prod:live`)
+- [x] `npm run commercialization:gate` green (without local `CLAIMS_STRICT=1` unless `.env.providers` loaded)
+- [x] Claims strict in CI: 11/11 measured + optional attribution connector claim
+- [x] Tenant isolation tests in `verify:all`
+- [x] Distributed rate limiting via OmniData Railway Redis (Upstash optional)
+
+### Before billing flip (do not set `FREE_ACCESS_MODE=false` yet)
+
+- [ ] SLO cron — 7 consecutive daily runs with 0 breaches (`SLACK_ALERT_WEBHOOK_URL` on Vercel)
+- [ ] Staging Stripe E2E documented in [BILLING.md](./BILLING.md) completed
+- [ ] Manual agency walkthrough — domain → scan → report → evidence in <15 min
+- [ ] Pricing design session → update `plans/limits.ts` and agencies page
 - [ ] SOC gaps reviewed (`COMPLIANCE_GAPS.md`)
 - [ ] Backup drill within last quarter (`BACKUP_RESTORE.md`)
 - [ ] `FREE_ACCESS_MODE=false` set in production env

@@ -6,8 +6,12 @@
 import { spawnSync } from "child_process";
 import { join, dirname } from "path";
 import { fileURLToPath } from "url";
+import { loadEnvFile } from "./load-vercel-env.mjs";
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
+for (const f of [".env.migrate.tmp", ".env.providers", ".env.operator.local", ".env.local"]) {
+  loadEnvFile(join(root, f));
+}
 const strict = process.env.CLAIMS_STRICT_PROD === "1";
 
 const result = spawnSync("node", ["scripts/benchmark.mjs", ...(strict ? ["--strict"] : [])], {
