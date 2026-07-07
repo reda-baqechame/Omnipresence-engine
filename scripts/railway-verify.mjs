@@ -150,12 +150,23 @@ if (omnidataUrl && !/localhost|127\.0\.0\.1|0\.0\.0\.0/.test(omnidataUrl)) {
     warn("OMNIDATA_API_KEY not set locally — skipping authenticated webgraph probe (set env or run with key)");
   } else {
     try {
-      const headers = { "x-api-key": apiKey };
+      /** Match app client auth (dataforseo.ts uses Bearer; OmniData accepts Bearer or x-api-key). */
+      const authHeaders = {
+        Authorization: `Bearer ${apiKey}`,
+        "x-api-key": apiKey,
+      };
       const { ok: healthy, status, json } = await fetchJson(`${omnidataUrl}/v3/backlinks/webgraph/status`, {
-        headers,
+        headers: authHeaders,
       });
       if (!healthy || !json) {
-        bad(`/v3/backlinks/webgraph/status returned ${status}`);
+        if (status === 401) {
+          bad(
+            `/v3/backlinks/webgraph/status returned 401 — OMNIDATA_API_KEY does not match Railway OmniData ` +
+              "(sync GitHub/Vercel secrets: node scripts/wire-railway-prod.mjs or gh secret set OMNIDATA_API_KEY)"
+          );
+        } else {
+          bad(`/v3/backlinks/webgraph/status returned ${status}`);
+        }
       } else {
         const row = json?.tasks?.[0]?.result?.[0] || {};
         const mode = row.ingest_mode || "?";

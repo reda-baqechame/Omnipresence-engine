@@ -24,9 +24,14 @@ if (existsSync(join(root, ".env.providers"))) {
 
 let wg = { ingest_in_progress: false, edges_ready: false, vertex_count: 0, edge_count: 0 };
 try {
-  const apiKey = process.env.OMNIDATA_API_KEY || "e8275a5a3ff590e3f66ef1577551397f5e51d834d23567d7da530356abc5aefb";
-  const res = await fetch("https://omnipresence-engine-production.up.railway.app/v3/backlinks/webgraph/status", {
-    headers: { "x-api-key": apiKey },
+  const apiKey = process.env.OMNIDATA_API_KEY;
+  const omnidataBase = (process.env.OMNIDATA_BASE_URL || "https://omnipresence-engine-production.up.railway.app").replace(
+    /\/$/,
+    ""
+  );
+  if (!apiKey) throw new Error("OMNIDATA_API_KEY required (.env.providers or env)");
+  const res = await fetch(`${omnidataBase}/v3/backlinks/webgraph/status`, {
+    headers: { Authorization: `Bearer ${apiKey}`, "x-api-key": apiKey },
   });
   const j = await res.json();
   wg = j.tasks?.[0]?.result?.[0] || wg;

@@ -43,16 +43,9 @@ if (!skipInfra) {
 }
 
 if (!skipLive) {
-  results.push(["railway:verify", run("railway:verify", "npm", ["run", "railway:verify"], {
-    env: {
-      OMNIDATA_API_KEY: process.env.OMNIDATA_API_KEY || "e8275a5a3ff590e3f66ef1577551397f5e51d834d23567d7da530356abc5aefb",
-      OMNIDATA_BASE_URL: process.env.OMNIDATA_BASE_URL || "https://omnipresence-engine-production.up.railway.app",
-    },
-  })]);
+  results.push(["railway:verify", run("railway:verify", "npm", ["run", "railway:verify"])]);
   results.push(["webgraph:verify", run("webgraph:verify", "npm", ["run", "webgraph:verify"], {
     env: {
-      OMNIDATA_API_KEY: process.env.OMNIDATA_API_KEY || "e8275a5a3ff590e3f66ef1577551397f5e51d834d23567d7da530356abc5aefb",
-      OMNIDATA_BASE_URL: process.env.OMNIDATA_BASE_URL || "https://omnipresence-engine-production.up.railway.app",
       WEBGRAPH_REQUIRE_FULL: process.env.WEBGRAPH_REQUIRE_FULL || "1",
     },
   })]);
