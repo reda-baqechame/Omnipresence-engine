@@ -1,3 +1,4 @@
+import type { SupabaseClient } from "@supabase/supabase-js";
 import { queryLLMForVisibility } from "@/lib/providers/ai-gateway";
 import {
   searchLLMMentions,
@@ -37,6 +38,13 @@ export interface VisibilityScanConfig {
   persona?: string;
   /** Persist each probe as it completes (Inngest progress + crash recovery). */
   onProbeResult?: (result: VisibilityScanResult) => void | Promise<void>;
+  /**
+   * Cooperative cancellation check, polled between prompt/engine iterations
+   * (never mid-probe). Return true to stop before the next provider call.
+   * Callers should throttle their own DB reads inside this callback — it may
+   * be invoked once per prompt×engine pair.
+   */
+  isCancelled?: () => boolean | Promise<boolean>;
 }
 
 export interface VisibilityScanResult extends Omit<VisibilityResult, "id" | "created_at"> {
@@ -47,6 +55,41 @@ export interface VisibilityScanOutput {
   results: VisibilityScanResult[];
   /** True when the wall-clock scan budget was exhausted before all prompts ran. */
   scanPartial: boolean;
+  /** True when a user-initiated cancel stopped the scan before it finished. */
+  cancelled: boolean;
+}
+
+/**
+ * Throttled cooperative-cancellation poller for a visibility_runs row. Reuses
+ * the same "cheap check between iterations" pattern already used for the
+ * wall-clock scan budget, but backed by a user-settable DB flag instead of a
+ * clock. Caches the result for `throttleMs` so a scan with many prompt×engine
+ * iterations doesn't hammer the DB once per probe.
+ */
+export function makeRunCancellationChecker(
+  supabase: SupabaseClient,
+  runId: string,
+  throttleMs = 4000
+): () => Promise<boolean> {
+  let lastCheck = 0;
+  let cached = false;
+  return async () => {
+    const now = Date.now();
+    if (now - lastCheck < throttleMs) return cached;
+    lastCheck = now;
+    try {
+      const { data } = await supabase
+        .from("visibility_runs")
+        .select("cancel_requested_at")
+        .eq("id", runId)
+        .maybeSingle();
+      cached = Boolean(data?.cancel_requested_at);
+    } catch {
+      // Fail-open: a transient read error must never itself stop a scan.
+      cached = false;
+    }
+    return cached;
+  };
 }
 
 const LLM_ENGINES = new Set<VisibilityEngine>(["chatgpt", "claude", "gemini"]);
@@ -77,13 +120,18 @@ export async function runVisibilityScan(
   const deadline = Date.now() + VISIBILITY_SCAN_BUDGET_MS;
 
   let budgetExhausted = false;
+  let cancelled = false;
   const probeTimeoutMs = Math.max(
     15_000,
     Number(process.env.VISIBILITY_PROBE_TIMEOUT_MS) || 90_000
   );
 
   for (const prompt of promptsToScan) {
-    if (budgetExhausted) break;
+    if (budgetExhausted || cancelled) break;
+    if (config.isCancelled && (await config.isCancelled())) {
+      cancelled = true;
+      break;
+    }
     for (const engine of engines) {
       if (Date.now() >= deadline) {
         budgetExhausted = true;
@@ -91,6 +139,10 @@ export async function runVisibilityScan(
           measured: results.length,
           prompt: prompt.text.slice(0, 80),
         });
+        break;
+      }
+      if (config.isCancelled && (await config.isCancelled())) {
+        cancelled = true;
         break;
       }
       let result: VisibilityScanResult | null = null;
@@ -118,7 +170,7 @@ export async function runVisibilityScan(
     }
   }
 
-  return { results, scanPartial: budgetExhausted };
+  return { results, scanPartial: budgetExhausted || cancelled, cancelled };
 }
 
 async function probeWithTimeout(

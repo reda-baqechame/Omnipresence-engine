@@ -5,6 +5,7 @@ import {
   runVisibilityScan,
   extractCitationSources,
   persistProbeTraces,
+  makeRunCancellationChecker,
   type VisibilityScanResult,
 } from "@/lib/engines/visibility-scanner";
 import { getActiveScanEngines } from "@/lib/config/scan-engines";
@@ -133,6 +134,7 @@ export async function persistVisibilityBatch(
 export interface VisibilityEngineBatchResult {
   results: VisibilityScanResult[];
   scanPartial: boolean;
+  cancelled: boolean;
 }
 
 export async function runVisibilityEngineBatch(
@@ -141,7 +143,7 @@ export async function runVisibilityEngineBatch(
   prep: VisibilityScanPrep,
   engine: VisibilityEngine
 ): Promise<VisibilityEngineBatchResult> {
-  const { results, scanPartial } = await runVisibilityScan({
+  const { results, scanPartial, cancelled } = await runVisibilityScan({
     projectId: project.id,
     runId: prep.runId,
     organizationId: project.organization_id,
@@ -152,11 +154,12 @@ export async function runVisibilityEngineBatch(
     prompts: prep.prompts,
     engines: [engine],
     maxPrompts: prep.maxScanPrompts,
+    isCancelled: makeRunCancellationChecker(supabase, prep.runId),
     onProbeResult: async (result) => {
       await insertVisibilityResultRows(supabase, [result]);
     },
   });
-  return { results, scanPartial };
+  return { results, scanPartial, cancelled };
 }
 
 export async function finalizeVisibilityScan(
@@ -164,8 +167,24 @@ export async function finalizeVisibilityScan(
   project: Project,
   runId: string,
   visibilityResults: VisibilityScanResult[],
-  options?: { scanPartial?: boolean }
+  options?: { scanPartial?: boolean; cancelled?: boolean }
 ) {
+  // A user-cancelled scan is not "completed with partial data" — it never ran
+  // to a conclusion the user asked to see, so it must be labeled cancelled,
+  // not silently folded into the ordinary partial/failed quality assessment.
+  if (options?.cancelled) {
+    await supabase
+      .from("visibility_runs")
+      .update({
+        status: "cancelled",
+        cancelled_at: new Date().toISOString(),
+        completed_at: new Date().toISOString(),
+        error_message: "Cancelled by user",
+      })
+      .eq("id", runId);
+    return { quality: null, runStatus: "cancelled" as const };
+  }
+
   const quality = assessVisibilityRunQuality(visibilityResults);
   const runStatus = visibilityRunStatusFromQuality(quality);
   const brandSov = computeBrandSovFromResults(
