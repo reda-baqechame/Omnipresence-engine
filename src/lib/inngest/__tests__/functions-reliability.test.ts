@@ -80,3 +80,57 @@ test("APM capture is imported and used in the jobs module", () => {
   const uses = source.match(/captureException\(/g) || [];
   assert.ok(uses.length >= 2, "expect multiple APM capture points across jobs");
 });
+
+test("generate-report checks cancellation before starting AND before the final save, and never produces a report for a cancelled run", () => {
+  const gen = functionChunks().find((c) => idOf(c) === "generate-report")!;
+  assert.ok(gen, "generate-report job must exist");
+  const cancelChecks = gen.match(/check-cancel-before-/g) || [];
+  assert.ok(
+    cancelChecks.length >= 2,
+    "generate-report must check cancellation both before starting generation and again before the final save step"
+  );
+  assert.match(gen, /status:\s*"cancelled"/, "a cancelled report must be marked cancelled");
+  assert.match(gen, /cancelled_at:/, "a cancelled report must record cancelled_at");
+  // A cancelled run must return before reaching save-report/save-intelligence-report —
+  // i.e. the cancellation branches' `return` must appear before those step names.
+  const saveIdx = Math.min(
+    ...["save-report", "save-intelligence-report"].map((s) => {
+      const i = gen.indexOf(`step.run("${s}"`);
+      return i === -1 ? Infinity : i;
+    })
+  );
+  const cancelReturnIdx = gen.indexOf('cancelled: true, reportId };');
+  assert.ok(cancelReturnIdx !== -1 && cancelReturnIdx < saveIdx, "cancellation must return before any save step runs");
+});
+
+test("run-full-scan checks cancellation between engine batches and skips scoring/finalization when cancelled", () => {
+  const scan = functionChunks().find((c) => idOf(c) === "run-full-scan")!;
+  assert.ok(scan, "run-full-scan must exist");
+  assert.match(scan, /batch\.cancelled/, "run-full-scan must check each engine batch's cancelled flag");
+  assert.match(scan, /cancelled:\s*true/, "a cancelled scan must short-circuit before score-roadmap/finalize");
+  // score-roadmap/finalize (the expensive scoring + email steps) must be
+  // unreachable once the cancelled branch has already returned.
+  const cancelReturnIdx = scan.indexOf("return { projectId, cancelled: true }");
+  const scoreIdx = scan.indexOf('step.run("score-roadmap"');
+  assert.ok(cancelReturnIdx !== -1 && cancelReturnIdx < scoreIdx, "cancellation must return before score-roadmap runs");
+
+  // The actual visibility_runs.status = 'cancelled' write happens in
+  // finalizeVisibilityScan (visibility-scan-batches.ts), which run-full-scan
+  // calls via the visibility-finalize step.
+  const batches = readFileSync(join(here, "..", "..", "engines", "visibility-scan-batches.ts"), "utf8");
+  assert.match(batches, /status:\s*"cancelled"/, "finalizeVisibilityScan must mark a cancelled run's status cancelled");
+});
+
+test("cancel routes gate the status transition to in-flight statuses only (never flip a completed job)", () => {
+  const root = join(here, "..", "..", "..", "app", "api");
+  const reportCancel = readFileSync(
+    join(root, "projects", "[id]", "report", "[reportId]", "cancel", "route.ts"),
+    "utf8"
+  );
+  const scanCancel = readFileSync(join(root, "projects", "[id]", "scan", "cancel", "route.ts"), "utf8");
+  for (const src of [reportCancel, scanCancel]) {
+    assert.match(src, /"cancelling"/, "cancel route must set status to cancelling");
+    assert.match(src, /cancel_requested_at/, "cancel route must record cancel_requested_at");
+    assert.match(src, /verifyProjectAccess/, "cancel route must authorize the caller against the project");
+  }
+});

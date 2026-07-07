@@ -29,6 +29,19 @@ const ROUTES: Array<{ path: string; mustInclude: string[] }> = [
     mustInclude: ["getReportPreset", "canUseDeepReport", "guardOrgEndpoint", "validateBody", 'status: "failed"'],
   },
   { path: "app/api/projects/[id]/scan/route.ts", mustInclude: ["guardOrgEndpoint", "verifyProjectAccess"] },
+  {
+    path: "app/api/projects/[id]/report/[reportId]/cancel/route.ts",
+    // Cancellation must gate on the in-flight statuses only — a ready/failed
+    // report is a completed job and cancel is a no-op idempotent read, never
+    // a status flip. .in("status", ["pending", "generating"]) on the update
+    // (not just the initial select) also closes the race where the row
+    // finishes between the read and the write.
+    mustInclude: ['verifyProjectAccess', '"cancelling"', 'cancel_requested_at', 'in("status", ["pending", "generating"])'],
+  },
+  {
+    path: "app/api/projects/[id]/scan/cancel/route.ts",
+    mustInclude: ['verifyProjectAccess', '"cancelling"', 'cancel_requested_at', 'in("status", ["pending", "running"])'],
+  },
   { path: "app/api/capabilities/route.ts", mustInclude: ["describeProviders"] },
   { path: "app/api/keywords/route.ts", mustInclude: ["verifyProjectAccess"] },
   { path: "app/api/ranks/route.ts", mustInclude: ["verifyProjectAccess"] },
