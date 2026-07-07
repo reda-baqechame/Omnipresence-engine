@@ -9,12 +9,10 @@ let otelReady = false;
 export async function initOtel(serviceName = "omnipresence-engine"): Promise<void> {
   if (otelReady || !process.env.OTEL_EXPORTER_OTLP_ENDPOINT) return;
   try {
+    process.env.OTEL_SERVICE_NAME = process.env.OTEL_SERVICE_NAME || serviceName;
     const { NodeSDK } = await import("@opentelemetry/sdk-node");
     const { OTLPTraceExporter } = await import("@opentelemetry/exporter-trace-otlp-http");
-    const { resourceFromAttributes } = await import("@opentelemetry/resources");
-    const { ATTR_SERVICE_NAME } = await import("@opentelemetry/semantic-conventions");
     const sdk = new NodeSDK({
-      resource: resourceFromAttributes({ [ATTR_SERVICE_NAME]: serviceName }),
       traceExporter: new OTLPTraceExporter({
         url: process.env.OTEL_EXPORTER_OTLP_ENDPOINT,
       }),
