@@ -4,7 +4,24 @@ import { ExternalLink } from "lucide-react";
 import { GenerateReportForm } from "@/components/generate-report-form";
 import { ReportVisibilityToggle } from "@/components/report-visibility-toggle";
 import { canUseDeepReport } from "@/lib/plans/features";
+import { formatJobCost, formatTokenCount } from "@/lib/utils";
 import type { SubscriptionPlan } from "@/types/database";
+
+/**
+ * Real attributed spend for a report, honest about coverage gaps: `actual_cost`
+ * only accumulates for provider calls that ran inside a job-context scope
+ * (migration 0078's increment_report_usage rollup) — omit entirely rather
+ * than show a misleading "$0.00" for a report with zero tracked spend.
+ */
+function reportCostLabel(report: { actual_cost?: number | string; tokens_used?: number | string }): string | null {
+  // NUMERIC columns come back as strings from PostgREST — coerce, matching
+  // the existing est_cost_usd handling in cost-guard.ts/external-api-guard.ts.
+  const cost = Number(report.actual_cost) || 0;
+  const tokens = Number(report.tokens_used) || 0;
+  if (cost <= 0 && tokens <= 0) return null;
+  const costStr = formatJobCost(cost);
+  return tokens > 0 ? `${costStr} · ${formatTokenCount(tokens)}` : costStr;
+}
 
 export default async function ReportsPage() {
   const supabase = await createClient();
@@ -95,6 +112,7 @@ export default async function ReportsPage() {
                 <p className="text-sm text-muted-foreground">
                   {(report.projects as { name: string; domain: string })?.name} ·{" "}
                   {new Date(report.created_at).toLocaleDateString()}
+                  {reportCostLabel(report) && <> · {reportCostLabel(report)}</>}
                 </p>
                 {report.status === "failed" && report.error_message && (
                   <p className="text-sm text-red-600 mt-1">{report.error_message}</p>

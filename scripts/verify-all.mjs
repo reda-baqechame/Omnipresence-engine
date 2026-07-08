@@ -86,6 +86,8 @@ const steps = [
         "src/lib/engines/__tests__/scan-credit-guard.test.ts",
         "src/app/api/__tests__/report-cancel-route.test.ts",
         "src/app/api/__tests__/report-generate-cancel-download-flow.test.ts",
+        "src/app/api/__tests__/jobs-running-route.test.ts",
+        "src/lib/__tests__/utils.test.ts",
         "src/app/api/__tests__/scan-cancel-route.test.ts",
         "tests/security/tenant-isolation.test.ts",
         "src/lib/engines/__tests__/keyword-intelligence.test.ts",
