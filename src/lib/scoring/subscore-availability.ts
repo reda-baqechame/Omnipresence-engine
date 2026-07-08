@@ -11,6 +11,18 @@ export type SubScoreDimensionKey =
   | "technical_readiness"
   | "conversion_readiness";
 
+/** All dimension keys, in a stable order — the single source of truth for "how many dimensions exist". */
+export const SCORE_DIMENSION_KEYS: SubScoreDimensionKey[] = [
+  "ai_visibility",
+  "search_visibility",
+  "local_visibility",
+  "social_presence",
+  "directory_coverage",
+  "authority_mentions",
+  "technical_readiness",
+  "conversion_readiness",
+];
+
 /**
  * P0 fix: calculateOmniPresenceScore() computes, per dimension, whether we
  * genuinely measured anything (breakdown.dimension_availability) — an

@@ -13,8 +13,10 @@ import { buildActionPlan } from "@/lib/engines/action-plan";
 import { ActionPlanPanel } from "@/components/action-plan-panel";
 import { buildPresenceGateScore } from "@/lib/scoring/presence-gate-builder";
 import { PresenceGateCard } from "@/components/presence-gate-card";
-import { isSubScoreAvailable } from "@/lib/scoring/subscore-availability";
+import { isSubScoreAvailable, SCORE_DIMENSION_KEYS } from "@/lib/scoring/subscore-availability";
 import { ProofEvidenceLinks } from "@/components/proof-evidence-links";
+import { DataHealthSummaryCard } from "@/components/data-health-summary-card";
+import { describeProviders } from "@/lib/providers/router";
 import Link from "next/link";
 
 export default async function ProjectOverviewPage({
@@ -48,6 +50,12 @@ export default async function ProjectOverviewPage({
   const gate = await buildPresenceGateScore(supabase, id);
 
   const latestScore = scores?.[scores.length - 1];
+  const measuredDimensions = latestScore
+    ? SCORE_DIMENSION_KEYS.filter((k) => isSubScoreAvailable(latestScore, k)).length
+    : 0;
+  const allProviders = await describeProviders();
+  const activeProviderCount = allProviders.filter((p) => p.usableNow).length;
+  const missingProviderCount = allProviders.length - activeProviderCount;
   const previousScore = scores && scores.length >= 2 ? scores[scores.length - 2] : null;
   const scoreDelta = previousScore
     ? latestScore!.omnipresence_score - previousScore.omnipresence_score
@@ -63,6 +71,14 @@ export default async function ProjectOverviewPage({
       <ScanPoller projectId={id} initialStatus={project.status} />
 
       <PresenceGateCard projectId={id} gate={gate} />
+
+      <DataHealthSummaryCard
+        projectId={id}
+        measuredDimensions={measuredDimensions}
+        totalDimensions={SCORE_DIMENSION_KEYS.length}
+        activeProviderCount={activeProviderCount}
+        missingProviderCount={missingProviderCount}
+      />
 
       <ActionPlanPanel projectId={id} plan={actionPlan} />
 
