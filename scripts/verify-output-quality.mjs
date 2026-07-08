@@ -56,6 +56,26 @@ assert(
   "misleading playwright-crawl adapter id must not remain in router/runners"
 );
 
+// Patch F (no-evidence/no-claim report quality gate): the deep-report LLM
+// executive summary must always pass through the SAME forbidden-claims and
+// content-defect guards generate-router.ts already applies to sovereign
+// content generation before it is allowed to ship in a paid report. This
+// pins the import + call sites so a future refactor can't silently drop the
+// guard and let a raw, unvetted Gemini response back to a client.
+const narrative = read("src/lib/engines/intelligence-report-narrative.ts");
+assert(
+  /from\s+["']@\/lib\/config\/claims["']/.test(narrative) && /findForbiddenClaims\(/.test(narrative),
+  "intelligence-report-narrative.ts must import and call findForbiddenClaims on LLM output"
+);
+assert(
+  /from\s+["']@\/lib\/engines\/content-defects["']/.test(narrative) && /detectContentDefects\(/.test(narrative),
+  "intelligence-report-narrative.ts must import and call detectContentDefects on LLM output"
+);
+assert(
+  /return fallback;/.test(narrative),
+  "intelligence-report-narrative.ts must fall back to the deterministic narrative when the quality gate rejects LLM output"
+);
+
 if (failures.length) {
   console.error("\nOutput quality gate failed:\n");
   for (const failure of failures) console.error(`- ${failure}`);
