@@ -55,6 +55,12 @@ function findReport(filters: Record<string, unknown>): ReportRow | undefined {
 function selectChain(filters: Record<string, unknown>) {
   return {
     eq: (col: string, val: unknown) => selectChain({ ...filters, [col]: val }),
+    // Versioning's "find the latest report in this lineage" query
+    // (.order("version", {ascending:false}).limit(1).maybeSingle()) — filters
+    // already narrow to a single project+report_type in these tests, so
+    // order/limit are no-ops that just keep the chain going.
+    order: () => selectChain(filters),
+    limit: () => selectChain(filters),
     single: async () => {
       const row = findReport(filters);
       return { data: row ?? null, error: row ? null : { message: "not found" } };

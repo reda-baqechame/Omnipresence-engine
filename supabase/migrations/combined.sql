@@ -1,5 +1,5 @@
--- PresenceOS combined migration (80 files)
--- Generated 2026-07-07T21:27:46.722Z
+-- PresenceOS combined migration (81 files)
+-- Generated 2026-07-08T01:19:03.575Z
 
 -- ========== 0001_init.sql ==========
 
@@ -3326,5 +3326,24 @@ ALTER TABLE visibility_runs
 CREATE UNIQUE INDEX IF NOT EXISTS visibility_runs_project_idempotency_key
   ON visibility_runs(project_id, idempotency_key)
   WHERE idempotency_key IS NOT NULL;
+
+
+-- ========== 0081_report_versioning.sql ==========
+
+-- Basic report versioning: regenerating a report for a project today just
+-- creates another unrelated `reports` row with no link to the one it's
+-- meant to replace, so the Reports list fills up with an unordered pile of
+-- "OmniPresence Report" entries and there is no way to tell which one is
+-- current. Add a supersede pointer + a per-lineage version counter, scoped
+-- per (project_id, report_type) so a project's standard and deep report
+-- lineages stay independent of each other.
+
+ALTER TABLE reports
+  ADD COLUMN IF NOT EXISTS previous_report_id UUID REFERENCES reports(id) ON DELETE SET NULL,
+  ADD COLUMN IF NOT EXISTS version INTEGER NOT NULL DEFAULT 1;
+
+CREATE INDEX IF NOT EXISTS reports_previous_report_idx
+  ON reports(previous_report_id)
+  WHERE previous_report_id IS NOT NULL;
 
 

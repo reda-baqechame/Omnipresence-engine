@@ -635,6 +635,10 @@ export interface Report {
   provider_calls_count?: number;
   current_step?: string | null;
   progress_percent?: number | null;
+  /** The report this one supersedes, scoped per (project_id, report_type) lineage (0081). Null for the first report in a lineage. */
+  previous_report_id?: string | null;
+  /** 1-based position in its (project_id, report_type) lineage. */
+  version?: number;
   created_at: string;
 }
 
