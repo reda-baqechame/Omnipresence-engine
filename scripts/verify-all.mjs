@@ -31,6 +31,10 @@ const steps = [
     ok: () =>
       run("node", [
         "--disable-warning=MODULE_TYPELESS_PACKAGE_JSON",
+        // Lets behavioral route/trigger tests intercept real dependencies
+        // (Supabase client, Inngest, next/server's after()) via
+        // node:test's mock.module() instead of source-text/regex assertions.
+        "--experimental-test-module-mocks",
         // Resolve the app's `@/` alias + extensionless imports so feature tests
         // can exercise REAL engines without production-code churn.
         "--import",
@@ -72,11 +76,16 @@ const steps = [
         "src/lib/engines/__tests__/intelligence-report-sections.test.ts",
         "src/lib/engines/__tests__/report-pdf-pipeline.test.ts",
         "src/lib/engines/__tests__/scan-cancellation.test.ts",
-        "src/lib/engines/__tests__/scan-trigger-idempotency.test.ts",
+        "src/lib/engines/__tests__/scan-trigger-idempotency-duplicate.test.ts",
+        "src/lib/engines/__tests__/scan-trigger-idempotency-sync.test.ts",
+        "src/lib/engines/__tests__/scan-trigger-idempotency-inngest.test.ts",
+        "src/lib/engines/__tests__/scan-idempotency-persistence.test.ts",
         "src/lib/engines/__tests__/deep-report-cancellation.test.ts",
         "src/lib/scoring/__tests__/subscore-availability.test.ts",
         "src/lib/observability/__tests__/job-context.test.ts",
         "src/lib/engines/__tests__/scan-credit-guard.test.ts",
+        "src/app/api/__tests__/report-cancel-route.test.ts",
+        "src/app/api/__tests__/scan-cancel-route.test.ts",
         "tests/security/tenant-isolation.test.ts",
         "src/lib/engines/__tests__/keyword-intelligence.test.ts",
         "src/lib/engines/__tests__/source-influence.test.ts",

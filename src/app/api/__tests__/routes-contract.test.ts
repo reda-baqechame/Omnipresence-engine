@@ -48,18 +48,18 @@ const ROUTES: Array<{ path: string; mustInclude: string[] }> = [
     // already-in-flight-row case.
     mustInclude: ['neq("status", "scanning")', "idempotencyKey: parsed.data.idempotency_key"],
   },
+  // The report-cancel and scan-cancel routes' actual status-transition
+  // control flow (in-flight-only gating, atomic race-loss handling, RBAC) is
+  // covered behaviorally in report-cancel-route.test.ts / scan-cancel-route.test.ts
+  // via mock.module() against the real POST handlers — real HTTP responses
+  // over a mocked Supabase layer, not source-text presence checks.
   {
     path: "app/api/projects/[id]/report/[reportId]/cancel/route.ts",
-    // Cancellation must gate on the in-flight statuses only — a ready/failed
-    // report is a completed job and cancel is a no-op idempotent read, never
-    // a status flip. .in("status", ["pending", "generating"]) on the update
-    // (not just the initial select) also closes the race where the row
-    // finishes between the read and the write.
-    mustInclude: ['verifyProjectAccess', '"cancelling"', 'cancel_requested_at', 'in("status", ["pending", "generating"])'],
+    mustInclude: ["verifyProjectAccess"],
   },
   {
     path: "app/api/projects/[id]/scan/cancel/route.ts",
-    mustInclude: ['verifyProjectAccess', '"cancelling"', 'cancel_requested_at', 'in("status", ["pending", "running"])'],
+    mustInclude: ["verifyProjectAccess"],
   },
   {
     path: "app/api/report/[token]/pdf/route.ts",

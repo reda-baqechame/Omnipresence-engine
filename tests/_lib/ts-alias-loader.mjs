@@ -55,9 +55,25 @@ const STUBS = {
   "next/headers": path.join(root, "tests", "_lib", "stubs", "next-headers.mjs"),
 };
 
+// Bare package subpaths with no "exports" map (like next's, at least for
+// /server) hit a resolution gap once ANY loader hook is registered: Node's
+// default resolver normally CJS-style probes ".js"/index files for these,
+// but that probing doesn't kick in through a custom `resolve` hook chain,
+// so `import("next/server")` fails with ERR_MODULE_NOT_FOUND even though the
+// real file exists — Node's own error suggests the fix ("Did you mean to
+// import next/server.js?"). Resolve the handful this test suite needs by
+// explicit extension so real behavioral tests can `mock.module()` them
+// (next/headers instead gets a full request-context-free stub above, since
+// its real implementation needs an active Next.js request).
+const EXTENSION_PROBE = new Set(["next/server"]);
+
 export async function resolve(specifier, context, nextResolve) {
   if (STUBS[specifier]) {
     return { url: pathToFileURL(STUBS[specifier]).href, shortCircuit: true };
+  }
+
+  if (EXTENSION_PROBE.has(specifier)) {
+    return nextResolve(`${specifier}.js`, context);
   }
 
   // `@/x` → `<repo>/src/x` (with extension probing)
