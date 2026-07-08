@@ -344,8 +344,29 @@ export async function saveIntelligenceReportArtifacts(
       .single();
     const sections = (reportRow?.sections as IntelligenceReportSectionId[] | null) || undefined;
 
-    const gathered = await gatherIntelligenceReport(supabase, projectId, { sections });
+    const gathered = await gatherIntelligenceReport(supabase, projectId, {
+      sections,
+      isCancelled: options?.isCancelled,
+    });
     if (!gathered) throw new Error("No intelligence report data");
+
+    // The gather fan-out (bounded-concurrency, cancellation-aware — see
+    // runCancellableSteps in intelligence-report-builder.ts) stopped
+    // scheduling new steps once cancellation was observed. Mirror
+    // finalizeIntelligenceReport's own markCancelled() write here so a
+    // cancel detected mid-gather is recorded immediately rather than
+    // silently dropped (the caller only gets "" back either way).
+    if (gathered.cancelled) {
+      await supabase
+        .from("reports")
+        .update({
+          status: "cancelled",
+          cancelled_at: new Date().toISOString(),
+          error_message: "Cancelled by user",
+        })
+        .eq("id", reportId);
+      return "";
+    }
 
     return finalizeIntelligenceReport(
       supabase,
@@ -370,7 +391,7 @@ export async function renderReportHtmlForView(
     const { generateIntelligenceReportHTML } = await import("@/lib/engines/intelligence-report-template");
     const { generateReportNarrative } = await import("@/lib/engines/intelligence-report-narrative");
     const gathered = await gatherIntelligenceReport(supabase, projectId, { sections });
-    if (!gathered) return null;
+    if (!gathered || gathered.cancelled) return null;
     const narrative = await generateReportNarrative(gathered.report, { useLlm: false });
     return generateIntelligenceReportHTML(gathered.report, gathered.branding, narrative);
   }

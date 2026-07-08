@@ -82,6 +82,8 @@ const steps = [
         "src/lib/engines/__tests__/scan-trigger-idempotency-inngest.test.ts",
         "src/lib/engines/__tests__/scan-idempotency-persistence.test.ts",
         "src/lib/engines/__tests__/deep-report-cancellation.test.ts",
+        "src/lib/engines/__tests__/deep-report-cancellation-fanout.test.ts",
+        "src/lib/engines/__tests__/save-intelligence-report-cancelled-gather.test.ts",
         "src/lib/engines/__tests__/report-methodology-appendix.test.ts",
         "src/lib/scoring/__tests__/subscore-availability.test.ts",
         "src/lib/observability/__tests__/job-context.test.ts",

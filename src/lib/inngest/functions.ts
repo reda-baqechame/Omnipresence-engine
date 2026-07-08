@@ -347,13 +347,15 @@ export const generateReport = inngest.createFunction(
     // Cooperative cancellation checkpoint: cheap DB read before the expensive
     // work (gatherIntelligenceReport fans out ~15 provider/engine calls; the
     // standard path's PDF render is comparatively cheap but still real work).
-    // The deep-report internal pipeline currently gathers its sections via a
-    // single Promise.all fan-out rather than a sequential per-section loop,
-    // so mid-generation cancellation there would need an architecture change
-    // (splitting that fan-out into an interruptible sequence) — out of scope
-    // for this ticket. This checkpoint still guarantees a cancel requested
-    // before generation starts is honored, and never produces a final report
-    // for a cancelled run.
+    // This checkpoint guarantees a cancel requested before generation starts
+    // is honored, and never produces a final report for a cancelled run. The
+    // deep-report path also gets FINER-GRAINED mid-flight protection: its
+    // intelligence fan-out is a bounded-concurrency, cancellation-aware task
+    // runner (runCancellableSteps() in intelligence-report-builder.ts) that
+    // re-checks cancellation before scheduling/executing each named step, so
+    // a cancel that lands after this checkpoint but mid-gather still stops
+    // new expensive calls from starting — see saveIntelligenceReportArtifacts
+    // / gatherIntelligenceReport (report-builder.ts).
     const cancelledBeforeStart = await step.run("check-cancel-before-generate", async () => {
       const { data } = await supabase
         .from("reports")
