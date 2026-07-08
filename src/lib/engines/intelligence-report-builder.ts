@@ -220,7 +220,12 @@ export async function gatherIntelligenceReport(
 ): Promise<GatherIntelligenceResult | null> {
   const isCancelled = opts.isCancelled ? async () => Boolean(await opts.isCancelled!()) : async () => false;
 
-  const base = await gatherReportData(supabase, projectId);
+  // Patch C.1: thread the same cancellation check into gatherReportData() so
+  // its internal real-CPC lookup (the one paid/OmniData call inside the
+  // otherwise-cheap "base" gather) is skipped too when a cancel already
+  // landed before this deep-report gather even started, not just before the
+  // named-step fan-out below.
+  const base = await gatherReportData(supabase, projectId, { isCancelled });
   if (!base) return null;
 
   const { reportData, whiteLabel } = base;

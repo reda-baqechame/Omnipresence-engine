@@ -2,7 +2,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import { generateReportHTML, type ReportData } from "@/lib/engines/report-generator";
 import { generateReportPDF } from "@/lib/engines/report-pdf";
 import { calculateAdsEquivalent } from "@/lib/engines/ads-equivalent";
-import { getRealKeywordCpc } from "@/lib/providers/dataforseo";
+import { getCachedRealKeywordCpc } from "@/lib/providers/keyword-cpc-cache";
 import { buildProofReport, renderProofHTML } from "@/lib/engines/proof-report";
 import { canUseWhiteLabel } from "@/lib/plans/features";
 import { withJobContext } from "@/lib/observability/job-context";
@@ -44,9 +44,26 @@ export async function getOrgWhiteLabel(
   };
 }
 
+export interface GatherReportDataOptions {
+  /**
+   * Cooperative cancellation check (Patch C.1 — hostile-audit finding: this
+   * function unconditionally called getRealKeywordCpc(), a real billable
+   * Google-Ads-Keyword-Planner-backed call, with no cancellation checkpoint
+   * at all, so a user who cancelled a deep report immediately could still
+   * trigger that one paid lookup before intelligence-report-builder.ts's own
+   * first checkpoint ever ran). Checked immediately before the CPC fetch
+   * below, not at function entry — the scores/findings/coverage/etc. queries
+   * above are cheap, non-billable DB reads with no cost/cancellation reason
+   * to gate. Callers that don't support cancellation (standard reports today)
+   * simply omit this and get the unchanged, always-fetch behavior.
+   */
+  isCancelled?: () => boolean | Promise<boolean>;
+}
+
 export async function gatherReportData(
   supabase: SupabaseClient,
-  projectId: string
+  projectId: string,
+  opts: GatherReportDataOptions = {}
 ): Promise<{ reportData: ReportData; whiteLabel?: WhiteLabelBranding } | null> {
   const { data: project } = await supabase.from("projects").select("*").eq("id", projectId).single();
   if (!project) return null;
@@ -111,7 +128,15 @@ export async function gatherReportData(
         .limit(50);
       kwList = (rankRows || []).map((k) => k.keyword).filter(Boolean);
     }
-    if (kwList.length) realCpc = await getRealKeywordCpc(kwList);
+    // Cancellation checkpoint (Patch C.1): the only paid/OmniData network call
+    // in this function is the CPC lookup immediately below — check right
+    // before it, not earlier, so a cancel requested mid-gather still skips
+    // this specific billable call without needing to also skip the cheap DB
+    // reads above.
+    const cancelled = kwList.length > 0 && opts.isCancelled ? await opts.isCancelled() : false;
+    if (kwList.length && !cancelled) {
+      realCpc = await getCachedRealKeywordCpc(supabase, kwList);
+    }
   }
 
   const adsEquivalent = attribution

@@ -15,6 +15,7 @@ const combined = readFileSync(join(root, "supabase/migrations/combined.sql"), "u
 const POLICY_ALLOWLIST = new Set([
   "webhook_events",
   "api_spend_daily",
+  "keyword_cpc_cache",
 ]);
 
 function extractTables(sql) {
