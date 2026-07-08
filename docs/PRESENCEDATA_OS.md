@@ -128,6 +128,60 @@ for provider/capability metadata).
   proves the evidence store cannot be used to launder a fabricated number
   into something that looks measured.
 
+## First-party official connectors (Patch I)
+
+**Files**: `src/lib/engines/attribution.ts` (the actual, already-tested GSC/GA4/
+Bing API calls — `syncGoogleSearchConsole`, `syncGoogleAnalytics`,
+`syncBingWebmaster`), `src/lib/oauth/tokens.ts` (`getValidOAuthToken()` — OAuth
+token retrieval + refresh), `src/lib/providers/first-party-analytics.ts` (the
+canonical per-project read surface added by this patch).
+
+These three official, free-tier APIs were **already fully wired end-to-end**
+before this patch: OAuth connect/callback (`/api/oauth`,
+`/api/oauth/callback`), per-project token storage (`oauth_connections`), the
+attribution sync orchestrator (`src/lib/engines/attribution-sync.ts`), and the
+outcome-guarantee connector-health gate (`src/lib/engines/connector-health.ts`)
+all already existed and already honored "unavailable, never a guess" —
+`syncGoogleSearchConsole`/`syncGoogleAnalytics`/`syncBingWebmaster` all return
+`available: false` (never a confident zero) on a missing token or a failed
+call. Patch I did not rebuild this; it closed two real gaps found while
+auditing it, and added one new canonical entry point:
+
+1. **Bing token refresh was missing.** `getValidOAuthToken()` already
+   self-refreshed expired Google and HubSpot tokens, but had no branch for
+   `bing_webmaster` — an expired Bing token silently returned the same
+   already-expired token forever, so a customer's Bing connection would go
+   permanently stale until they manually reconnected. Fixed by adding
+   `refreshBingAccessToken()` (same authorization_code + refresh_token flow
+   Bing already grants on connect) alongside the existing Google/HubSpot
+   branches.
+2. **A GA4 connection with no property selected was invisible to connector
+   health.** `attribution-sync.ts` only set
+   `sourceAvailability.google_analytics` when a `property_id` existed;
+   otherwise the key was never set at all, so `deriveConnectorReport()`'s
+   `availability[provider] === false` check never tripped and a connected-
+   but-unconfigured GA4 property showed as healthy indefinitely. Fixed by
+   explicitly setting `sourceAvailability.google_analytics = false` in that
+   branch.
+3. **New**: `getSearchConsoleSnapshot()` / `getGa4Snapshot()` /
+   `getBingWebmasterSnapshot()` in `first-party-analytics.ts` give any new
+   caller one function per source instead of hand-rolling the
+   `getValidOAuthToken()` + `oauth_connections.metadata` (GA4 property id)
+   lookup that `attribution-sync.ts`, `/api/gsc`, and `/api/roi` each
+   currently do independently. Same contract as
+   `services/omnidata/src/engines/keyword-planner.ts`'s `getKeywordMetrics()`:
+   returns `null` — never zeros — when not connected, not fully configured, or
+   the live call fails. Wired into `GET /api/connectors/health` behind an
+   opt-in `?includeSnapshots=true` (the default response stays a cheap,
+   DB-only read with no live API calls).
+
+**What this does NOT do**: it does not migrate `attribution-sync.ts`,
+`/api/gsc`, or `/api/roi` to call `first-party-analytics.ts` instead of their
+existing inline token/metadata lookups — those call sites are well-tested and
+working; forcing a migration for cosmetic consistency was judged higher risk
+than value for this patch. `first-party-analytics.ts` is the new canonical
+surface for callers that don't exist yet, not a mandatory refactor target.
+
 ## Pillar 5 — Benchmark layer (honesty note: partial today)
 
 **Files that exist today**: `tests/golden/**/*.accuracy.test.ts` (sovereign

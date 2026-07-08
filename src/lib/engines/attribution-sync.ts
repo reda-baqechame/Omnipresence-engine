@@ -92,6 +92,15 @@ export async function syncProjectAttribution(
       leads += ga4Data.leads;
       revenue += ga4Data.revenue;
       sourceAvailability.google_analytics = ga4Data.available;
+    } else {
+      // Token exists (user completed OAuth) but no GA4 property has been
+      // selected yet. Leaving source_availability unset here would make this
+      // connection invisible to connector-health's stale/expired detection
+      // (deriveConnectorReport() only flags `availability[provider] === false`
+      // — `undefined` reads as "never checked" and shows a false "ok"). A
+      // connected-but-unconfigured GA4 property must surface the same way a
+      // failed sync does, not disappear.
+      sourceAvailability.google_analytics = false;
     }
   }
 
