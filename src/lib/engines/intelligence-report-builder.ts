@@ -28,6 +28,7 @@ import {
 } from "@/types/intelligence-report";
 import { applySectionSelection, resolveSectionsIncluded } from "@/lib/engines/report-section-selection";
 import { recordMetric } from "@/lib/observability/log";
+import { DEEP_REPORT_GATHER_STEPS } from "@/lib/engines/report-step-names";
 
 const DEFAULT_ATTRIBUTIONS: ReportAttribution[] = [
   { source: "Common Crawl", license: "Open data", url: "https://commoncrawl.org/" },
@@ -72,6 +73,16 @@ export interface GatherIntelligenceOptions {
    * `makeRunCancellationChecker` in visibility-scanner.ts.
    */
   isCancelled?: () => boolean | Promise<boolean>;
+  /**
+   * Patch D: forwarded straight into runCancellableSteps() below so a
+   * caller (saveIntelligenceReportArtifacts) can attach a real progress
+   * writer. Kept optional and untyped-to-DB-writes here — this module has
+   * no Supabase-table-writing concerns of its own, matching the
+   * dependency-injection style already used by finalizeIntelligenceReport's
+   * `deps` in report-builder.ts.
+   */
+  onStepStart?: (stepName: string) => void | Promise<void>;
+  onStepComplete?: (stepName: string) => void | Promise<void>;
 }
 
 /** A single named, independently schedulable unit of expensive work. */
@@ -201,17 +212,9 @@ export type GatherIntelligenceResult =
  * `report_synthesis` and `pdf_generation` are deliberately NOT gathered here —
  * they happen downstream in finalizeIntelligenceReport() (report-builder.ts),
  * which already has its own pre-narrative / pre-finalize cancellation
- * checkpoints for that half of the pipeline. */
-const DEEP_REPORT_STEP_NAMES = [
-  "ai_visibility",
-  "competitor_analysis",
-  "backlink_analysis",
-  "serp_analysis",
-  "keyword_analysis",
-  "technical_audit",
-  "local_analysis",
-  "analytics_attribution",
-] as const;
+ * checkpoints for that half of the pipeline. Sourced from report-step-names.ts
+ * so report-builder.ts's progress tracker uses the exact same list (Patch D). */
+const DEEP_REPORT_STEP_NAMES = DEEP_REPORT_GATHER_STEPS;
 
 export async function gatherIntelligenceReport(
   supabase: SupabaseClient,
@@ -404,6 +407,8 @@ export async function gatherIntelligenceReport(
     steps,
     concurrency: 3,
     isCancelled,
+    onStepStart: opts.onStepStart,
+    onStepComplete: opts.onStepComplete,
     onStepFailed: (name, error) => {
       stepErrors[name] = error;
     },

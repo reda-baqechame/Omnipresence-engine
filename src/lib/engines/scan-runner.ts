@@ -28,6 +28,8 @@ import { computeBrandSovFromResults } from "@/lib/engines/share-of-voice";
 import { emitWebhookEvent } from "@/lib/notifications/webhooks";
 import { buildSourceGraph } from "@/lib/engines/source-graph";
 import { insertVisibilityResultRows } from "@/lib/engines/visibility-scan-batches";
+import { createStepProgressTracker } from "@/lib/observability/job-progress";
+import { SCAN_STEP_NAMES } from "@/lib/engines/report-step-names";
 import type {
   Project,
   TechnicalFinding,
@@ -136,6 +138,14 @@ export async function runProjectScan(
   await supabase.from("visibility_results").delete().eq("project_id", projectId);
   await supabase.from("ai_probe_traces").delete().eq("project_id", projectId);
 
+  // Patch D: real current_step/progress_percent for this run, from here
+  // onward — see SCAN_STEP_NAMES for why the phases before this line (which
+  // ran before visibility_runs even had a row to write to) aren't tracked.
+  const progress = createStepProgressTracker(supabase, "visibility_runs", run!.id, SCAN_STEP_NAMES);
+  await progress.onStepStart("visibility_scan");
+  const totalPromptsForProgress = Math.max(Math.min(prompts.length, maxScanPrompts), 1);
+  let probesCompletedForProgress = 0;
+
   const { results: visibilityResults, cancelled: scanCancelled } = await runVisibilityScan({
     projectId,
     runId: run!.id,
@@ -149,8 +159,11 @@ export async function runProjectScan(
     isCancelled: makeRunCancellationChecker(supabase, run!.id),
     onProbeResult: async (result) => {
       await insertVisibilityResultRows(supabase, [result]);
+      probesCompletedForProgress++;
+      await progress.onStepProgress("visibility_scan", probesCompletedForProgress / totalPromptsForProgress);
     },
   });
+  if (!scanCancelled) await progress.onStepComplete("visibility_scan");
 
   if (scanCancelled) {
     // User-initiated stop: record the honest state and end the pipeline here.
@@ -173,6 +186,7 @@ export async function runProjectScan(
     return { projectId, score: null, demo: false, cancelled: true };
   }
 
+  await progress.onStepStart("citation_extraction");
   const citationRows = extractCitationSources(
     visibilityResults as import("@/lib/engines/visibility-scanner").VisibilityScanResult[],
     p.competitors || [],
@@ -184,7 +198,9 @@ export async function runProjectScan(
   }
   // Rebuild the market-specific Source/Citation Graph from the fresh citations.
   await buildSourceGraph(projectId);
+  await progress.onStepComplete("citation_extraction");
 
+  await progress.onStepStart("scoring");
   // A scan with only a handful of SERP hits while every AI engine is unavailable
   // is not a professional result — mark the run failed so the UI prompts re-scan.
   const quality = assessVisibilityRunQuality(
@@ -203,6 +219,12 @@ export async function runProjectScan(
       completed_at: new Date().toISOString(),
       error_message: quality.message,
       brand_sov: brandSov,
+      // Patch D: this write is this run's terminal state — coverage_check/
+      // competitor_resolution/roadmap_generation below still do real work,
+      // but it's local composite computation over data already gathered
+      // (no further AI-engine probes), not part of the tracked scan phases.
+      current_step: null,
+      progress_percent: 100,
     })
     .eq("id", run!.id);
 

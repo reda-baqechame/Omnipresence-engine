@@ -6,6 +6,8 @@ import { getCachedRealKeywordCpc } from "@/lib/providers/keyword-cpc-cache";
 import { buildProofReport, renderProofHTML } from "@/lib/engines/proof-report";
 import { canUseWhiteLabel } from "@/lib/plans/features";
 import { withJobContext } from "@/lib/observability/job-context";
+import { createStepProgressTracker } from "@/lib/observability/job-progress";
+import { DEEP_REPORT_ALL_STEPS } from "@/lib/engines/report-step-names";
 import type { RoadmapItem, SubscriptionPlan, VisibilityResult } from "@/types/database";
 import type {
   IntelligenceReport,
@@ -221,6 +223,12 @@ export async function saveReportArtifacts(
         pdf_degraded: !pdfStoragePath,
         white_label: !!whiteLabel,
         status: "ready",
+        // Patch D: standard reports don't run through a step tracker (no
+        // named sub-steps, no cancellation support upstream), but the final
+        // write should still leave a truthful terminal state instead of the
+        // stale mid-generation step/percent a caller may have set.
+        current_step: null,
+        progress_percent: 100,
       })
       .eq("id", reportId);
 
@@ -238,6 +246,15 @@ interface FinalizeIntelligenceReportDeps {
     narrative: ReportNarrative
   ) => string;
   renderReportPdf: (html: string) => Promise<Buffer | null>;
+  /**
+   * Patch D: fired at the start of each named finalize-phase step
+   * ("narrative_generation", "pdf_render", "finalizing") so a real progress
+   * tracker (see saveIntelligenceReportArtifacts) can write truthful
+   * current_step/progress_percent. Optional and unused by existing tests'
+   * stub deps — they simply never observe a progress write, exactly as
+   * before this patch.
+   */
+  onStep?: (stepName: string) => void | Promise<void>;
 }
 
 /**
@@ -281,6 +298,7 @@ export async function finalizeIntelligenceReport(
     return markCancelled();
   }
 
+  if (deps.onStep) await deps.onStep("narrative_generation");
   const narrative = await deps.generateReportNarrative(gathered.report, { useLlm: true });
   const html = deps.generateIntelligenceReportHTML(gathered.report, gathered.branding, narrative);
   const htmlFileName = `reports/${projectId}/${reportId}.html`;
@@ -289,6 +307,7 @@ export async function finalizeIntelligenceReport(
   let pdfStoragePath: string | null = null;
   let htmlStoragePath: string | null = null;
 
+  if (deps.onStep) await deps.onStep("pdf_render");
   const pdfBuffer = await deps.renderReportPdf(html);
   if (pdfBuffer) {
     const { error: uploadError } = await supabase.storage
@@ -316,6 +335,8 @@ export async function finalizeIntelligenceReport(
     return markCancelled();
   }
 
+  if (deps.onStep) await deps.onStep("finalizing");
+
   // Guard the final write with an atomic status check: never flip a row that
   // a concurrent cancel request already moved to cancelling/cancelled between
   // our read above and this write.
@@ -333,6 +354,10 @@ export async function finalizeIntelligenceReport(
       white_label: !!gathered.branding,
       status: "ready",
       error_message: null,
+      // Patch D: the authoritative terminal write is the only place allowed
+      // to set progress to exactly 100 / clear current_step.
+      current_step: null,
+      progress_percent: 100,
     })
     .eq("id", reportId)
     .not("status", "in", "(cancelling,cancelled)")
@@ -369,9 +394,16 @@ export async function saveIntelligenceReportArtifacts(
       .single();
     const sections = (reportRow?.sections as IntelligenceReportSectionId[] | null) || undefined;
 
+    // Patch D: one tracker spans the whole 11-step budget (8 gather steps +
+    // narrative_generation/pdf_render/finalizing) so progress_percent climbs
+    // smoothly across both phases instead of resetting between them.
+    const tracker = createStepProgressTracker(supabase, "reports", reportId, DEEP_REPORT_ALL_STEPS);
+
     const gathered = await gatherIntelligenceReport(supabase, projectId, {
       sections,
       isCancelled: options?.isCancelled,
+      onStepStart: tracker.onStepStart,
+      onStepComplete: tracker.onStepComplete,
     });
     if (!gathered) throw new Error("No intelligence report data");
 
@@ -398,7 +430,7 @@ export async function saveIntelligenceReportArtifacts(
       projectId,
       reportId,
       gathered,
-      { generateReportNarrative, generateIntelligenceReportHTML, renderReportPdf },
+      { generateReportNarrative, generateIntelligenceReportHTML, renderReportPdf, onStep: tracker.onStepStart },
       options?.isCancelled
     );
   });

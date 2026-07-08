@@ -14,6 +14,8 @@ import { analyzePassageReadiness } from "@/lib/engines/passage-readiness";
 import { sendScoreDropAlert, sendCitationDropAlert } from "@/lib/email/reports";
 import { dispatchProjectAlerts } from "@/lib/engines/monitoring-alerts";
 import { gatherReportData, saveReportArtifacts, saveIntelligenceReportArtifacts } from "@/lib/engines/report-builder";
+import { createStepProgressTracker } from "@/lib/observability/job-progress";
+import { STANDARD_REPORT_STEPS } from "@/lib/engines/report-step-names";
 import { syncProjectAttribution } from "@/lib/engines/attribution-sync";
 import { sendWeeklyReport } from "@/lib/email/reports";
 import { sendSlackWebhook, buildWeeklyReportSlackMessage } from "@/lib/notifications/slack";
@@ -388,9 +390,16 @@ export const generateReport = inngest.createFunction(
           });
         });
       } else {
+        // Patch D: standard reports have no named sub-steps of their own (no
+        // fan-out to break into "ai_visibility"/"backlink_analysis"/etc like
+        // deep reports), so the 3 coarse phases Inngest itself already
+        // breaks this function into are exactly the truthful step list.
+        const progress = createStepProgressTracker(supabase, "reports", reportId, STANDARD_REPORT_STEPS);
+        await progress.onStepStart("gathering");
         const gathered = await step.run("gather-report-data", async () => {
           return gatherReportData(supabase, projectId);
         });
+        await progress.onStepComplete("gathering");
 
         if (!gathered) {
           await supabase.from("reports").update({ status: "failed", error_message: "No report data" }).eq("id", reportId);
@@ -414,7 +423,12 @@ export const generateReport = inngest.createFunction(
           return { success: false, cancelled: true, reportId };
         }
 
+        await progress.onStepStart("rendering");
         await step.run("save-report", async () => {
+          // saveReportArtifacts() itself writes the terminal status: "ready"
+          // + progress_percent: 100 + current_step: null in its own final
+          // update, so no onStepComplete("rendering")/"finalizing" write is
+          // needed here — it would just be immediately superseded.
           await saveReportArtifacts(
             supabase,
             projectId,

@@ -333,6 +333,61 @@ test("runCancellableSteps: a step that throws is recorded in failedSteps without
 });
 
 // ---------------------------------------------------------------------------
+// Patch D: onStepStart/onStepComplete were unused hooks on runCancellableSteps
+// before this patch — gatherIntelligenceReport() now forwards its own
+// opts.onStepStart/onStepComplete straight into them (see the real progress
+// writer wired up in report-builder.ts's saveIntelligenceReportArtifacts).
+// These two tests pin the runner's own hook-invocation contract directly,
+// independent of the DB-writing tracker (already covered by
+// job-progress.test.ts) or the full gather fan-out (heavy engine mocking,
+// out of scope here).
+// ---------------------------------------------------------------------------
+
+test("runCancellableSteps: onStepStart/onStepComplete fire for every step that actually runs, and never for a skipped one", async () => {
+  const starts: string[] = [];
+  const completes: string[] = [];
+  let cancelNow = false;
+
+  const steps = Array.from({ length: 4 }, (_, i) => ({
+    name: `step-${i + 1}`,
+    run: async () => {
+      await delay(5);
+      if (`step-${i + 1}` === "step-1") cancelNow = true;
+      return i;
+    },
+  }));
+
+  const result = await runCancellableSteps({
+    steps,
+    concurrency: 1, // serialize so the skip point is deterministic
+    isCancelled: async () => cancelNow,
+    onStepStart: (name) => {
+      starts.push(name);
+    },
+    onStepComplete: (name) => {
+      completes.push(name);
+    },
+  });
+
+  assert.equal(result.cancelled, true);
+  assert.deepEqual(starts, ["step-1"], "onStepStart must fire only for the one step that actually ran");
+  assert.deepEqual(completes, ["step-1"], "onStepComplete must fire only for the one step that actually completed");
+  assert.ok(!starts.includes("step-2"), "a skipped step must never get an onStepStart call");
+});
+
+test("runCancellableSteps: onStepStart/onStepComplete are entirely optional — omitting them changes nothing about execution", async () => {
+  const steps = [
+    { name: "a", run: async () => "ok-a" },
+    { name: "b", run: async () => "ok-b" },
+  ];
+
+  const result = await runCancellableSteps({ steps, concurrency: 2, isCancelled: async () => false });
+
+  assert.equal(result.cancelled, false);
+  assert.deepEqual([...result.completedSteps].sort(), ["a", "b"]);
+});
+
+// ---------------------------------------------------------------------------
 // Tests 2-4 — gatherIntelligenceReport() itself uses the runner correctly.
 // ---------------------------------------------------------------------------
 
@@ -451,6 +506,52 @@ test("gatherIntelligenceReport: not cancelled — every named step runs and a fu
 
   const report = (result as { report: { meta: { reportType: string } } }).report;
   assert.equal(report.meta.reportType, "deep");
+});
+
+test("gatherIntelligenceReport: forwards onStepStart/onStepComplete for every named gather step (Patch D wiring)", async () => {
+  activeCallLog = makeCallLog();
+  const supabase = stubSupabase();
+  const starts: string[] = [];
+  const completes: string[] = [];
+
+  const result = await gatherIntelligenceReport(supabase as never, "proj-1", {
+    isCancelled: async () => false,
+    onStepStart: (name) => {
+      starts.push(name);
+    },
+    onStepComplete: (name) => {
+      completes.push(name);
+    },
+  });
+
+  assert.ok(result && !result.cancelled);
+  const expectedSteps = [
+    "ai_visibility",
+    "competitor_analysis",
+    "backlink_analysis",
+    "serp_analysis",
+    "keyword_analysis",
+    "technical_audit",
+    "local_analysis",
+    "analytics_attribution",
+  ];
+  for (const name of expectedSteps) {
+    assert.ok(starts.includes(name), `onStepStart must fire for ${name}`);
+    assert.ok(completes.includes(name), `onStepComplete must fire for ${name}`);
+  }
+  assert.equal(starts.length, 8);
+  assert.equal(completes.length, 8);
+});
+
+test("gatherIntelligenceReport: onStepStart/onStepComplete are optional — omitting them is unchanged, backward-compatible behavior", async () => {
+  activeCallLog = makeCallLog();
+  const supabase = stubSupabase();
+
+  const result = await gatherIntelligenceReport(supabase as never, "proj-1", {
+    isCancelled: async () => false,
+  });
+
+  assert.ok(result && !result.cancelled, "must still succeed with no progress hooks attached");
 });
 
 test("gatherIntelligenceReport: cancellation before gathering starts skips the entire fan-out", async () => {
