@@ -89,6 +89,7 @@ const steps = [
         "src/app/api/__tests__/jobs-running-route.test.ts",
         "src/app/api/__tests__/report-generate-versioning.test.ts",
         "src/lib/reports/__tests__/version-grouping.test.ts",
+        "src/app/app/projects/__tests__/nav-reachability.test.ts",
         "src/lib/__tests__/utils.test.ts",
         "src/app/api/__tests__/scan-cancel-route.test.ts",
         "tests/security/tenant-isolation.test.ts",
