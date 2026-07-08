@@ -24,6 +24,15 @@ const steps = [
   { name: "route-auth", ok: () => run("node", ["scripts/verify-route-auth.mjs"]) },
   { name: "claims-benchmark", ok: () => run("node", ["scripts/benchmark.mjs"]) },
   { name: "output-quality", ok: () => run("node", ["scripts/verify-output-quality.mjs"]) },
+  // Non-blocking audit report: regenerates docs/audits/dataforseo-bypass-inventory.md
+  // and prints bypass counts. Always exits 0 — does not fail CI (see repo hardening PR).
+  {
+    name: "dataforseo-bypass-audit",
+    ok: () => {
+      run("node", ["scripts/audit-dataforseo-bypasses.mjs"]);
+      return true;
+    },
+  },
   { name: "zero-paid-keys", ok: () => run("node", ["scripts/audit-zero-paid-keys.mjs"]) },
   { name: "superiority-strict", ok: () => run("node", ["scripts/provider-superiority.mjs", "--strict"]) },
   {
@@ -123,6 +132,7 @@ const steps = [
         "tests/security/cross-tenant-trust.test.ts",
         "tests/security/cross-tenant-report-visibility.test.ts",
         "tests/security/cross-tenant-report-pdf.test.ts",
+        "tests/security/rls-live-integration.test.ts",
         "src/lib/engines/__tests__/keyword-intelligence.test.ts",
         "src/lib/engines/__tests__/source-influence.test.ts",
         "src/app/api/__tests__/routes-contract.test.ts",
