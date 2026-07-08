@@ -75,6 +75,7 @@ const steps = [
         "src/lib/engines/__tests__/visibility-scanner.test.ts",
         "src/lib/engines/__tests__/intelligence-report-sections.test.ts",
         "src/lib/engines/__tests__/report-pdf-pipeline.test.ts",
+        "src/lib/engines/__tests__/report-pdf-content-parity.test.ts",
         "src/lib/engines/__tests__/scan-cancellation.test.ts",
         "src/lib/engines/__tests__/scan-trigger-idempotency-duplicate.test.ts",
         "src/lib/engines/__tests__/scan-trigger-idempotency-sync.test.ts",

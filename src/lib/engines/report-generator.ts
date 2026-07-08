@@ -9,7 +9,7 @@ import type {
 } from "@/types/database";
 import { getScoreLabel } from "@/lib/scoring/omnipresence";
 import { calculateVisibilityMetrics } from "@/lib/engines/visibility-scanner";
-import { calculateShareOfVoice, calculateShareOfVoiceByEngine } from "@/lib/engines/share-of-voice";
+import { calculateShareOfVoice, calculateShareOfVoiceByEngine, type ShareOfVoiceResult } from "@/lib/engines/share-of-voice";
 import { escapeHtml, sanitizeHexColor } from "@/lib/security/escape-html";
 import { getSubScoreAvailability } from "@/lib/scoring/subscore-availability";
 
@@ -41,45 +41,113 @@ export interface ReportData {
   };
 }
 
-export function generateReportHTML(data: ReportData, whiteLabel?: { name: string; color: string }): string {
-  const brand = e(whiteLabel?.name || "PresenceOS");
-  const color = sanitizeHexColor(whiteLabel?.color);
-  const scoreLabel = getScoreLabel(data.score.omnipresence_score);
-  const subScoreAvailable = getSubScoreAvailability(data.score, {
-    "AI Visibility": "ai_visibility",
-    Search: "search_visibility",
-    Local: "local_visibility",
-    Social: "social_presence",
-    Directories: "directory_coverage",
-    Authority: "authority_mentions",
-    Technical: "technical_readiness",
-    Conversion: "conversion_readiness",
+/** Label -> score-dimension-key map shared by every renderer of the standard report's scorecard (HTML + PDF). */
+export const SUB_SCORE_LABEL_MAP = {
+  "AI Visibility": "ai_visibility",
+  Search: "search_visibility",
+  Local: "local_visibility",
+  Social: "social_presence",
+  Directories: "directory_coverage",
+  Authority: "authority_mentions",
+  Technical: "technical_readiness",
+  Conversion: "conversion_readiness",
+} as const;
+
+export interface MethodologyRow {
+  metric: string;
+  method: string;
+}
+
+/**
+ * Pure data for the "Methodology & Data Sources" appendix — extracted so the
+ * HTML report (methodologyAppendixHTML below) and the downloadable PDF
+ * (report-pdf-document.tsx) render the identical, data-driven methodology
+ * text from one source of truth instead of two hand-maintained copies.
+ */
+export function buildMethodologyRows(
+  data: ReportData,
+  ctx: { measuredPct: number; maxSamples: number }
+): MethodologyRow[] {
+  const rows: MethodologyRow[] = [
+    {
+      metric: "OmniPresence Score",
+      method:
+        "Weighted composite across 8 dimensions. A dimension with no live signal this run is excluded from the composite and shown as \u2014, never scored as 0.",
+    },
+    {
+      metric: "AI Visibility (mention/citation/win rate)",
+      method: `Computed only over AI engines this run actually probed (${ctx.measuredPct}% of prompts measured live)${ctx.maxSamples > 1 ? `; each prompt sampled up to ${ctx.maxSamples}\u00d7 and majority-voted to control for AI response volatility` : ""}. Unmeasured engines are excluded, not counted as a miss.`,
+    },
+    {
+      metric: "Mention rate confidence interval",
+      method: "Wilson score interval over the measured probe sample \u2014 a statistical bound, not a simulated range.",
+    },
+    {
+      metric: "AI Share of Voice",
+      method: "Prominence-weighted across measured AI answers: being named the top pick counts more than a passing mention, matching how buyers actually read AI answers.",
+    },
+    {
+      metric: "Platform coverage",
+      method: "Presence checked per surface (directory, social, local, review) via live lookups where a connector exists; unresolvable surfaces are marked missing, not silently dropped.",
+    },
+  ];
+  if (data.adsEquivalent) {
+    rows.push({
+      metric: "Paid ads replacement value",
+      method:
+        data.adsEquivalent.cpcSource === "real"
+          ? "Organic + AI-referral sessions (measured via GA4) \u00d7 your real keyword CPC (Google Ads Keyword Planner)."
+          : "Organic + AI-referral sessions (measured via GA4) \u00d7 an industry-average CPC estimate \u2014 connect DataForSEO for your exact CPC.",
+    });
+  }
+  rows.push({
+    metric: "Authority opportunities & roadmap",
+    method: "Prioritized heuristics for outreach/execution planning \u2014 projected impact, not a financial guarantee.",
   });
+  return rows;
+}
+
+export interface ReportViewModel {
+  subScoreAvailable: Record<string, boolean>;
+  visibility: ReturnType<typeof calculateVisibilityMetrics>;
+  sov: ShareOfVoiceResult;
+  sovByEngine: ReturnType<typeof calculateShareOfVoiceByEngine>;
+  criticalFindings: TechnicalFinding[];
+  missingCoverage: CoverageItem[];
+  topOpportunities: AuthorityOpportunity[];
+  competitorWinPrompts: Array<{ prompt: string; engine: string; winners: string[] }>;
+  socialGaps: CoverageItem[];
+  directoryGaps: CoverageItem[];
+  localGaps: CoverageItem[];
+  reviewGaps: CoverageItem[];
+  measuredPct: number;
+  maxSamples: number;
+  aiProvenance: "Live" | "Partial" | "Unavailable";
+  methodologyRows: MethodologyRow[];
+}
+
+/**
+ * Single source of truth for every derived metric the standard report
+ * renders — computed once here so the HTML renderer and the downloadable
+ * PDF renderer (report-pdf-document.tsx) show the SAME numbers, honesty
+ * rules, and methodology, rather than the PDF maintaining its own thinner,
+ * independently-computed copy (the gap a hostile audit found: the PDF a
+ * customer actually downloads didn't include AI visibility, share-of-voice,
+ * ads-replacement, or the methodology appendix at all).
+ */
+export function buildReportViewModel(data: ReportData): ReportViewModel {
+  const subScoreAvailable = getSubScoreAvailability(data.score, SUB_SCORE_LABEL_MAP);
   const visibility = calculateVisibilityMetrics(data.visibilityResults);
-  const sov = calculateShareOfVoice(
-    data.visibilityResults,
-    data.project.name,
-    data.project.competitors || []
-  );
+  const sov = calculateShareOfVoice(data.visibilityResults, data.project.name, data.project.competitors || []);
   const sovByEngine = calculateShareOfVoiceByEngine(
     data.visibilityResults,
     data.project.name,
     data.project.competitors || []
   );
-  const ENGINE_LABELS: Record<string, string> = {
-    chatgpt: "ChatGPT",
-    claude: "Claude",
-    gemini: "Gemini",
-    perplexity: "Perplexity",
-    google_ai_overview: "Google AI Overview",
-    google_organic: "Google Search",
-  };
   const criticalFindings = data.technicalFindings.filter((f) => f.severity === "critical" || f.severity === "high");
   const missingCoverage = data.coverageItems.filter((c) => !c.is_present);
   const topOpportunities = data.authorityOpportunities.slice(0, 10);
 
-  // AI prompts where a competitor wins and the brand is absent — the single most
-  // persuasive "here's where you're losing" section. Only count measured probes.
   const competitorWinPrompts = data.visibilityResults
     .filter((r) => r.measurement_mode !== "unavailable" && !r.brand_mentioned)
     .map((r) => {
@@ -91,26 +159,69 @@ export function generateReportHTML(data: ReportData, whiteLabel?: { name: string
     .filter((x): x is { prompt: string; engine: string; winners: string[] } => x !== null)
     .slice(0, 10);
 
-  // Coverage gaps broken out by surface bucket so directory / social / local /
-  // review gaps are each visible rather than lumped into one count.
-  const gapsIn = (surfaces: string[]) =>
-    missingCoverage.filter((c) => surfaces.includes(String(c.surface)));
+  const gapsIn = (surfaces: string[]) => missingCoverage.filter((c) => surfaces.includes(String(c.surface)));
   const socialGaps = gapsIn(["linkedin", "x_twitter", "facebook", "instagram", "tiktok", "youtube", "reddit", "quora"]);
   const directoryGaps = gapsIn(["directory", "other"]);
   const localGaps = gapsIn(["google_business", "bing_places", "apple_business"]);
   const reviewGaps = gapsIn(["g2", "capterra", "trustpilot", "yelp", "review_site"]);
 
-  // Honesty: how much of the AI-visibility read was actually measured vs unavailable.
   const measuredPct = Math.round((visibility.measuredRate ?? 0) * 100);
-  const aiProvenance = measuredPct >= 60 ? "Live" : measuredPct > 0 ? "Partial" : "Unavailable";
+  const aiProvenance: "Live" | "Partial" | "Unavailable" =
+    measuredPct >= 60 ? "Live" : measuredPct > 0 ? "Partial" : "Unavailable";
 
-  // Sampling rigor: AI answers are volatile, so each LLM prompt is probed
-  // multiple times and majority-voted. Surface the max samples-per-prompt so
-  // the deliverable shows the statistical method (not a single noisy read).
-  const maxSamples = data.visibilityResults.reduce(
-    (m, r) => Math.max(m, r.sample_count ?? 1),
-    1
-  );
+  const maxSamples = data.visibilityResults.reduce((m, r) => Math.max(m, r.sample_count ?? 1), 1);
+
+  const methodologyRows = buildMethodologyRows(data, { measuredPct, maxSamples });
+
+  return {
+    subScoreAvailable,
+    visibility,
+    sov,
+    sovByEngine,
+    criticalFindings,
+    missingCoverage,
+    topOpportunities,
+    competitorWinPrompts,
+    socialGaps,
+    directoryGaps,
+    localGaps,
+    reviewGaps,
+    measuredPct,
+    maxSamples,
+    aiProvenance,
+    methodologyRows,
+  };
+}
+
+export function generateReportHTML(data: ReportData, whiteLabel?: { name: string; color: string }): string {
+  const brand = e(whiteLabel?.name || "PresenceOS");
+  const color = sanitizeHexColor(whiteLabel?.color);
+  const scoreLabel = getScoreLabel(data.score.omnipresence_score);
+  const {
+    subScoreAvailable,
+    visibility,
+    sov,
+    sovByEngine,
+    criticalFindings,
+    missingCoverage,
+    topOpportunities,
+    competitorWinPrompts,
+    socialGaps,
+    directoryGaps,
+    localGaps,
+    reviewGaps,
+    measuredPct,
+    maxSamples,
+    aiProvenance,
+  } = buildReportViewModel(data);
+  const ENGINE_LABELS: Record<string, string> = {
+    chatgpt: "ChatGPT",
+    claude: "Claude",
+    gemini: "Gemini",
+    perplexity: "Perplexity",
+    google_ai_overview: "Google AI Overview",
+    google_organic: "Google Search",
+  };
 
   return `<!DOCTYPE html>
 <html lang="en">
@@ -356,42 +467,7 @@ function methodologyAppendixHTML(
   data: ReportData,
   ctx: { measuredPct: number; maxSamples: number; aiProvenance: string }
 ): string {
-  const rows: Array<{ metric: string; method: string }> = [
-    {
-      metric: "OmniPresence Score",
-      method:
-        "Weighted composite across 8 dimensions. A dimension with no live signal this run is excluded from the composite and shown as \u2014, never scored as 0.",
-    },
-    {
-      metric: "AI Visibility (mention/citation/win rate)",
-      method: `Computed only over AI engines this run actually probed (${ctx.measuredPct}% of prompts measured live)${ctx.maxSamples > 1 ? `; each prompt sampled up to ${ctx.maxSamples}\u00d7 and majority-voted to control for AI response volatility` : ""}. Unmeasured engines are excluded, not counted as a miss.`,
-    },
-    {
-      metric: "Mention rate confidence interval",
-      method: "Wilson score interval over the measured probe sample \u2014 a statistical bound, not a simulated range.",
-    },
-    {
-      metric: "AI Share of Voice",
-      method: "Prominence-weighted across measured AI answers: being named the top pick counts more than a passing mention, matching how buyers actually read AI answers.",
-    },
-    {
-      metric: "Platform coverage",
-      method: "Presence checked per surface (directory, social, local, review) via live lookups where a connector exists; unresolvable surfaces are marked missing, not silently dropped.",
-    },
-  ];
-  if (data.adsEquivalent) {
-    rows.push({
-      metric: "Paid ads replacement value",
-      method:
-        data.adsEquivalent.cpcSource === "real"
-          ? "Organic + AI-referral sessions (measured via GA4) \u00d7 your real keyword CPC (Google Ads Keyword Planner)."
-          : "Organic + AI-referral sessions (measured via GA4) \u00d7 an industry-average CPC estimate \u2014 connect DataForSEO for your exact CPC.",
-    });
-  }
-  rows.push({
-    metric: "Authority opportunities & roadmap",
-    method: "Prioritized heuristics for outreach/execution planning \u2014 projected impact, not a financial guarantee.",
-  });
+  const rows = buildMethodologyRows(data, ctx);
 
   return `
     <div class="section">
