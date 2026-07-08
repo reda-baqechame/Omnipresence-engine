@@ -236,6 +236,7 @@ test("full flow: standard report generates synchronously and downloads the exact
   assert.equal(dlRes.status, 200);
   assert.equal(dlRes.headers.get("Content-Type"), "application/pdf");
   assert.equal(dlRes.headers.get("X-Report-Source"), "stored");
+  assert.equal(dlRes.headers.get("X-Report-Degraded"), "false", "a genuine stored PDF is never degraded");
   const bytes = Buffer.from(await dlRes.arrayBuffer()).toString();
   assert.equal(bytes, `FAKE-PDF-BYTES-${report.id}`, "download must serve the exact artifact generation produced");
 });

@@ -115,7 +115,14 @@ export async function resolve(specifier, context, nextResolve) {
  * extension keeps Node's default load behavior (native `.ts` stripping).
  */
 export async function load(url, context, nextLoad) {
-  if (url.endsWith(".tsx")) {
+  // node:test's mock.module() re-requests the original module through this
+  // same hook chain but with query-string suffixes appended to the URL (to
+  // get an independent module record to mock) — match on the pathname, not
+  // the raw url string, so a mocked-then-restored .tsx module (e.g.
+  // report-pdf.tsx, dynamically imported by report-pdf/route.ts) still gets
+  // esbuild's JSX transform instead of falling through to Node's native
+  // loader, which doesn't understand .tsx at all.
+  if (new URL(url).pathname.endsWith(".tsx")) {
     const source = readFileSync(fileURLToPath(url), "utf8");
     const { code } = transformSync(source, {
       loader: "tsx",

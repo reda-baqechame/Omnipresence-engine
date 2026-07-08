@@ -90,6 +90,12 @@ export async function GET(
           "Content-Type": "application/pdf",
           "Content-Disposition": `attachment; filename="${reportType === "deep" ? "intelligence-report" : "report"}.pdf"`,
           "X-Report-Source": "stored",
+          // P3 fix ("X-Report-Degraded header consistency"): a real, stored PDF
+          // is by definition not degraded — set this explicitly rather than
+          // omitting it, so a client checking the header never has to treat
+          // "header absent" and "header false" as two different signals for
+          // the same "you got the real PDF" outcome.
+          "X-Report-Degraded": "false",
         },
       });
     }
@@ -134,6 +140,7 @@ export async function GET(
           "Content-Type": "application/pdf",
           "Content-Disposition": `attachment; filename="intelligence-report.pdf"`,
           "X-Report-Source": "regenerated",
+          "X-Report-Degraded": "false",
         },
       });
     }
@@ -147,6 +154,7 @@ export async function GET(
             "Content-Type": "application/pdf",
             "Content-Disposition": `attachment; filename="report.pdf"`,
             "X-Report-Source": "regenerated",
+            "X-Report-Degraded": "false",
           },
         });
       } catch {
