@@ -245,6 +245,53 @@ authenticated owner/admin org membership; `benchmark_runs` has no
 tenant/organization column, so there is no per-project scope to check
 instead).
 
+## Patch J — DataForSEO fallback-only enforcement gate
+
+**Files**: `src/lib/engines/dataforseo-demotion-gate.ts` (new — pure audit +
+readiness logic), `src/app/api/admin/benchmark-runs/route.ts` (wires the gate
+in), `src/app/app/ops/data-parity/page.tsx` (surfaces it in the dashboard),
+`scripts/verify-output-quality.mjs` (static, import-free regression trap).
+
+**What was actually true before this patch**: auditing `router.ts` found
+every paid, DataForSEO-sourced adapter — `dataforseo` (serp) and
+`dataforseo-backlinks` (backlinks) — was *already* declared
+`category: "fallback_only"`. There is no capability today where DataForSEO
+is primary. So Patch J does not flip anything in `router.ts`; per the plan's
+own wording, this patch **is the enforcement gate, not new plumbing**. The
+two things that were genuinely missing:
+
+1. **A standing invariant, checked twice.** `auditDataForSeoCategories()`
+   (runtime, reads the live adapter registry via `describeProviders()`) and a
+   static regex check in `verify-output-quality.mjs` (reads `router.ts`'s
+   source text directly, no import needed) both assert that every paid
+   DataForSEO-sourced adapter stays `fallback_only`/`benchmark_only`. The
+   static check catches a regression at CI time before it ships; the runtime
+   check catches it in production even if CI was bypassed, surfaced directly
+   in the `/api/admin/benchmark-runs` response
+   (`dataForSeoCategoryViolations`) and the `/app/ops/data-parity` dashboard.
+   Both checks are redundant by design — CI text-scanning and a live registry
+   read can each fail independently of the other.
+2. **A real link from Patch H's evidence to an actual per-capability
+   decision surface.** `demotionReadinessReport()` combines the live adapter
+   registry with `benchmark-dashboard.ts`'s already-computed
+   `promotionReady` streaks (Section 9's 30-*consecutive*-day bar) into one
+   status per capability that has a registered DataForSEO adapter:
+   `currentlyEnforced` (is the invariant true right now) and
+   `evidenceSupportsFurtherDemotion` (true only when every tracked metric for
+   that capability has cleared the streak — no partial credit, and empty
+   evidence is never read as readiness).
+
+**What this deliberately does NOT do**, per plan rule 8 ("do not remove
+DataForSEO before a benchmark proves OmniData can replace that use case"):
+it never disables, removes, or reorders a DataForSEO adapter automatically.
+`evidenceSupportsFurtherDemotion: true` is a signal for a human to review and
+decide whether further demotion (e.g. removing the paid fallback entirely
+for that capability) is warranted — not a trigger. As of this patch, zero
+capabilities have accumulated 30 consecutive real passing days in
+`benchmark_runs` (the nightly cron just started), so this field is `false`
+everywhere in a fresh deploy and will stay that way until real evidence
+accumulates.
+
 ## What NOT to do with this module
 
 - Do not add new detection/scoring/cost logic to `src/lib/presence-data/`.
