@@ -26,11 +26,21 @@ interface ParityGroupSummary {
   promotionReady: boolean;
 }
 
+interface CapabilityDemotionStatus {
+  capability: string;
+  dataForSeoAdapterIds: string[];
+  currentlyEnforced: boolean;
+  metrics: Array<{ metricName: string; consecutivePassDays: number; promotionReady: boolean }>;
+  evidenceSupportsFurtherDemotion: boolean;
+}
+
 interface ParityResponse {
   lookbackDays: number;
   generatedAt: string;
   groups: ParityGroupSummary[];
   rowCount: number;
+  dataForSeoDemotion?: CapabilityDemotionStatus[];
+  dataForSeoCategoryViolations?: string[];
   error?: string;
 }
 
@@ -166,6 +176,65 @@ export default function DataParityDashboardPage() {
             BENCHMARK_QUERIES).
           </p>
         )}
+      </div>
+
+      <div className="border-t border-border pt-6">
+        <h2 className="text-lg font-semibold mb-2">Patch J — DataForSEO fallback-only enforcement</h2>
+        <p className="text-sm text-muted-foreground mb-4">
+          Every paid DataForSEO adapter registered in <code>router.ts</code> must stay{" "}
+          <code>fallback_only</code>/<code>benchmark_only</code> unless the matching capability above has
+          cleared a full {PROMOTION_STREAK_DAYS}-day passing streak. This section is a live read of that
+          invariant — it never changes router.ts itself.
+        </p>
+
+        {data?.dataForSeoCategoryViolations && data.dataForSeoCategoryViolations.length > 0 ? (
+          <div className="bg-red-950/30 border border-red-800 rounded-xl p-4 mb-4">
+            <div className="font-medium text-red-400 mb-2">
+              Invariant violated — DataForSEO is not fallback-only for {data.dataForSeoCategoryViolations.length}{" "}
+              adapter(s):
+            </div>
+            <ul className="list-disc list-inside text-sm text-red-300 space-y-1">
+              {data.dataForSeoCategoryViolations.map((v) => (
+                <li key={v}>{v}</li>
+              ))}
+            </ul>
+          </div>
+        ) : (
+          <p className="text-sm text-green-400 mb-4">
+            Invariant holds — every paid DataForSEO adapter is currently fallback_only/benchmark_only.
+          </p>
+        )}
+
+        <div className="space-y-3">
+          {(data?.dataForSeoDemotion || []).map((status) => (
+            <div
+              key={status.capability}
+              className="bg-card border border-border rounded-xl p-4 flex items-center justify-between gap-4"
+            >
+              <div>
+                <div className="font-medium">{status.capability}</div>
+                <div className="text-sm text-muted-foreground">
+                  DataForSEO adapter(s): {status.dataForSeoAdapterIds.join(", ")}
+                </div>
+              </div>
+              <div className="text-right text-sm">
+                <div className={status.currentlyEnforced ? "text-green-400" : "text-red-400"}>
+                  {status.currentlyEnforced ? "fallback-only enforced" : "NOT fallback-only"}
+                </div>
+                <div className="text-xs text-muted-foreground">
+                  {status.evidenceSupportsFurtherDemotion
+                    ? "Evidence supports further demotion review"
+                    : `No 30-day evidence yet (${status.metrics.length} metric${status.metrics.length === 1 ? "" : "s"} tracked)`}
+                </div>
+              </div>
+            </div>
+          ))}
+          {(!data?.dataForSeoDemotion || data.dataForSeoDemotion.length === 0) && (
+            <p className="text-muted-foreground text-sm">
+              No paid DataForSEO adapters currently registered in router.ts.
+            </p>
+          )}
+        </div>
       </div>
     </div>
   );

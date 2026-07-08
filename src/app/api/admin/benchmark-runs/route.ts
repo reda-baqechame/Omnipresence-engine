@@ -6,6 +6,11 @@ import {
   summarizeBenchmarkRuns,
   type BenchmarkRunRecord,
 } from "@/lib/engines/benchmark-dashboard";
+import { describeProviders } from "@/lib/providers/router";
+import {
+  auditDataForSeoCategories,
+  demotionReadinessReport,
+} from "@/lib/engines/dataforseo-demotion-gate";
 
 export const runtime = "nodejs";
 
@@ -47,10 +52,22 @@ export async function GET(request: NextRequest) {
   const rows = (data || []) as BenchmarkRunRecord[];
   const groups = summarizeBenchmarkRuns(rows);
 
+  // Patch J: tie the real benchmark evidence above to the standing
+  // fallback-only invariant on every paid DataForSEO adapter registered in
+  // router.ts. `violations` should always be empty in a healthy deploy — a
+  // non-empty array means router.ts was edited to promote DataForSEO without
+  // the evidence this plan requires, and is surfaced here rather than only
+  // failing a build-time script so it's visible in production too.
+  const adapters = await describeProviders();
+  const violations = auditDataForSeoCategories(adapters);
+  const dataForSeoDemotion = demotionReadinessReport(adapters, groups);
+
   return NextResponse.json({
     lookbackDays,
     generatedAt: new Date().toISOString(),
     groups,
     rowCount: rows.length,
+    dataForSeoDemotion,
+    dataForSeoCategoryViolations: violations,
   });
 }

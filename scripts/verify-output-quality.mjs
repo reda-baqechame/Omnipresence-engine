@@ -76,6 +76,29 @@ assert(
   "intelligence-report-narrative.ts must fall back to the deterministic narrative when the quality gate rejects LLM output"
 );
 
+// Patch J (DataForSEO fallback-only enforcement gate): a paid, DataForSEO-
+// sourced adapter must never be registered as anything other than
+// fallback_only/benchmark_only in router.ts. Per the PresenceData OS plan,
+// promoting one to a primary category requires a 30-consecutive-day passing
+// benchmark streak (see src/lib/engines/dataforseo-demotion-gate.ts +
+// docs/PRESENCEDATA_OS.md Patch J) — this static check is the redundant,
+// import-free CI trap that catches a silent regression even before the
+// runtime audit (which the /api/admin/benchmark-runs route also runs) fires.
+// Non-greedy id->category match relies on router.ts's consistent field
+// order (id, capability, category, ...) inside every adapter object literal.
+const adapterCategoryPairs = [...router.matchAll(/id:\s*"([\w-]+)"[\s\S]*?category:\s*"([\w_]+)"/g)];
+const dataForSeoAdapterPairs = adapterCategoryPairs.filter(([, id]) => id.startsWith("dataforseo"));
+assert(
+  dataForSeoAdapterPairs.length >= 2,
+  "expected router.ts to still register at least the serp 'dataforseo' and backlinks 'dataforseo-backlinks' adapters — Patch J gates promotion, it must never silently remove DataForSEO before a benchmark proves replacement (plan rule 8)"
+);
+for (const [, id, category] of dataForSeoAdapterPairs) {
+  assert(
+    category === "fallback_only" || category === "benchmark_only",
+    `Patch J invariant violated: paid DataForSEO adapter "${id}" in router.ts has category "${category}" — must stay "fallback_only"/"benchmark_only" until a 30-consecutive-day passing benchmark streak justifies otherwise`
+  );
+}
+
 if (failures.length) {
   console.error("\nOutput quality gate failed:\n");
   for (const failure of failures) console.error(`- ${failure}`);
