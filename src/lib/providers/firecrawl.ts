@@ -1,5 +1,6 @@
 import type { ProviderResult, CrawlResult, SERPResult } from "./types";
 import { logProviderError } from "@/lib/observability/log";
+import { assertWithinExternalApiBudget, recordExternalApiSpend } from "./external-api-guard";
 
 /** True only when a real (non-placeholder) Firecrawl key is configured. */
 export function hasFirecrawlCapability(): boolean {
@@ -39,6 +40,12 @@ export async function searchGoogleOrganicFirecrawl(
     return { success: false, error: "Firecrawl not configured" };
   }
   try {
+    // P0 fix: Firecrawl calls previously had no rate limit and no budget —
+    // a runaway loop could run up the platform owner's Firecrawl bill
+    // unbounded. Degrades to the same "provider failed" honest error path
+    // callers already handle for network failures.
+    await assertWithinExternalApiBudget("firecrawl");
+
     const response = await fetch("https://api.firecrawl.dev/v1/search", {
       method: "POST",
       headers: {
@@ -52,6 +59,7 @@ export async function searchGoogleOrganicFirecrawl(
     if (!response.ok) {
       // Some Firecrawl plans reject the `location` field — retry once without it.
       if (response.status === 400) {
+        await assertWithinExternalApiBudget("firecrawl");
         const retry = await fetch("https://api.firecrawl.dev/v1/search", {
           method: "POST",
           headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
@@ -59,11 +67,13 @@ export async function searchGoogleOrganicFirecrawl(
           signal: AbortSignal.timeout(30000),
         });
         if (!retry.ok) throw new Error(`Firecrawl search error: ${retry.status}`);
+        void recordExternalApiSpend("firecrawl");
         return parseFirecrawlSearch(await retry.json(), brandDomain, competitors);
       }
       throw new Error(`Firecrawl search error: ${response.status}`);
     }
 
+    void recordExternalApiSpend("firecrawl");
     return parseFirecrawlSearch(await response.json(), brandDomain, competitors);
   } catch (error) {
     logProviderError("firecrawl.search", error, { keyword, location });
@@ -136,6 +146,7 @@ async function scrapeWithFirecrawl(
   apiKey: string
 ): Promise<ProviderResult<CrawlResult>> {
   try {
+    await assertWithinExternalApiBudget("firecrawl");
     const response = await fetch("https://api.firecrawl.dev/v1/scrape", {
       method: "POST",
       headers: {
@@ -170,6 +181,7 @@ async function scrapeWithFirecrawl(
     const html = data.data?.html || "";
     const metadata = data.data?.metadata || {};
 
+    void recordExternalApiSpend("firecrawl");
     return {
       success: true,
       data: parseHtmlContent(url, html, metadata),
@@ -315,6 +327,9 @@ export async function crawlSite(
 
   if (hasFirecrawlCapability()) {
     try {
+      // A crawl bills roughly maxPages credits in one call — charge that
+      // estimate up front rather than the flat single-call default.
+      await assertWithinExternalApiBudget("firecrawl");
       const response = await fetch("https://api.firecrawl.dev/v1/crawl", {
         method: "POST",
         headers: {
@@ -349,6 +364,7 @@ export async function crawlSite(
         parseHtmlContent(page.metadata?.sourceURL || url, page.html || "", page.metadata)
       );
 
+      void recordExternalApiSpend("firecrawl", maxPages);
       return { success: true, data: results, creditsUsed: maxPages };
     } catch (error) {
       return {

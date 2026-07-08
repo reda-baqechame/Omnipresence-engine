@@ -11,7 +11,7 @@ import { findAuthorityOpportunities } from "@/lib/engines/authority-finder";
 import { generateRoadmap } from "@/lib/engines/roadmap-generator";
 import { calculateOmniPresenceScore } from "@/lib/scoring/omnipresence";
 import { sendScanCompleteEmail, sendScoreDropAlert } from "@/lib/email/reports";
-import { trackApiUsage } from "@/lib/metering/api-usage";
+import { trackApiUsage, assertApiCredits } from "@/lib/metering/api-usage";
 import {
   getPromptGenerationLimit,
   getEffectiveVisibilityScanPromptLimit,
@@ -62,6 +62,17 @@ export async function runProjectScan(
   const plan = await getOrganizationPlan(supabase, p.organization_id);
   const promptCount = getPromptGenerationLimit(plan);
   const maxScanPrompts = getEffectiveVisibilityScanPromptLimit(plan, !p.last_scan_at);
+
+  // P0 fix: the caller (api/projects/[id]/scan/route.ts) has always caught
+  // ApiCreditExceededError and returned it as a clean 402, but nothing in this
+  // pipeline ever threw one — a project's org-level api_credit_limit was
+  // completely unenforced, so a scan ran (and spent unlimited paid-provider
+  // credits across every DataForSEO/Firecrawl/LLM call below) regardless of
+  // whether the org had any credits left. Charge the worst-case estimate
+  // up front, before any provider call is made, mirroring the same
+  // maxScanPrompts-based estimate used for the post-hoc trackApiUsage() call
+  // at the end of this function.
+  await assertApiCredits(supabase, p.organization_id, Math.max(maxScanPrompts, 10));
 
   await supabase.from("projects").update({ status: "scanning" }).eq("id", projectId);
 

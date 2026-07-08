@@ -61,7 +61,14 @@ export async function POST(request: NextRequest) {
   const access = await verifyProjectAccess(supabase, opportunity.project_id, user.id, "member");
   if (!access) return apiForbidden();
 
-  await trackApiUsage(supabase, access.organizationId, "openai", "authority_outreach", 3);
+  // P0 fix: this call previously discarded { allowed }, so once an org's
+  // api_credit_limit was exhausted the credits_used counter kept climbing
+  // past the limit forever while every request still succeeded — the limit
+  // was tracked but never actually enforced.
+  const usage = await trackApiUsage(supabase, access.organizationId, "openai", "authority_outreach", 3);
+  if (!usage.allowed) {
+    return apiError("API credit limit exceeded. Upgrade your plan or wait for reset.", 402);
+  }
 
   const brandName = (opportunity.projects as { name: string })?.name || "Brand";
   const emails = await generateOutreachEmail(brandName, opportunity);

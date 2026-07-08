@@ -113,7 +113,14 @@ export async function POST(request: NextRequest) {
   const spamCheck = await assertContentGenerationAllowed(supabase, projectId, type);
   if (!spamCheck.allowed) return apiError(spamCheck.reason, 429);
 
-  await trackApiUsage(supabase, access.organizationId, "openai", "content_generate", 5);
+  // P0 fix: this call previously discarded { allowed }, so once an org's
+  // api_credit_limit was exhausted the credits_used counter kept climbing
+  // past the limit forever while every request still succeeded — the limit
+  // was tracked but never actually enforced.
+  const usage = await trackApiUsage(supabase, access.organizationId, "openai", "content_generate", 5);
+  if (!usage.allowed) {
+    return apiError("API credit limit exceeded. Upgrade your plan or wait for reset.", 402);
+  }
 
   let generated;
   if (repurposeFrom) {

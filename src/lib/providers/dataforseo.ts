@@ -2,6 +2,7 @@ import { createHmac } from "crypto";
 import type { ProviderResult, SERPResult } from "./types";
 import { fetchWithTimeout } from "./http";
 import { assertOmniDataClientConfigured, resolveOmniDataApiKey } from "./omnidata-auth";
+import { assertWithinExternalApiBudget, recordExternalApiSpend } from "./external-api-guard";
 
 const OMNIDATA_URL = process.env.OMNIDATA_BASE_URL?.replace(/\/$/, "");
 const USE_OMNIDATA = Boolean(OMNIDATA_URL);
@@ -49,6 +50,15 @@ export function isOmniDataActive(): boolean {
 }
 
 async function dataForSEORequest<T>(endpoint: string, body: unknown[]): Promise<T> {
+  // P0 fix: this is the single chokepoint nearly every exported function in
+  // this file funnels through — it previously had no rate limit and no
+  // budget, so a runaway caller (or an unauthenticated route that triggers
+  // one) could make unbounded paid DataForSEO/OmniData calls with nothing in
+  // the codebase noticing. Callers already wrap these calls in try/catch and
+  // degrade to "unavailable" on any thrown error, so this fails the same
+  // honest way a network error would — never a crash, never a silent bypass.
+  await assertWithinExternalApiBudget("dataforseo");
+
   const response = await fetchWithTimeout(`${getBaseUrl()}${endpoint}`, {
     method: "POST",
     headers: getAuthHeaders(body),
@@ -60,6 +70,7 @@ async function dataForSEORequest<T>(endpoint: string, body: unknown[]): Promise<
     throw new Error(`${USE_OMNIDATA ? "OmniData" : "DataForSEO"} API error: ${response.status}`);
   }
 
+  void recordExternalApiSpend("dataforseo");
   return response.json() as Promise<T>;
 }
 
@@ -71,12 +82,14 @@ async function dataForSEORequest<T>(endpoint: string, body: unknown[]): Promise<
 export async function omniDataGet<T>(endpoint: string): Promise<T | null> {
   if (!USE_OMNIDATA) return null;
   try {
+    await assertWithinExternalApiBudget("dataforseo");
     const response = await fetchWithTimeout(`${getBaseUrl()}${endpoint}`, {
       method: "GET",
       headers: getAuthHeaders({}),
       timeoutMs: 15000,
     });
     if (!response.ok) return null;
+    void recordExternalApiSpend("dataforseo");
     return response.json() as Promise<T>;
   } catch {
     return null;
