@@ -42,6 +42,27 @@ export function formatTokenCount(tokens: number): string {
   return `${Math.round(tokens)} tokens`;
 }
 
+/**
+ * Human freshness label for an evidence row's `captured_at` — how long ago the
+ * measurement was actually taken (not when the DB row was inserted). Used by
+ * the Evidence Drawer so "confidence" isn't the only signal of how much to
+ * trust a number; a 3-month-old "measured" value is very different from one
+ * captured seconds ago.
+ */
+export function freshnessLabel(capturedAt: string, now: number = Date.now()): string {
+  const ageMs = now - new Date(capturedAt).getTime();
+  if (!Number.isFinite(ageMs) || ageMs < 0) return "just now";
+  const minutes = Math.floor(ageMs / 60_000);
+  if (minutes < 1) return "just now";
+  if (minutes < 60) return `${minutes}m ago`;
+  const hours = Math.floor(minutes / 60);
+  if (hours < 24) return `${hours}h ago`;
+  const days = Math.floor(hours / 24);
+  if (days < 30) return `${days}d ago`;
+  const months = Math.floor(days / 30);
+  return `${months}mo ago`;
+}
+
 export function slugify(text: string): string {
   return text
     .toLowerCase()

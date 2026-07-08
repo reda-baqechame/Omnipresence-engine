@@ -14,6 +14,8 @@ import { ActionPlanPanel } from "@/components/action-plan-panel";
 import { buildPresenceGateScore } from "@/lib/scoring/presence-gate-builder";
 import { PresenceGateCard } from "@/components/presence-gate-card";
 import { isSubScoreAvailable } from "@/lib/scoring/subscore-availability";
+import { ProofEvidenceLinks } from "@/components/proof-evidence-links";
+import Link from "next/link";
 
 export default async function ProjectOverviewPage({
   params,
@@ -67,6 +69,15 @@ export default async function ProjectOverviewPage({
       {latestScore ? (
         <>
           <div className="bg-card border border-border rounded-xl p-8">
+            <div className="flex flex-wrap items-center justify-between gap-2 mb-6">
+              <ProofEvidenceLinks projectId={id} />
+              <Link
+                href={`/app/projects/${id}/proof`}
+                className="text-xs text-primary hover:underline shrink-0"
+              >
+                Full proof report →
+              </Link>
+            </div>
             <div className="grid md:grid-cols-3 gap-8">
               <div>
                 <ScoreGauge score={latestScore.omnipresence_score} label="OmniPresence Score" size="lg" />
