@@ -94,6 +94,20 @@ export async function POST(
       ? `Deep Intelligence Report — ${new Date().toLocaleDateString()}`
       : `OmniPresence Report — ${new Date().toLocaleDateString()}`;
 
+  // Basic versioning (P1 fix): link this report to the one it replaces,
+  // scoped per (project_id, report_type) so standard/deep lineages stay
+  // independent. "Latest" = highest version in the lineage, not just most
+  // recent by created_at, so a lineage's version numbers never regress even
+  // if clocks or insert ordering are ever slightly off.
+  const { data: latest } = await supabase
+    .from("reports")
+    .select("id, version")
+    .eq("project_id", id)
+    .eq("report_type", reportType)
+    .order("version", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+
   const { data: report, error: reportError } = await supabase
     .from("reports")
     .insert({
@@ -104,6 +118,8 @@ export async function POST(
       sections: sections || [],
       status: reportType === "deep" ? "pending" : "generating",
       idempotency_key: idempotencyKey ?? null,
+      previous_report_id: latest?.id ?? null,
+      version: (latest?.version ?? 0) + 1,
     })
     .select()
     .single();

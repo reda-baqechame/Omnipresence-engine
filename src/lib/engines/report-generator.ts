@@ -9,8 +9,9 @@ import type {
 } from "@/types/database";
 import { getScoreLabel } from "@/lib/scoring/omnipresence";
 import { calculateVisibilityMetrics } from "@/lib/engines/visibility-scanner";
-import { calculateShareOfVoice, calculateShareOfVoiceByEngine } from "@/lib/engines/share-of-voice";
+import { calculateShareOfVoice, calculateShareOfVoiceByEngine, type ShareOfVoiceResult } from "@/lib/engines/share-of-voice";
 import { escapeHtml, sanitizeHexColor } from "@/lib/security/escape-html";
+import { getSubScoreAvailability } from "@/lib/scoring/subscore-availability";
 
 function e(value: string | number | undefined | null): string {
   if (value === undefined || value === null) return "";
@@ -40,35 +41,113 @@ export interface ReportData {
   };
 }
 
-export function generateReportHTML(data: ReportData, whiteLabel?: { name: string; color: string }): string {
-  const brand = e(whiteLabel?.name || "PresenceOS");
-  const color = sanitizeHexColor(whiteLabel?.color);
-  const scoreLabel = getScoreLabel(data.score.omnipresence_score);
+/** Label -> score-dimension-key map shared by every renderer of the standard report's scorecard (HTML + PDF). */
+export const SUB_SCORE_LABEL_MAP = {
+  "AI Visibility": "ai_visibility",
+  Search: "search_visibility",
+  Local: "local_visibility",
+  Social: "social_presence",
+  Directories: "directory_coverage",
+  Authority: "authority_mentions",
+  Technical: "technical_readiness",
+  Conversion: "conversion_readiness",
+} as const;
+
+export interface MethodologyRow {
+  metric: string;
+  method: string;
+}
+
+/**
+ * Pure data for the "Methodology & Data Sources" appendix — extracted so the
+ * HTML report (methodologyAppendixHTML below) and the downloadable PDF
+ * (report-pdf-document.tsx) render the identical, data-driven methodology
+ * text from one source of truth instead of two hand-maintained copies.
+ */
+export function buildMethodologyRows(
+  data: ReportData,
+  ctx: { measuredPct: number; maxSamples: number }
+): MethodologyRow[] {
+  const rows: MethodologyRow[] = [
+    {
+      metric: "OmniPresence Score",
+      method:
+        "Weighted composite across 8 dimensions. A dimension with no live signal this run is excluded from the composite and shown as \u2014, never scored as 0.",
+    },
+    {
+      metric: "AI Visibility (mention/citation/win rate)",
+      method: `Computed only over AI engines this run actually probed (${ctx.measuredPct}% of prompts measured live)${ctx.maxSamples > 1 ? `; each prompt sampled up to ${ctx.maxSamples}\u00d7 and majority-voted to control for AI response volatility` : ""}. Unmeasured engines are excluded, not counted as a miss.`,
+    },
+    {
+      metric: "Mention rate confidence interval",
+      method: "Wilson score interval over the measured probe sample \u2014 a statistical bound, not a simulated range.",
+    },
+    {
+      metric: "AI Share of Voice",
+      method: "Prominence-weighted across measured AI answers: being named the top pick counts more than a passing mention, matching how buyers actually read AI answers.",
+    },
+    {
+      metric: "Platform coverage",
+      method: "Presence checked per surface (directory, social, local, review) via live lookups where a connector exists; unresolvable surfaces are marked missing, not silently dropped.",
+    },
+  ];
+  if (data.adsEquivalent) {
+    rows.push({
+      metric: "Paid ads replacement value",
+      method:
+        data.adsEquivalent.cpcSource === "real"
+          ? "Organic + AI-referral sessions (measured via GA4) \u00d7 your real keyword CPC (Google Ads Keyword Planner)."
+          : "Organic + AI-referral sessions (measured via GA4) \u00d7 an industry-average CPC estimate \u2014 connect DataForSEO for your exact CPC.",
+    });
+  }
+  rows.push({
+    metric: "Authority opportunities & roadmap",
+    method: "Prioritized heuristics for outreach/execution planning \u2014 projected impact, not a financial guarantee.",
+  });
+  return rows;
+}
+
+export interface ReportViewModel {
+  subScoreAvailable: Record<string, boolean>;
+  visibility: ReturnType<typeof calculateVisibilityMetrics>;
+  sov: ShareOfVoiceResult;
+  sovByEngine: ReturnType<typeof calculateShareOfVoiceByEngine>;
+  criticalFindings: TechnicalFinding[];
+  missingCoverage: CoverageItem[];
+  topOpportunities: AuthorityOpportunity[];
+  competitorWinPrompts: Array<{ prompt: string; engine: string; winners: string[] }>;
+  socialGaps: CoverageItem[];
+  directoryGaps: CoverageItem[];
+  localGaps: CoverageItem[];
+  reviewGaps: CoverageItem[];
+  measuredPct: number;
+  maxSamples: number;
+  aiProvenance: "Live" | "Partial" | "Unavailable";
+  methodologyRows: MethodologyRow[];
+}
+
+/**
+ * Single source of truth for every derived metric the standard report
+ * renders — computed once here so the HTML renderer and the downloadable
+ * PDF renderer (report-pdf-document.tsx) show the SAME numbers, honesty
+ * rules, and methodology, rather than the PDF maintaining its own thinner,
+ * independently-computed copy (the gap a hostile audit found: the PDF a
+ * customer actually downloads didn't include AI visibility, share-of-voice,
+ * ads-replacement, or the methodology appendix at all).
+ */
+export function buildReportViewModel(data: ReportData): ReportViewModel {
+  const subScoreAvailable = getSubScoreAvailability(data.score, SUB_SCORE_LABEL_MAP);
   const visibility = calculateVisibilityMetrics(data.visibilityResults);
-  const sov = calculateShareOfVoice(
-    data.visibilityResults,
-    data.project.name,
-    data.project.competitors || []
-  );
+  const sov = calculateShareOfVoice(data.visibilityResults, data.project.name, data.project.competitors || []);
   const sovByEngine = calculateShareOfVoiceByEngine(
     data.visibilityResults,
     data.project.name,
     data.project.competitors || []
   );
-  const ENGINE_LABELS: Record<string, string> = {
-    chatgpt: "ChatGPT",
-    claude: "Claude",
-    gemini: "Gemini",
-    perplexity: "Perplexity",
-    google_ai_overview: "Google AI Overview",
-    google_organic: "Google Search",
-  };
   const criticalFindings = data.technicalFindings.filter((f) => f.severity === "critical" || f.severity === "high");
   const missingCoverage = data.coverageItems.filter((c) => !c.is_present);
   const topOpportunities = data.authorityOpportunities.slice(0, 10);
 
-  // AI prompts where a competitor wins and the brand is absent — the single most
-  // persuasive "here's where you're losing" section. Only count measured probes.
   const competitorWinPrompts = data.visibilityResults
     .filter((r) => r.measurement_mode !== "unavailable" && !r.brand_mentioned)
     .map((r) => {
@@ -80,26 +159,69 @@ export function generateReportHTML(data: ReportData, whiteLabel?: { name: string
     .filter((x): x is { prompt: string; engine: string; winners: string[] } => x !== null)
     .slice(0, 10);
 
-  // Coverage gaps broken out by surface bucket so directory / social / local /
-  // review gaps are each visible rather than lumped into one count.
-  const gapsIn = (surfaces: string[]) =>
-    missingCoverage.filter((c) => surfaces.includes(String(c.surface)));
+  const gapsIn = (surfaces: string[]) => missingCoverage.filter((c) => surfaces.includes(String(c.surface)));
   const socialGaps = gapsIn(["linkedin", "x_twitter", "facebook", "instagram", "tiktok", "youtube", "reddit", "quora"]);
   const directoryGaps = gapsIn(["directory", "other"]);
   const localGaps = gapsIn(["google_business", "bing_places", "apple_business"]);
   const reviewGaps = gapsIn(["g2", "capterra", "trustpilot", "yelp", "review_site"]);
 
-  // Honesty: how much of the AI-visibility read was actually measured vs unavailable.
   const measuredPct = Math.round((visibility.measuredRate ?? 0) * 100);
-  const aiProvenance = measuredPct >= 60 ? "Live" : measuredPct > 0 ? "Partial" : "Unavailable";
+  const aiProvenance: "Live" | "Partial" | "Unavailable" =
+    measuredPct >= 60 ? "Live" : measuredPct > 0 ? "Partial" : "Unavailable";
 
-  // Sampling rigor: AI answers are volatile, so each LLM prompt is probed
-  // multiple times and majority-voted. Surface the max samples-per-prompt so
-  // the deliverable shows the statistical method (not a single noisy read).
-  const maxSamples = data.visibilityResults.reduce(
-    (m, r) => Math.max(m, r.sample_count ?? 1),
-    1
-  );
+  const maxSamples = data.visibilityResults.reduce((m, r) => Math.max(m, r.sample_count ?? 1), 1);
+
+  const methodologyRows = buildMethodologyRows(data, { measuredPct, maxSamples });
+
+  return {
+    subScoreAvailable,
+    visibility,
+    sov,
+    sovByEngine,
+    criticalFindings,
+    missingCoverage,
+    topOpportunities,
+    competitorWinPrompts,
+    socialGaps,
+    directoryGaps,
+    localGaps,
+    reviewGaps,
+    measuredPct,
+    maxSamples,
+    aiProvenance,
+    methodologyRows,
+  };
+}
+
+export function generateReportHTML(data: ReportData, whiteLabel?: { name: string; color: string }): string {
+  const brand = e(whiteLabel?.name || "PresenceOS");
+  const color = sanitizeHexColor(whiteLabel?.color);
+  const scoreLabel = getScoreLabel(data.score.omnipresence_score);
+  const {
+    subScoreAvailable,
+    visibility,
+    sov,
+    sovByEngine,
+    criticalFindings,
+    missingCoverage,
+    topOpportunities,
+    competitorWinPrompts,
+    socialGaps,
+    directoryGaps,
+    localGaps,
+    reviewGaps,
+    measuredPct,
+    maxSamples,
+    aiProvenance,
+  } = buildReportViewModel(data);
+  const ENGINE_LABELS: Record<string, string> = {
+    chatgpt: "ChatGPT",
+    claude: "Claude",
+    gemini: "Gemini",
+    perplexity: "Perplexity",
+    google_ai_overview: "Google AI Overview",
+    google_organic: "Google Search",
+  };
 
   return `<!DOCTYPE html>
 <html lang="en">
@@ -119,6 +241,7 @@ export function generateReportHTML(data: ReportData, whiteLabel?: { name: string
     .sub-scores { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; margin: 24px 0; }
     .sub-score { background: #f8f9fa; border-radius: 8px; padding: 12px; text-align: center; }
     .sub-score .value { font-size: 24px; font-weight: 700; color: ${color}; }
+    .sub-score .value-nodata { color: #94a3b8; font-weight: 500; }
     .sub-score .label { font-size: 11px; color: #888; text-transform: uppercase; }
     .section { margin-bottom: 32px; }
     .section h2 { font-size: 20px; color: ${color}; margin-bottom: 16px; border-bottom: 1px solid #eee; padding-bottom: 8px; }
@@ -173,14 +296,14 @@ export function generateReportHTML(data: ReportData, whiteLabel?: { name: string
     ${data.proofHtml || ""}
 
     <div class="sub-scores">
-      ${subScoreHTML("AI Visibility", data.score.ai_visibility)}
-      ${subScoreHTML("Search", data.score.search_visibility)}
-      ${subScoreHTML("Local", data.score.local_visibility)}
-      ${subScoreHTML("Social", data.score.social_presence)}
-      ${subScoreHTML("Directories", data.score.directory_coverage)}
-      ${subScoreHTML("Authority", data.score.authority_mentions)}
-      ${subScoreHTML("Technical", data.score.technical_readiness)}
-      ${subScoreHTML("Conversion", data.score.conversion_readiness)}
+      ${subScoreHTML("AI Visibility", data.score.ai_visibility, subScoreAvailable["AI Visibility"])}
+      ${subScoreHTML("Search", data.score.search_visibility, subScoreAvailable.Search)}
+      ${subScoreHTML("Local", data.score.local_visibility, subScoreAvailable.Local)}
+      ${subScoreHTML("Social", data.score.social_presence, subScoreAvailable.Social)}
+      ${subScoreHTML("Directories", data.score.directory_coverage, subScoreAvailable.Directories)}
+      ${subScoreHTML("Authority", data.score.authority_mentions, subScoreAvailable.Authority)}
+      ${subScoreHTML("Technical", data.score.technical_readiness, subScoreAvailable.Technical)}
+      ${subScoreHTML("Conversion", data.score.conversion_readiness, subScoreAvailable.Conversion)}
     </div>
 
     <div class="section">
@@ -320,6 +443,8 @@ export function generateReportHTML(data: ReportData, whiteLabel?: { name: string
     </div>
     ` : ""}
 
+    ${methodologyAppendixHTML(data, { measuredPct, maxSamples, aiProvenance })}
+
     <div class="footer">
       <p>Report generated by ${brand} — The Organic Visibility Engine</p>
       <p>Built to reduce dependence on paid ads by creating compounding organic visibility.</p>
@@ -329,6 +454,53 @@ export function generateReportHTML(data: ReportData, whiteLabel?: { name: string
 </html>`;
 }
 
-function subScoreHTML(label: string, value: number): string {
+/**
+ * P3 fix ("methodology appendix"): the standard report presented scores,
+ * rates, and dollar figures with no explanation of how any of them were
+ * derived or which were measured vs. estimated — a hostile reader (or a
+ * client's own analyst) had no way to audit the numbers without reading
+ * source code. This mirrors the deep intelligence report's existing
+ * "Methodology & Data Sources" section (intelligence-report-template.ts),
+ * scoped to what a standard report actually computes.
+ */
+function methodologyAppendixHTML(
+  data: ReportData,
+  ctx: { measuredPct: number; maxSamples: number; aiProvenance: string }
+): string {
+  const rows = buildMethodologyRows(data, ctx);
+
+  return `
+    <div class="section">
+      <h2>Methodology &amp; Data Sources</h2>
+      <p class="legend">Every figure in this report is labeled by how it was derived. Full data-quality definitions: <a href="https://github.com/reda-baqechame/Omnipresence-engine/blob/main/docs/DATA_CONTRACT.md">Data Contract</a>.</p>
+      <table style="width:100%;border-collapse:collapse;font-size:12px;margin-top:8px;">
+        <thead><tr style="text-align:left;border-bottom:1px solid #e2e2e2;">
+          <th style="padding:6px 4px;">Metric</th><th style="padding:6px 4px;">How it's derived</th>
+        </tr></thead>
+        <tbody>
+        ${rows
+          .map(
+            (r) => `<tr style="border-bottom:1px solid #f1f1f1;vertical-align:top;">
+            <td style="padding:6px 4px;font-weight:600;white-space:nowrap;">${e(r.metric)}</td>
+            <td style="padding:6px 4px;color:#555;">${e(r.method)}</td>
+          </tr>`
+          )
+          .join("")}
+        </tbody>
+      </table>
+      <p class="legend" style="margin-top:8px;">AI visibility read this run: <strong>${e(ctx.aiProvenance)}</strong>. Data sources: Supabase (project records) \u00b7 OmniPresence Engine (scoring &amp; measurement pipeline)${data.adsEquivalent?.cpcSource === "real" ? " \u00b7 Google Ads Keyword Planner (real CPC)" : ""}.</p>
+    </div>`;
+}
+
+/**
+ * P0 fix: see getSubScoreAvailability() in subscore-availability.ts — an
+ * unmeasured dimension's raw value column is a real `0`, indistinguishable
+ * from an actually-measured zero. `available` defaults to true so existing
+ * callers that don't pass it keep the prior (measured) rendering.
+ */
+function subScoreHTML(label: string, value: number, available = true): string {
+  if (!available) {
+    return `<div class="sub-score"><div class="value value-nodata">—</div><div class="label">${e(label)}</div></div>`;
+  }
   return `<div class="sub-score"><div class="value">${Math.round(value)}</div><div class="label">${e(label)}</div></div>`;
 }

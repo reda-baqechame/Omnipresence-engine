@@ -28,7 +28,9 @@ export async function GET(req: NextRequest) {
 
   let measQ = supabase
     .from("measurement_evidence")
-    .select("id, capability, target, provider, source_url, parser_version, data_source, confidence, response_hash, payload_excerpt, evidence_url, created_at")
+    .select(
+      "id, capability, target, provider, source_url, parser_version, data_source, confidence, response_hash, payload_excerpt, evidence_url, trace_id, captured_at, created_at"
+    )
     .eq("project_id", projectId)
     .order("created_at", { ascending: false })
     .limit(limit);
@@ -37,7 +39,9 @@ export async function GET(req: NextRequest) {
 
   let aiQ = supabase
     .from("ai_capture_evidence")
-    .select("id, engine, prompt, raw_answer, response_hash, cited_urls, source_domains, evidence_url, created_at")
+    .select(
+      "id, engine, prompt, raw_answer, response_hash, cited_urls, source_domains, evidence_url, trace_id, captured_at, created_at"
+    )
     .eq("project_id", projectId)
     .order("created_at", { ascending: false })
     .limit(limit);

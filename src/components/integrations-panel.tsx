@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { PanelError } from "@/components/panel-states";
 
 const CMS_PROVIDERS = [
   { id: "wordpress", label: "WordPress", urlPlaceholder: "https://yoursite.com", extraLabel: "Collection/Blog ID (optional)" },
@@ -27,6 +28,7 @@ export function IntegrationsPanel({ projectId }: IntegrationsPanelProps) {
   const [collectionId, setCollectionId] = useState("");
   const [status, setStatus] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+  const [loadError, setLoadError] = useState<string | null>(null);
 
   const meta = CMS_PROVIDERS.find((p) => p.id === provider) || CMS_PROVIDERS[0];
 
@@ -42,6 +44,9 @@ export function IntegrationsPanel({ projectId }: IntegrationsPanelProps) {
       .then((r) => r.json())
       .then((data) => {
         if (active) setSaved(data.integrations || []);
+      })
+      .catch(() => {
+        if (active) setLoadError("Couldn't load saved integrations. Check your connection and reload.");
       });
     return () => {
       active = false;
@@ -94,6 +99,7 @@ export function IntegrationsPanel({ projectId }: IntegrationsPanelProps) {
 
   return (
     <div className="bg-card border border-border rounded-xl p-6 space-y-4">
+      {loadError && <PanelError title="Integrations unavailable" message={loadError} />}
       <div>
         <h3 className="font-semibold">Saved CMS Integrations</h3>
         <p className="text-sm text-muted-foreground mt-1">

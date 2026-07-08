@@ -6,6 +6,8 @@ interface JobProgressBarProps {
   label: string;
   subLabel?: string | null;
   progressPercent?: number | null;
+  /** Real attributed spend so far, e.g. "$0.0342 · 4.2k tokens" — omitted entirely until real spend exists. */
+  costLabel?: string | null;
   stopping?: boolean;
   onStop?: () => void;
 }
@@ -17,7 +19,7 @@ interface JobProgressBarProps {
  * progress_percent is populated, and an optional Stop button wired to the
  * cancel API routes.
  */
-export function JobProgressBar({ label, subLabel, progressPercent, stopping, onStop }: JobProgressBarProps) {
+export function JobProgressBar({ label, subLabel, progressPercent, costLabel, stopping, onStop }: JobProgressBarProps) {
   const hasPercent = typeof progressPercent === "number" && progressPercent >= 0;
 
   return (
@@ -35,6 +37,14 @@ export function JobProgressBar({ label, subLabel, progressPercent, stopping, onS
           </div>
         )}
       </div>
+      {costLabel && (
+        <span
+          className="shrink-0 whitespace-nowrap rounded-full bg-secondary px-2 py-0.5 text-xs text-muted-foreground"
+          title="Real attributed spend for this job so far"
+        >
+          {costLabel}
+        </span>
+      )}
       {onStop && (
         <button
           type="button"

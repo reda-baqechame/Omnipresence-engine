@@ -14,6 +14,8 @@ import { analyzePassageReadiness } from "@/lib/engines/passage-readiness";
 import { sendScoreDropAlert, sendCitationDropAlert } from "@/lib/email/reports";
 import { dispatchProjectAlerts } from "@/lib/engines/monitoring-alerts";
 import { gatherReportData, saveReportArtifacts, saveIntelligenceReportArtifacts } from "@/lib/engines/report-builder";
+import { createStepProgressTracker } from "@/lib/observability/job-progress";
+import { STANDARD_REPORT_STEPS } from "@/lib/engines/report-step-names";
 import { syncProjectAttribution } from "@/lib/engines/attribution-sync";
 import { sendWeeklyReport } from "@/lib/email/reports";
 import { sendSlackWebhook, buildWeeklyReportSlackMessage } from "@/lib/notifications/slack";
@@ -36,6 +38,8 @@ import {
 import { runAllRankChecks } from "@/lib/engines/rank-tracker-service";
 import { runDueRankSchedules } from "@/lib/engines/rank-schedule-service";
 import { snapshotProjectBacklinks, snapshotProjectBacklinkGraph } from "@/lib/engines/backlink-monitor";
+import { runProviderBenchmark } from "@/lib/engines/provider-benchmark";
+import { persistBenchmarkRun } from "@/lib/engines/benchmark-writer";
 import { processScheduledContent } from "@/lib/engines/content-publish-scheduler";
 import {
   runKeywordResearch,
@@ -347,13 +351,15 @@ export const generateReport = inngest.createFunction(
     // Cooperative cancellation checkpoint: cheap DB read before the expensive
     // work (gatherIntelligenceReport fans out ~15 provider/engine calls; the
     // standard path's PDF render is comparatively cheap but still real work).
-    // The deep-report internal pipeline currently gathers its sections via a
-    // single Promise.all fan-out rather than a sequential per-section loop,
-    // so mid-generation cancellation there would need an architecture change
-    // (splitting that fan-out into an interruptible sequence) — out of scope
-    // for this ticket. This checkpoint still guarantees a cancel requested
-    // before generation starts is honored, and never produces a final report
-    // for a cancelled run.
+    // This checkpoint guarantees a cancel requested before generation starts
+    // is honored, and never produces a final report for a cancelled run. The
+    // deep-report path also gets FINER-GRAINED mid-flight protection: its
+    // intelligence fan-out is a bounded-concurrency, cancellation-aware task
+    // runner (runCancellableSteps() in intelligence-report-builder.ts) that
+    // re-checks cancellation before scheduling/executing each named step, so
+    // a cancel that lands after this checkpoint but mid-gather still stops
+    // new expensive calls from starting — see saveIntelligenceReportArtifacts
+    // / gatherIntelligenceReport (report-builder.ts).
     const cancelledBeforeStart = await step.run("check-cancel-before-generate", async () => {
       const { data } = await supabase
         .from("reports")
@@ -374,12 +380,28 @@ export const generateReport = inngest.createFunction(
     try {
       if (reportType === "deep") {
         await step.run("save-intelligence-report", async () => {
-          await saveIntelligenceReportArtifacts(supabase, projectId, reportId, "");
+          await saveIntelligenceReportArtifacts(supabase, projectId, reportId, "", {
+            isCancelled: async () => {
+              const { data } = await supabase
+                .from("reports")
+                .select("cancel_requested_at, status")
+                .eq("id", reportId)
+                .single();
+              return Boolean(data?.cancel_requested_at) || data?.status === "cancelling" || data?.status === "cancelled";
+            },
+          });
         });
       } else {
+        // Patch D: standard reports have no named sub-steps of their own (no
+        // fan-out to break into "ai_visibility"/"backlink_analysis"/etc like
+        // deep reports), so the 3 coarse phases Inngest itself already
+        // breaks this function into are exactly the truthful step list.
+        const progress = createStepProgressTracker(supabase, "reports", reportId, STANDARD_REPORT_STEPS);
+        await progress.onStepStart("gathering");
         const gathered = await step.run("gather-report-data", async () => {
           return gatherReportData(supabase, projectId);
         });
+        await progress.onStepComplete("gathering");
 
         if (!gathered) {
           await supabase.from("reports").update({ status: "failed", error_message: "No report data" }).eq("id", reportId);
@@ -403,7 +425,12 @@ export const generateReport = inngest.createFunction(
           return { success: false, cancelled: true, reportId };
         }
 
+        await progress.onStepStart("rendering");
         await step.run("save-report", async () => {
+          // saveReportArtifacts() itself writes the terminal status: "ready"
+          // + progress_percent: 100 + current_step: null in its own final
+          // update, so no onStepComplete("rendering")/"finalizing" write is
+          // needed here — it would just be immediately superseded.
           await saveReportArtifacts(
             supabase,
             projectId,
@@ -1630,6 +1657,43 @@ export const weeklyProviderRecalibration = inngest.createFunction(
   }
 );
 
+/**
+ * PresenceData OS benchmark layer (Section 9 of the plan): runs the SAME real
+ * sovereign-vs-paid engine the /api/admin/provider-benchmark route and
+ * `npm run benchmark:live` already use, and persists every derivable metric
+ * into `benchmark_runs` so the platform accumulates a durable, queryable
+ * comparison history instead of only file-based JSON snapshots. Existing
+ * per-call spend guards (external-api-guard.ts, already wired into
+ * dataForSEORequest()/scrapePageFirecrawl()) apply transitively to whatever
+ * paid calls this run makes — there is currently one SHARED daily/monthly
+ * budget across customer traffic and this cron, not a separate
+ * benchmark-only sub-budget; if the shared budget is already exhausted, the
+ * paid side simply fails closed (unavailable), it never overspends.
+ *
+ * Writes no rows that claim a capability "passed" without genuinely
+ * evaluating it this run — see benchmark-writer.ts's module doc for the
+ * honesty rules `passed: null` follows. No promotion/demotion decision is
+ * made here; this function only records evidence.
+ */
+export const nightlyProviderBenchmark = inngest.createFunction(
+  { id: "nightly-provider-benchmark", retries: 1, triggers: [{ cron: "0 2 * * *" }] },
+  async ({ step }) => {
+    const supabase = await createServiceClient();
+    return step.run("run-and-persist-benchmark", async () => {
+      const inputs = {
+        urls: process.env.BENCHMARK_URLS?.split(",").map((s) => s.trim()).filter(Boolean),
+        domains: process.env.BENCHMARK_DOMAINS?.split(",").map((s) => s.trim()).filter(Boolean),
+        queries: process.env.BENCHMARK_QUERIES?.split(",").map((s) => s.trim()).filter(Boolean),
+      };
+      const report = await runProviderBenchmark(inputs);
+      const { inserted } = await persistBenchmarkRun(supabase, report);
+      const { recordMetric } = await import("@/lib/observability/log");
+      recordMetric("benchmark.nightly.rows_inserted", inserted);
+      return { inserted, durationMs: report.durationMs };
+    });
+  }
+);
+
 export const functions = [
   runFullScan,
   runFullScanLegacy,
@@ -1666,6 +1730,7 @@ export const functions = [
   weeklyPanelRun,
   sloCheckCron,
   weeklyProviderRecalibration,
+  nightlyProviderBenchmark,
   runOpsItem,
   opsQueueDrain,
   deployVerificationSweep,

@@ -2,6 +2,7 @@
 
 import { useCallback, useState } from "react";
 import { FileSearch, X, Loader2 } from "lucide-react";
+import { freshnessLabel } from "@/lib/utils";
 
 export interface EvidenceDrawerProps {
   projectId: string;
@@ -23,6 +24,8 @@ interface MeasurementRow {
   response_hash: string;
   payload_excerpt: Record<string, unknown>;
   evidence_url: string | null;
+  trace_id: string | null;
+  captured_at: string;
   created_at: string;
 }
 
@@ -35,7 +38,36 @@ interface AiCaptureRow {
   cited_urls: string[];
   source_domains: string[];
   evidence_url: string | null;
+  trace_id: string | null;
+  captured_at: string;
   created_at: string;
+}
+
+/** Shared confidence + freshness + trace_id footer, rendered identically for both evidence types. */
+function EvidenceMeta({
+  confidence,
+  capturedAt,
+  traceId,
+}: {
+  confidence?: number | null;
+  capturedAt: string;
+  traceId: string | null;
+}) {
+  return (
+    <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-[10px] text-muted-foreground pt-1 border-t border-border/50 mt-1">
+      {typeof confidence === "number" && (
+        <span title="Provider-reported confidence in this value">
+          Confidence: <span className="font-medium text-foreground/80">{Math.round(confidence * 100)}%</span>
+        </span>
+      )}
+      <span title={new Date(capturedAt).toLocaleString()}>Captured {freshnessLabel(capturedAt)}</span>
+      {traceId && (
+        <span className="font-mono truncate max-w-[160px]" title={`Request trace: ${traceId}`}>
+          trace:{traceId.slice(0, 12)}
+        </span>
+      )}
+    </div>
+  );
 }
 
 /**
@@ -138,6 +170,7 @@ export function EvidenceDrawer({ projectId, capability, target, label = "View pr
                       Open artifact
                     </a>
                   )}
+                  <EvidenceMeta confidence={row.confidence} capturedAt={row.captured_at} traceId={row.trace_id} />
                 </div>
               ))}
 
@@ -175,6 +208,7 @@ export function EvidenceDrawer({ projectId, capability, target, label = "View pr
                       Open artifact
                     </a>
                   )}
+                  <EvidenceMeta capturedAt={row.captured_at} traceId={row.trace_id} />
                 </div>
               ))}
             </div>

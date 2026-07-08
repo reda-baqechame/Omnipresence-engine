@@ -133,16 +133,8 @@ test("run-full-scan checks idempotency-key before doing any audit/brand/prompt w
   assert.match(scan, /duplicate:\s*true/, "a duplicate-key run must short-circuit and report itself as a duplicate");
 });
 
-test("cancel routes gate the status transition to in-flight statuses only (never flip a completed job)", () => {
-  const root = join(here, "..", "..", "..", "app", "api");
-  const reportCancel = readFileSync(
-    join(root, "projects", "[id]", "report", "[reportId]", "cancel", "route.ts"),
-    "utf8"
-  );
-  const scanCancel = readFileSync(join(root, "projects", "[id]", "scan", "cancel", "route.ts"), "utf8");
-  for (const src of [reportCancel, scanCancel]) {
-    assert.match(src, /"cancelling"/, "cancel route must set status to cancelling");
-    assert.match(src, /cancel_requested_at/, "cancel route must record cancel_requested_at");
-    assert.match(src, /verifyProjectAccess/, "cancel route must authorize the caller against the project");
-  }
-});
+// Full behavioral coverage of the cancel routes' status-transition gating,
+// race handling, auth and RBAC now lives in
+// src/app/api/__tests__/report-cancel-route.test.ts and scan-cancel-route.test.ts
+// (real mock.module()-driven tests against the actual route handlers), so the
+// source-text check that used to live here has been removed as redundant.

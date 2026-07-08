@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { PanelError } from "@/components/panel-states";
 
 interface BehaviorMetric {
   url: string;
@@ -42,6 +43,7 @@ export function BehaviorPanel({ projectId }: { projectId: string }) {
   const [loading, setLoading] = useState("");
   const [token, setToken] = useState("");
   const [clarityId, setClarityId] = useState("");
+  const [loadError, setLoadError] = useState<string | null>(null);
 
   useEffect(() => {
     fetch(`/api/behavior?projectId=${projectId}`)
@@ -49,7 +51,8 @@ export function BehaviorPanel({ projectId }: { projectId: string }) {
       .then((d) => {
         setConnected(Boolean(d.connected));
         setMetrics(d.metrics || []);
-      });
+      })
+      .catch(() => setLoadError("Couldn't load behavior data. Check your connection and reload."));
   }, [projectId]);
 
   async function connect() {
@@ -98,6 +101,7 @@ export function BehaviorPanel({ projectId }: { projectId: string }) {
 
   return (
     <div className="space-y-6">
+      {loadError && <PanelError title="Behavior data unavailable" message={loadError} />}
       {connected === false && (
         <div className="bg-card border border-border rounded-xl p-4 space-y-3">
           <h3 className="font-semibold">Connect Microsoft Clarity (free)</h3>

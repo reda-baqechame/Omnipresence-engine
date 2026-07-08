@@ -4,6 +4,8 @@ import { renderReportHtmlForView } from "@/lib/engines/report-builder";
 import { renderReportPdf } from "@/lib/providers/ai-ui-capture";
 import { generateReportPDF } from "@/lib/engines/report-pdf";
 import { gatherReportData } from "@/lib/engines/report-builder";
+import { guardPublicEndpoint } from "@/lib/security/public-guard";
+import { checkRateLimitDistributed, rateLimitResponse } from "@/lib/security/rate-limit";
 import type { IntelligenceReportSectionId } from "@/types/intelligence-report";
 
 export const runtime = "nodejs";
@@ -23,10 +25,25 @@ async function bufferFromStorage(
 }
 
 export async function GET(
-  _request: NextRequest,
+  request: NextRequest,
   { params }: { params: Promise<{ token: string }> }
 ) {
   const { token } = await params;
+
+  // Per-IP guard: a share token is an unguessable 128-bit capability URL, not
+  // a brute-forceable secret, but this endpoint's fallback path (legacy
+  // reports missing a stored artifact) triggers real, billable regeneration —
+  // full provider fan-out, an LLM narrative call, and a Playwright PDF render.
+  // Unlimited hits from one IP must not be able to force unbounded spend.
+  const ipLimited = await guardPublicEndpoint(request, "report-pdf", 60, 60_000);
+  if (ipLimited) return ipLimited;
+
+  // Per-token guard (not per-IP): protects a single leaked/shared link from
+  // being hammered across many source IPs — a distributed scraper hitting one
+  // token from 1000 IPs would sail through the per-IP limiter above.
+  const tokenLimit = await checkRateLimitDistributed(`report-pdf-token:${token}`, 120, 60_000);
+  if (!tokenLimit.allowed) return rateLimitResponse(tokenLimit.retryAfterSec || 60);
+
   const supabase = await createServiceClient();
 
   const { data: report } = await supabase
@@ -41,7 +58,12 @@ export async function GET(
     return NextResponse.json({ error: "Not found" }, { status: 404 });
   }
 
-  if (report.status === "generating" || report.status === "pending") {
+  if (report.status === "generating" || report.status === "pending" || report.status === "cancelling") {
+    // "cancelling" means a cancel was requested but the background job hasn't
+    // converged to its terminal "cancelled" state yet — this must NOT fall
+    // through to the legacy on-demand-regeneration path below, or a report
+    // the user explicitly asked to stop would trigger a fresh, billable
+    // provider/LLM/PDF-render fan-out anyway while cancellation is in flight.
     return NextResponse.json({ error: "Report still generating" }, { status: 202 });
   }
 
@@ -68,6 +90,12 @@ export async function GET(
           "Content-Type": "application/pdf",
           "Content-Disposition": `attachment; filename="${reportType === "deep" ? "intelligence-report" : "report"}.pdf"`,
           "X-Report-Source": "stored",
+          // P3 fix ("X-Report-Degraded header consistency"): a real, stored PDF
+          // is by definition not degraded — set this explicitly rather than
+          // omitting it, so a client checking the header never has to treat
+          // "header absent" and "header false" as two different signals for
+          // the same "you got the real PDF" outcome.
+          "X-Report-Degraded": "false",
         },
       });
     }
@@ -112,6 +140,7 @@ export async function GET(
           "Content-Type": "application/pdf",
           "Content-Disposition": `attachment; filename="intelligence-report.pdf"`,
           "X-Report-Source": "regenerated",
+          "X-Report-Degraded": "false",
         },
       });
     }
@@ -125,6 +154,7 @@ export async function GET(
             "Content-Type": "application/pdf",
             "Content-Disposition": `attachment; filename="report.pdf"`,
             "X-Report-Source": "regenerated",
+            "X-Report-Degraded": "false",
           },
         });
       } catch {

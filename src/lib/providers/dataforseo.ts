@@ -2,6 +2,7 @@ import { createHmac } from "crypto";
 import type { ProviderResult, SERPResult } from "./types";
 import { fetchWithTimeout } from "./http";
 import { assertOmniDataClientConfigured, resolveOmniDataApiKey } from "./omnidata-auth";
+import { assertWithinExternalApiBudget, recordExternalApiSpend } from "./external-api-guard";
 
 const OMNIDATA_URL = process.env.OMNIDATA_BASE_URL?.replace(/\/$/, "");
 const USE_OMNIDATA = Boolean(OMNIDATA_URL);
@@ -49,6 +50,15 @@ export function isOmniDataActive(): boolean {
 }
 
 async function dataForSEORequest<T>(endpoint: string, body: unknown[]): Promise<T> {
+  // P0 fix: this is the single chokepoint nearly every exported function in
+  // this file funnels through — it previously had no rate limit and no
+  // budget, so a runaway caller (or an unauthenticated route that triggers
+  // one) could make unbounded paid DataForSEO/OmniData calls with nothing in
+  // the codebase noticing. Callers already wrap these calls in try/catch and
+  // degrade to "unavailable" on any thrown error, so this fails the same
+  // honest way a network error would — never a crash, never a silent bypass.
+  await assertWithinExternalApiBudget("dataforseo");
+
   const response = await fetchWithTimeout(`${getBaseUrl()}${endpoint}`, {
     method: "POST",
     headers: getAuthHeaders(body),
@@ -60,6 +70,7 @@ async function dataForSEORequest<T>(endpoint: string, body: unknown[]): Promise<
     throw new Error(`${USE_OMNIDATA ? "OmniData" : "DataForSEO"} API error: ${response.status}`);
   }
 
+  void recordExternalApiSpend("dataforseo");
   return response.json() as Promise<T>;
 }
 
@@ -71,12 +82,14 @@ async function dataForSEORequest<T>(endpoint: string, body: unknown[]): Promise<
 export async function omniDataGet<T>(endpoint: string): Promise<T | null> {
   if (!USE_OMNIDATA) return null;
   try {
+    await assertWithinExternalApiBudget("dataforseo");
     const response = await fetchWithTimeout(`${getBaseUrl()}${endpoint}`, {
       method: "GET",
       headers: getAuthHeaders({}),
       timeoutMs: 15000,
     });
     if (!response.ok) return null;
+    void recordExternalApiSpend("dataforseo");
     return response.json() as Promise<T>;
   } catch {
     return null;
@@ -696,33 +709,87 @@ export async function getOmniDataAuthority(domain: string): Promise<{
   }
 }
 
+export interface KeywordCpcDetail {
+  keyword: string;
+  cpc: number;
+}
+
+export interface GetKeywordCpcOptions {
+  /**
+   * When OmniData isn't configured (USE_OMNIDATA is false), getRealKeywordCpc
+   * normally returns null rather than guess a number — per-provider-hierarchy
+   * rule, CPC must come from an official/Keyword-Planner-backed source, never
+   * a fabricated estimate. Setting this true explicitly opts in to attempting
+   * the same /keywords/metrics/live call against raw DataForSEO instead.
+   *
+   * Default false intentionally: raw DataForSEO's actual response shape for
+   * this endpoint has not been verified against the `data_source: "keyword_
+   * planner"` + `metrics[]` parsing below (that shape is OmniData's own
+   * DataForSEO-compatible envelope — see services/omnidata/src/api/routes.ts
+   * — real DataForSEO's raw JSON may differ), so enabling this without
+   * verifying real DataForSEO's response would risk silently returning
+   * `null` every time (safe) or, if the shapes happen to coincide, an
+   * unverified value (not safe to label "real" without confirming). Do not
+   * flip this default without adding a golden-fixture test against real
+   * DataForSEO output first.
+   */
+  allowFreshDataForSeoCpc?: boolean;
+}
+
 /**
- * Real average CPC (USD) for keywords from the Google Ads Keyword Planner via
- * OmniData. Returns null when the planner is not configured so callers can fall
- * back to industry defaults honestly.
+ * Per-keyword real CPC (USD) from the Google Ads Keyword Planner via
+ * OmniData's /keywords/metrics/live. Returns null when no Keyword-Planner-
+ * backed source is available (planner not configured, or explicitly
+ * declining the raw-DataForSEO fallback) — never a guessed value. Keeps the
+ * per-keyword `keyword` field (previously discarded by getRealKeywordCpc's
+ * blended-average-only parsing) so callers can cache/attribute CPC per
+ * keyword instead of only as one number for an entire batch.
  */
-export async function getRealKeywordCpc(keywords: string[]): Promise<number | null> {
-  if (!USE_OMNIDATA || keywords.length === 0) return null;
+export async function getRealKeywordCpcDetailed(
+  keywords: string[],
+  opts: GetKeywordCpcOptions = {}
+): Promise<KeywordCpcDetail[] | null> {
+  if (keywords.length === 0) return null;
+  if (!USE_OMNIDATA && !opts.allowFreshDataForSeoCpc) return null;
   try {
     const data = await dataForSEORequest<{
       tasks: Array<{
         result: Array<{
           data_source?: string;
-          metrics?: Array<{ cpc?: number }>;
+          metrics?: Array<{ keyword?: string; cpc?: number }>;
         }>;
       }>;
     }>("/keywords/metrics/live", [{ keywords: keywords.slice(0, 200) }]);
 
     const block = data.tasks?.[0]?.result?.[0];
     if (block?.data_source !== "keyword_planner" || !block.metrics?.length) return null;
-    const cpcs = block.metrics
-      .map((m) => m.cpc)
-      .filter((c): c is number => typeof c === "number" && c > 0);
-    if (cpcs.length === 0) return null;
-    return Math.round((cpcs.reduce((a, b) => a + b, 0) / cpcs.length) * 100) / 100;
+    const details = block.metrics
+      .filter(
+        (m): m is { keyword: string; cpc: number } =>
+          typeof m.keyword === "string" && m.keyword.length > 0 && typeof m.cpc === "number" && m.cpc > 0
+      )
+      .map((m) => ({ keyword: m.keyword.trim().toLowerCase(), cpc: m.cpc }));
+    return details.length ? details : null;
   } catch {
     return null;
   }
+}
+
+/**
+ * Real average CPC (USD) for keywords from the Google Ads Keyword Planner via
+ * OmniData. Returns null when the planner is not configured so callers can fall
+ * back to industry defaults honestly.
+ *
+ * Prefer getRealKeywordCpcDetailed() (or the cache-aware
+ * getCachedRealKeywordCpc() in keyword-cpc-cache.ts) for new call sites that
+ * can benefit from per-keyword caching — this blended-average function is
+ * kept for existing callers (e.g. ppc-intelligence.ts) that only need one
+ * number and don't participate in report cancellation/caching.
+ */
+export async function getRealKeywordCpc(keywords: string[]): Promise<number | null> {
+  const details = await getRealKeywordCpcDetailed(keywords);
+  if (!details || details.length === 0) return null;
+  return Math.round((details.reduce((a, b) => a + b.cpc, 0) / details.length) * 100) / 100;
 }
 
 export type LLMPlatform = "google" | "chat_gpt";

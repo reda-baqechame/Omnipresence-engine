@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { MetricGlossary } from "@/components/metric-glossary";
 import { ProjectionBadge } from "@/components/projection-badge";
+import { PanelError, PanelLoading } from "@/components/panel-states";
 
 interface Summary {
   available: boolean;
@@ -91,6 +92,7 @@ export function RoiCommandPanel({ projectId }: { projectId: string }) {
   const [loading, setLoading] = useState("");
   const [clarityId, setClarityId] = useState("");
   const [hotjarId, setHotjarId] = useState("");
+  const [loadError, setLoadError] = useState<string | null>(null);
 
   useEffect(() => {
     fetch(`/api/roi?projectId=${projectId}`)
@@ -98,7 +100,8 @@ export function RoiCommandPanel({ projectId }: { projectId: string }) {
       .then((d) => {
         setSummary(d.summary);
         setUxEmbeds(d.uxEmbeds || []);
-      });
+      })
+      .catch(() => setLoadError("Couldn't load ROI data. Check your connection and reload."));
   }, [projectId]);
 
   async function loadLandingPages() {
@@ -128,7 +131,9 @@ export function RoiCommandPanel({ projectId }: { projectId: string }) {
     setLoading("");
   }
 
-  if (!summary) return <p className="text-sm text-muted-foreground">Loading…</p>;
+  if (loadError) return <PanelError title="ROI data unavailable" message={loadError} />;
+
+  if (!summary) return <PanelLoading title="Loading ROI data" />;
 
   if (!summary.available) {
     return (

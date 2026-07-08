@@ -62,6 +62,7 @@ const r = spawnSync(
   "node",
   [
     "--disable-warning=MODULE_TYPELESS_PACKAGE_JSON",
+    "--experimental-strip-types",
     "--import",
     "./tests/_lib/register-loader.mjs",
     "--test",

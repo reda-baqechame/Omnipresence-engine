@@ -34,6 +34,8 @@ const ALLOWLIST = {
   "api/traffic-panel/ingest/route.ts": "opt-in pixel ingest gated by TRAFFIC_PANEL_INGEST_SECRET header",
   "api/traffic-panel/beacon/route.ts": "public 1x1 beacon — domain+projectId validated, no PII, best-effort insert",
   "api/traffic-panel/pixel.js/route.ts": "public embed script — no tenant data, points to beacon",
+  "api/admin/benchmark-runs/route.ts":
+    "benchmark_runs carries no tenant/organization column (service-role-only table per verify-rls-coverage.mjs); route gates itself via isPlatformAdminAuthorized (BENCHMARK_SECRET bearer or owner/admin membership), not per-project ownership",
 };
 
 function walk(dir) {

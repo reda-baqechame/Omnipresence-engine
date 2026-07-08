@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { PanelError } from "@/components/panel-states";
 
 interface CoverageItem {
   url: string;
@@ -38,6 +39,7 @@ export function IndexationPanel({ projectId }: { projectId: string }) {
   const [logText, setLogText] = useState("");
   const [loading, setLoading] = useState("");
   const [msg, setMsg] = useState("");
+  const [loadError, setLoadError] = useState<string | null>(null);
 
   useEffect(() => {
     fetch(`/api/indexation?projectId=${projectId}`)
@@ -45,7 +47,8 @@ export function IndexationPanel({ projectId }: { projectId: string }) {
       .then((d) => {
         if (d.coverage) setCoverage(d.coverage);
         if (d.crawlerReport) setCrawler(d.crawlerReport);
-      });
+      })
+      .catch(() => setLoadError("Couldn't load indexation data. Check your connection and reload."));
   }, [projectId]);
 
   async function runCoverage() {
@@ -92,6 +95,7 @@ export function IndexationPanel({ projectId }: { projectId: string }) {
 
   return (
     <div className="space-y-6">
+      {loadError && <PanelError title="Indexation data unavailable" message={loadError} />}
       <div className="bg-card border border-border rounded-xl p-4">
         <div className="flex items-center justify-between mb-2">
           <h3 className="font-semibold">Index coverage management</h3>

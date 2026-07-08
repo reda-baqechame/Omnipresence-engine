@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { PanelError } from "@/components/panel-states";
 
 interface Mention {
   platform: string;
@@ -48,11 +49,13 @@ export function ReputationPanel({ projectId }: { projectId: string }) {
   const [ai, setAi] = useState<{ available: boolean; reason?: string; result?: AiSentiment } | null>(null);
   const [serp, setSerp] = useState<BrandSerp | null>(null);
   const [news, setNews] = useState<{ available: boolean; reason?: string; summary?: { total: number; negative: number; sources: number } } | null>(null);
+  const [loadError, setLoadError] = useState<string | null>(null);
 
   useEffect(() => {
     fetch(`/api/reputation?projectId=${projectId}`)
       .then((r) => r.json())
-      .then((d) => setMentions(d.mentions || []));
+      .then((d) => setMentions(d.mentions || []))
+      .catch(() => setLoadError("Couldn't load reputation data. Check your connection and reload."));
   }, [projectId]);
 
   async function post(action: string) {
@@ -96,6 +99,7 @@ export function ReputationPanel({ projectId }: { projectId: string }) {
 
   return (
     <div className="space-y-6">
+      {loadError && <PanelError title="Reputation data unavailable" message={loadError} />}
       <div className="bg-card border border-border rounded-xl p-4">
         <div className="flex items-center justify-between mb-2">
           <h3 className="font-semibold">Mention monitoring</h3>

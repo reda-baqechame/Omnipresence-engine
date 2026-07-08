@@ -32,6 +32,7 @@ export const PROJECT_HUB_NAV: HubNavCategory[] = [
     label: "Command",
     items: [
       { href: "", label: "Domain Overview", requires: "always" },
+      { href: "/gate", label: "Presence Gate", requires: "always" },
       { href: "/trust", label: "Data Trust", requires: "always" },
       { href: "/competitors", label: "Competitor Compare", requires: "serp" },
     ],

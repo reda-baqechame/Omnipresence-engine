@@ -5,6 +5,7 @@ import { EvidenceDrawer } from "@/components/evidence-drawer";
 import { ProvenanceBadge } from "@/components/provenance-badge";
 import { MetricGlossary } from "@/components/metric-glossary";
 import { DataTableToolbar } from "@/components/data-table-toolbar";
+import { PanelError } from "@/components/panel-states";
 
 const KEYWORD_COLUMNS = [
   { id: "keyword" as const, label: "Keyword" },
@@ -76,6 +77,7 @@ export function KeywordsPanel({ projectId, industry = "" }: KeywordsPanelProps) 
   const [visibleCols, setVisibleCols] = useState<KeywordCol[]>(KEYWORD_COLUMNS.map((c) => c.id));
   const [searchQ, setSearchQ] = useState("");
   const [intentFilter, setIntentFilter] = useState("all");
+  const [loadError, setLoadError] = useState<string | null>(null);
 
   const filteredOpportunities = opportunities.filter((row) => {
     if (searchQ && !row.keyword.toLowerCase().includes(searchQ.toLowerCase())) return false;
@@ -95,6 +97,9 @@ export function KeywordsPanel({ projectId, industry = "" }: KeywordsPanelProps) 
       .then((r) => r.json())
       .then((data) => {
         if (active) setOpportunities(data.opportunities || []);
+      })
+      .catch(() => {
+        if (active) setLoadError("Couldn't load keyword data. Check your connection and reload.");
       });
     return () => {
       active = false;
@@ -178,6 +183,7 @@ export function KeywordsPanel({ projectId, industry = "" }: KeywordsPanelProps) 
 
   return (
     <div className="space-y-6">
+      {loadError && <PanelError title="Keyword data unavailable" message={loadError} />}
       <div className="bg-card border border-border rounded-xl p-4">
         <h3 className="font-semibold mb-2">Keyword Intelligence</h3>
         <p className="text-sm text-muted-foreground mb-4">

@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { CapabilityEvidenceBar } from "@/components/capability-evidence-bar";
+import { PanelError } from "@/components/panel-states";
 
 interface CrawlIssue {
   type: string;
@@ -30,11 +31,13 @@ export function DeepCrawlPanel({ projectId }: { projectId: string }) {
   const [meta, setMeta] = useState<{ pagesCrawled?: number; maxDepth?: number; reason?: string } | null>(null);
   const [loading, setLoading] = useState(false);
   const [open, setOpen] = useState<string | null>(null);
+  const [loadError, setLoadError] = useState<string | null>(null);
 
   useEffect(() => {
     fetch(`/api/deep-crawl?projectId=${projectId}`)
       .then((r) => r.json())
-      .then((d) => setIssues(d.issues || []));
+      .then((d) => setIssues(d.issues || []))
+      .catch(() => setLoadError("Couldn't load crawl data. Check your connection and reload."));
   }, [projectId]);
 
   async function run() {
@@ -52,6 +55,7 @@ export function DeepCrawlPanel({ projectId }: { projectId: string }) {
 
   return (
     <div className="bg-card border border-border rounded-xl p-4">
+      {loadError && <PanelError title="Crawl data unavailable" message={loadError} className="mb-3" />}
       <CapabilityEvidenceBar
         projectId={projectId}
         capability="technical"

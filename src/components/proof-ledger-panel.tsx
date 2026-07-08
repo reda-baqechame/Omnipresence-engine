@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import { PanelError } from "@/components/panel-states";
 
 interface LedgerEntry {
   id: string;
@@ -46,6 +47,7 @@ export function ProofLedgerPanel({ projectId }: { projectId: string }) {
   const [loading, setLoading] = useState(true);
   const [surface, setSurface] = useState<string>("all");
   const [expanded, setExpanded] = useState<string | null>(null);
+  const [loadError, setLoadError] = useState<string | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -56,6 +58,8 @@ export function ProofLedgerPanel({ projectId }: { projectId: string }) {
         if (cancelled) return;
         setEntries(data.entries || []);
         setReport(data.guaranteeReport || null);
+      } catch {
+        if (!cancelled) setLoadError("Couldn't load the proof ledger. Check your connection and reload.");
       } finally {
         if (!cancelled) setLoading(false);
       }
@@ -75,6 +79,7 @@ export function ProofLedgerPanel({ projectId }: { projectId: string }) {
 
   return (
     <div className="space-y-6">
+      {loadError && <PanelError title="Proof ledger unavailable" message={loadError} />}
       {report && (
         <div className="bg-card border border-border rounded-xl p-5">
           <div className="flex items-center justify-between mb-3">

@@ -81,7 +81,24 @@ export async function GET(
   }));
 
   const measuredVisibility = (visibility || []).filter((v) => v.data_source === "measured").length;
-  const providers = (await describeProviders()).filter((p) => p.usableNow);
+  const allProviders = await describeProviders();
+  const providers = allProviders.filter((p) => p.usableNow);
+  // Honesty fix (P2): previously silently dropped — a user had no way to see
+  // which sovereign/paid data sources are registered but NOT wired up, only
+  // the ones that happened to be active. List each missing one with why.
+  const missingProviders = allProviders
+    .filter((p) => !p.usableNow)
+    .map((p) => ({
+      id: p.id,
+      capability: p.capability,
+      reason: !p.enabled
+        ? p.paid
+          ? "Paid provider — API key not configured"
+          : "Not configured"
+        : p.category === "benchmark_only"
+          ? "Benchmark-only — never used for live results"
+          : "Disabled in Zero-Paid-Keys mode",
+    }));
   const caps = getCapabilitiesSummary();
 
   return NextResponse.json({
@@ -121,6 +138,7 @@ export async function GET(
       confidence: p.confidence,
       circuit: p.circuit,
     })),
+    missingProviders,
     platform: {
       liveData: caps.liveData,
       serpProvider: caps.activeSerpProvider,

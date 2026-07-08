@@ -1,32 +1,31 @@
+import { AsyncLocalStorage } from "node:async_hooks";
+
 /**
  * Implicit per-job context (reportId / visibility run id) for cost/token
- * attribution, mirroring the existing trace-id pattern in trace.ts. Set once
- * at the top of a report-generation or scan run, read by cost-guard.ts /
- * telemetry.ts deep inside provider call sites without threading an extra
- * parameter through every function signature in the call chain.
+ * attribution, read by cost-guard.ts / telemetry.ts deep inside provider call
+ * sites without threading an extra parameter through every function
+ * signature in the call chain.
  *
- * Same caveat as trace.ts: this is a plain module-level variable, not
- * AsyncLocalStorage — safe for the "set once, await the whole job" usage
- * pattern this codebase already relies on for trace_id, not for arbitrarily
- * interleaved concurrent jobs sharing one warm instance.
+ * Backed by AsyncLocalStorage (Node-only; this codebase has no Edge routes,
+ * so that's safe — see trace.ts for the Edge-safe plain-variable pattern used
+ * where Edge compatibility does matter). Unlike a plain module-level
+ * variable, this correctly isolates concurrent jobs that happen to run
+ * concurrently on the same warm server/worker process (e.g. two Inngest
+ * functions executing on the same instance, or overlapping requests) — each
+ * async call chain sees only the job context it was started with, so cost
+ * and token attribution can never leak from one report/scan onto another.
  */
 export interface JobContext {
   reportId?: string;
   runId?: string;
 }
 
-let activeJob: JobContext | undefined;
+const storage = new AsyncLocalStorage<JobContext>();
 
 export async function withJobContext<T>(job: JobContext, fn: () => Promise<T>): Promise<T> {
-  const prev = activeJob;
-  activeJob = job;
-  try {
-    return await fn();
-  } finally {
-    activeJob = prev;
-  }
+  return storage.run(job, fn);
 }
 
 export function getJobContext(): JobContext | undefined {
-  return activeJob;
+  return storage.getStore();
 }

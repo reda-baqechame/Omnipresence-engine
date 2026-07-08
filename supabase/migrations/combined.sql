@@ -1,5 +1,5 @@
--- PresenceOS combined migration (80 files)
--- Generated 2026-07-07T21:27:46.722Z
+-- PresenceOS combined migration (83 files)
+-- Generated 2026-07-08T19:29:53.967Z
 
 -- ========== 0001_init.sql ==========
 
@@ -3326,5 +3326,103 @@ ALTER TABLE visibility_runs
 CREATE UNIQUE INDEX IF NOT EXISTS visibility_runs_project_idempotency_key
   ON visibility_runs(project_id, idempotency_key)
   WHERE idempotency_key IS NOT NULL;
+
+
+-- ========== 0081_report_versioning.sql ==========
+
+-- Basic report versioning: regenerating a report for a project today just
+-- creates another unrelated `reports` row with no link to the one it's
+-- meant to replace, so the Reports list fills up with an unordered pile of
+-- "OmniPresence Report" entries and there is no way to tell which one is
+-- current. Add a supersede pointer + a per-lineage version counter, scoped
+-- per (project_id, report_type) so a project's standard and deep report
+-- lineages stay independent of each other.
+
+ALTER TABLE reports
+  ADD COLUMN IF NOT EXISTS previous_report_id UUID REFERENCES reports(id) ON DELETE SET NULL,
+  ADD COLUMN IF NOT EXISTS version INTEGER NOT NULL DEFAULT 1;
+
+CREATE INDEX IF NOT EXISTS reports_previous_report_idx
+  ON reports(previous_report_id)
+  WHERE previous_report_id IS NOT NULL;
+
+
+-- ========== 0082_keyword_cpc_cache.sql ==========
+
+-- Keyword CPC cache: gatherReportData() previously re-fetched real Keyword
+-- Planner CPC (via OmniData's /keywords/metrics/live) on every single report
+-- generation, with no reuse across reports/projects that share overlapping
+-- keywords. That's both an avoidable cost (real, billable Google Ads API
+-- calls) and an avoidable cancellation-latency risk (Patch C.1): a cancelled
+-- report still has to wait out an in-flight network call it didn't need.
+--
+-- This table caches ONLY real Keyword Planner measurements (never estimates —
+-- see the CHECK constraint) keyed by (keyword, geo), so a cache hit can
+-- always be labeled `cpcSource: "real"` honestly. Global/shared, not
+-- org-scoped: CPC for a given keyword+geo is a market fact, not
+-- tenant-specific data, matching the existing api_spend_daily precedent for
+-- shared, service-role-only reference data.
+
+CREATE TABLE IF NOT EXISTS keyword_cpc_cache (
+  keyword TEXT NOT NULL,
+  geo TEXT NOT NULL DEFAULT 'US',
+  cpc NUMERIC(10, 2) NOT NULL CHECK (cpc > 0),
+  -- Fixed to 'keyword_planner': this cache must never store an
+  -- industry-estimate or otherwise fabricated value (Patch C.1 requirement:
+  -- "no fake metrics" applies to cached data too).
+  data_source TEXT NOT NULL DEFAULT 'keyword_planner' CHECK (data_source = 'keyword_planner'),
+  fetched_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  PRIMARY KEY (keyword, geo)
+);
+
+CREATE INDEX IF NOT EXISTS keyword_cpc_cache_fetched_at_idx ON keyword_cpc_cache (fetched_at);
+
+-- Only the service role reads/writes this cache (same posture as
+-- api_spend_daily / provider_telemetry); RLS on with no public policies.
+ALTER TABLE keyword_cpc_cache ENABLE ROW LEVEL SECURITY;
+
+
+-- ========== 0083_benchmark_runs.sql ==========
+
+-- Benchmark runs: durable history for the PresenceData OS benchmark layer
+-- (Section 9 of the PresenceData OS plan). Before this table, sovereign-vs-paid
+-- comparisons only ever existed as file-based JSON snapshots
+-- (docs/benchmarks/*.json) with no queryable history and no way to prove "30
+-- consecutive days meeting threshold" — the evidence bar the plan requires
+-- before any capability's DataForSEO adapter may be demoted to
+-- fallback/benchmark-only (Patch J). This table is that durable history.
+--
+-- One row per (capability, metric) per scheduled run. `passed` is nullable —
+-- NULL means "not evaluated this run" (e.g. no paid vendor configured to
+-- compare against, or the metric requires infrastructure this harness does
+-- not yet exercise), which must NEVER be conflated with a real pass. A
+-- capability only becomes eligible for promotion once it has 30 consecutive
+-- days of non-NULL, true `passed` rows for every threshold that applies to it
+-- — see scripts/provider-superiority.mjs and the nightly-provider-benchmark
+-- Inngest function for the read/write sides.
+
+CREATE TABLE IF NOT EXISTS benchmark_runs (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  capability TEXT NOT NULL,
+  metric_name TEXT NOT NULL,
+  sovereign_provider TEXT,
+  paid_provider TEXT,
+  dataset_ref TEXT,
+  sovereign_value NUMERIC,
+  paid_value NUMERIC,
+  delta NUMERIC,
+  -- NULL = not evaluated this run (no paid comparison available / metric not
+  -- yet instrumented) — an honest "unknown", never coerced to true or false.
+  passed BOOLEAN,
+  threshold_note TEXT NOT NULL,
+  run_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE INDEX IF NOT EXISTS benchmark_runs_capability_metric_run_at_idx
+  ON benchmark_runs (capability, metric_name, run_at DESC);
+
+-- Service-role-only reference/observability data (same posture as
+-- provider_telemetry / api_spend_daily) — RLS on with no public policies.
+ALTER TABLE benchmark_runs ENABLE ROW LEVEL SECURITY;
 
 
