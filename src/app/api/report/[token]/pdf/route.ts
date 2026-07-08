@@ -58,7 +58,12 @@ export async function GET(
     return NextResponse.json({ error: "Not found" }, { status: 404 });
   }
 
-  if (report.status === "generating" || report.status === "pending") {
+  if (report.status === "generating" || report.status === "pending" || report.status === "cancelling") {
+    // "cancelling" means a cancel was requested but the background job hasn't
+    // converged to its terminal "cancelled" state yet — this must NOT fall
+    // through to the legacy on-demand-regeneration path below, or a report
+    // the user explicitly asked to stop would trigger a fresh, billable
+    // provider/LLM/PDF-render fan-out anyway while cancellation is in flight.
     return NextResponse.json({ error: "Report still generating" }, { status: 202 });
   }
 
