@@ -13,6 +13,7 @@ import { buildActionPlan } from "@/lib/engines/action-plan";
 import { ActionPlanPanel } from "@/components/action-plan-panel";
 import { buildPresenceGateScore } from "@/lib/scoring/presence-gate-builder";
 import { PresenceGateCard } from "@/components/presence-gate-card";
+import { isSubScoreAvailable } from "@/lib/scoring/subscore-availability";
 
 export default async function ProjectOverviewPage({
   params,
@@ -77,14 +78,46 @@ export default async function ProjectOverviewPage({
                 )}
               </div>
               <div className="md:col-span-2 space-y-3">
-                <SubScoreBar label="AI Visibility" score={latestScore.ai_visibility} />
-                <SubScoreBar label="Search Visibility" score={latestScore.search_visibility} />
-                <SubScoreBar label="Local Visibility" score={latestScore.local_visibility} />
-                <SubScoreBar label="Social Presence" score={latestScore.social_presence} />
-                <SubScoreBar label="Directory Coverage" score={latestScore.directory_coverage} />
-                <SubScoreBar label="Authority Mentions" score={latestScore.authority_mentions} />
-                <SubScoreBar label="Technical Readiness" score={latestScore.technical_readiness} />
-                <SubScoreBar label="Conversion Readiness" score={latestScore.conversion_readiness} />
+                <SubScoreBar
+                  label="AI Visibility"
+                  score={latestScore.ai_visibility}
+                  available={isSubScoreAvailable(latestScore, "ai_visibility")}
+                />
+                <SubScoreBar
+                  label="Search Visibility"
+                  score={latestScore.search_visibility}
+                  available={isSubScoreAvailable(latestScore, "search_visibility")}
+                />
+                <SubScoreBar
+                  label="Local Visibility"
+                  score={latestScore.local_visibility}
+                  available={isSubScoreAvailable(latestScore, "local_visibility")}
+                />
+                <SubScoreBar
+                  label="Social Presence"
+                  score={latestScore.social_presence}
+                  available={isSubScoreAvailable(latestScore, "social_presence")}
+                />
+                <SubScoreBar
+                  label="Directory Coverage"
+                  score={latestScore.directory_coverage}
+                  available={isSubScoreAvailable(latestScore, "directory_coverage")}
+                />
+                <SubScoreBar
+                  label="Authority Mentions"
+                  score={latestScore.authority_mentions}
+                  available={isSubScoreAvailable(latestScore, "authority_mentions")}
+                />
+                <SubScoreBar
+                  label="Technical Readiness"
+                  score={latestScore.technical_readiness}
+                  available={isSubScoreAvailable(latestScore, "technical_readiness")}
+                />
+                <SubScoreBar
+                  label="Conversion Readiness"
+                  score={latestScore.conversion_readiness}
+                  available={isSubScoreAvailable(latestScore, "conversion_readiness")}
+                />
               </div>
             </div>
           </div>

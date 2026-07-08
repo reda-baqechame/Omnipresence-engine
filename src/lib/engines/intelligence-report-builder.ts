@@ -16,6 +16,7 @@ import { verifyLocalPresence } from "@/lib/engines/local-listings";
 import { buildEntityProfile } from "@/lib/engines/entity-engine";
 import { getSourceGraph } from "@/lib/engines/source-graph";
 import { gatherReportData } from "@/lib/engines/report-builder";
+import { getSubScoreAvailability } from "@/lib/scoring/subscore-availability";
 import type { RoadmapItem, SubscriptionPlan } from "@/types/database";
 import { canUseWhiteLabel } from "@/lib/plans/features";
 import {
@@ -45,6 +46,17 @@ async function safe<T>(fn: () => Promise<T>, fallback: T): Promise<T> {
 function emptySection(quality: ReportDataQuality = "not_available") {
   return { available: false, dataQuality: quality };
 }
+
+const DEEP_SUBSCORE_LABEL_KEYS = {
+  AI: "ai_visibility",
+  Search: "search_visibility",
+  Local: "local_visibility",
+  Social: "social_presence",
+  Directories: "directory_coverage",
+  Authority: "authority_mentions",
+  Technical: "technical_readiness",
+  Conversion: "conversion_readiness",
+} as const;
 
 export interface GatherIntelligenceOptions {
   sections?: IntelligenceReportSectionId[];
@@ -270,6 +282,7 @@ export async function gatherIntelligenceReport(
         Technical: reportData.score.technical_readiness,
         Conversion: reportData.score.conversion_readiness,
       },
+      subScoresAvailable: getSubScoreAvailability(reportData.score, DEEP_SUBSCORE_LABEL_KEYS),
       keyFindings: buildKeyFindings(reportData, visibilitySnap, competitiveTarget),
       scoreDelta,
     },

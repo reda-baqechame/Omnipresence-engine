@@ -11,6 +11,7 @@ import { getScoreLabel } from "@/lib/scoring/omnipresence";
 import { calculateVisibilityMetrics } from "@/lib/engines/visibility-scanner";
 import { calculateShareOfVoice, calculateShareOfVoiceByEngine } from "@/lib/engines/share-of-voice";
 import { escapeHtml, sanitizeHexColor } from "@/lib/security/escape-html";
+import { getSubScoreAvailability } from "@/lib/scoring/subscore-availability";
 
 function e(value: string | number | undefined | null): string {
   if (value === undefined || value === null) return "";
@@ -44,6 +45,16 @@ export function generateReportHTML(data: ReportData, whiteLabel?: { name: string
   const brand = e(whiteLabel?.name || "PresenceOS");
   const color = sanitizeHexColor(whiteLabel?.color);
   const scoreLabel = getScoreLabel(data.score.omnipresence_score);
+  const subScoreAvailable = getSubScoreAvailability(data.score, {
+    "AI Visibility": "ai_visibility",
+    Search: "search_visibility",
+    Local: "local_visibility",
+    Social: "social_presence",
+    Directories: "directory_coverage",
+    Authority: "authority_mentions",
+    Technical: "technical_readiness",
+    Conversion: "conversion_readiness",
+  });
   const visibility = calculateVisibilityMetrics(data.visibilityResults);
   const sov = calculateShareOfVoice(
     data.visibilityResults,
@@ -119,6 +130,7 @@ export function generateReportHTML(data: ReportData, whiteLabel?: { name: string
     .sub-scores { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; margin: 24px 0; }
     .sub-score { background: #f8f9fa; border-radius: 8px; padding: 12px; text-align: center; }
     .sub-score .value { font-size: 24px; font-weight: 700; color: ${color}; }
+    .sub-score .value-nodata { color: #94a3b8; font-weight: 500; }
     .sub-score .label { font-size: 11px; color: #888; text-transform: uppercase; }
     .section { margin-bottom: 32px; }
     .section h2 { font-size: 20px; color: ${color}; margin-bottom: 16px; border-bottom: 1px solid #eee; padding-bottom: 8px; }
@@ -173,14 +185,14 @@ export function generateReportHTML(data: ReportData, whiteLabel?: { name: string
     ${data.proofHtml || ""}
 
     <div class="sub-scores">
-      ${subScoreHTML("AI Visibility", data.score.ai_visibility)}
-      ${subScoreHTML("Search", data.score.search_visibility)}
-      ${subScoreHTML("Local", data.score.local_visibility)}
-      ${subScoreHTML("Social", data.score.social_presence)}
-      ${subScoreHTML("Directories", data.score.directory_coverage)}
-      ${subScoreHTML("Authority", data.score.authority_mentions)}
-      ${subScoreHTML("Technical", data.score.technical_readiness)}
-      ${subScoreHTML("Conversion", data.score.conversion_readiness)}
+      ${subScoreHTML("AI Visibility", data.score.ai_visibility, subScoreAvailable["AI Visibility"])}
+      ${subScoreHTML("Search", data.score.search_visibility, subScoreAvailable.Search)}
+      ${subScoreHTML("Local", data.score.local_visibility, subScoreAvailable.Local)}
+      ${subScoreHTML("Social", data.score.social_presence, subScoreAvailable.Social)}
+      ${subScoreHTML("Directories", data.score.directory_coverage, subScoreAvailable.Directories)}
+      ${subScoreHTML("Authority", data.score.authority_mentions, subScoreAvailable.Authority)}
+      ${subScoreHTML("Technical", data.score.technical_readiness, subScoreAvailable.Technical)}
+      ${subScoreHTML("Conversion", data.score.conversion_readiness, subScoreAvailable.Conversion)}
     </div>
 
     <div class="section">
@@ -329,6 +341,15 @@ export function generateReportHTML(data: ReportData, whiteLabel?: { name: string
 </html>`;
 }
 
-function subScoreHTML(label: string, value: number): string {
+/**
+ * P0 fix: see getSubScoreAvailability() in subscore-availability.ts — an
+ * unmeasured dimension's raw value column is a real `0`, indistinguishable
+ * from an actually-measured zero. `available` defaults to true so existing
+ * callers that don't pass it keep the prior (measured) rendering.
+ */
+function subScoreHTML(label: string, value: number, available = true): string {
+  if (!available) {
+    return `<div class="sub-score"><div class="value value-nodata">—</div><div class="label">${e(label)}</div></div>`;
+  }
   return `<div class="sub-score"><div class="value">${Math.round(value)}</div><div class="label">${e(label)}</div></div>`;
 }

@@ -74,6 +74,7 @@ const steps = [
         "src/lib/engines/__tests__/scan-cancellation.test.ts",
         "src/lib/engines/__tests__/scan-trigger-idempotency.test.ts",
         "src/lib/engines/__tests__/deep-report-cancellation.test.ts",
+        "src/lib/scoring/__tests__/subscore-availability.test.ts",
         "tests/security/tenant-isolation.test.ts",
         "src/lib/engines/__tests__/keyword-intelligence.test.ts",
         "src/lib/engines/__tests__/source-influence.test.ts",

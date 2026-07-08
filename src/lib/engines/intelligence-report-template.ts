@@ -20,10 +20,18 @@ function qualityBadge(q: string): string {
   return `<span class="badge badge-${q}">${e(labels[q] || q)}</span>`;
 }
 
-function barChart(items: Array<{ label: string; value: number; max?: number }>, color: string): string {
-  const max = Math.max(...items.map((i) => i.max ?? i.value), 1);
+function barChart(items: Array<{ label: string; value: number; max?: number; available?: boolean }>, color: string): string {
+  // Unavailable dimensions must never be plotted as a numeric zero — that's
+  // indistinguishable from an actually-measured zero and reads as a false
+  // "we checked, you scored nothing" verdict. They're excluded from both the
+  // chart's max() calculation and rendered as a distinct "No data" row.
+  const measured = items.filter((i) => i.available !== false);
+  const max = Math.max(...measured.map((i) => i.max ?? i.value), 1);
   return items
     .map((item) => {
+      if (item.available === false) {
+        return `<div class="bar-row"><span class="bar-label">${e(item.label)}</span><div class="bar-track"><div class="bar-fill bar-fill-nodata" style="width:0%"></div></div><span class="bar-val bar-val-nodata">No data</span></div>`;
+      }
       const pct = Math.round((item.value / max) * 100);
       return `<div class="bar-row"><span class="bar-label">${e(item.label)}</span><div class="bar-track"><div class="bar-fill" style="width:${pct}%;background:${color}"></div></div><span class="bar-val">${e(item.value)}</span></div>`;
     })
@@ -76,7 +84,12 @@ export function generateIntelligenceReportHTML(
     .join("");
 
   const subScoreBars = barChart(
-    Object.entries(exec.subScores).map(([label, value]) => ({ label, value: value as number, max: 100 })),
+    Object.entries(exec.subScores).map(([label, value]) => ({
+      label,
+      value: value as number,
+      max: 100,
+      available: exec.subScoresAvailable ? exec.subScoresAvailable[label] !== false : true,
+    })),
     color
   );
 
@@ -248,6 +261,8 @@ export function generateIntelligenceReportHTML(
   .bar-track { flex: 1; height: 8px; background: #e2e8f0; border-radius: 4px; overflow: hidden; }
   .bar-fill { height: 100%; border-radius: 4px; }
   .bar-val { width: 36px; text-align: right; font-size: 0.85rem; font-weight: 600; }
+  .bar-val-nodata { width: auto; color: var(--muted); font-weight: 400; font-style: italic; }
+  .bar-fill-nodata { background: repeating-linear-gradient(45deg, #cbd5e1, #cbd5e1 4px, #e2e8f0 4px, #e2e8f0 8px); }
   .badge { display: inline-block; padding: 0.15rem 0.5rem; border-radius: 4px; font-size: 0.75rem; font-weight: 500; }
   .badge-measured { background: #dcfce7; color: #166534; }
   .badge-estimated_proxy { background: #fef9c3; color: #854d0e; }

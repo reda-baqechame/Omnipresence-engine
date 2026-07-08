@@ -2,6 +2,7 @@ import React from "react";
 import { Document, Page, Text, View, StyleSheet } from "@react-pdf/renderer";
 import type { ReportData } from "@/lib/engines/report-generator";
 import { getScoreLabel } from "@/lib/scoring/omnipresence";
+import { getSubScoreAvailability } from "@/lib/scoring/subscore-availability";
 
 const styles = StyleSheet.create({
   page: { padding: 40, fontFamily: "Helvetica", fontSize: 10, color: "#1a1a2e" },
@@ -35,6 +36,13 @@ export function OmniPresenceReportPDF({
   ).slice(0, 8);
   const missingCoverage = data.coverageItems.filter((c) => !c.is_present).slice(0, 12);
   const topRoadmap = data.roadmapItems.slice(0, 10);
+  const subScoreAvailable = getSubScoreAvailability(data.score, {
+    "AI Visibility": "ai_visibility",
+    "Search Visibility": "search_visibility",
+    "Technical Readiness": "technical_readiness",
+    "Directory Coverage": "directory_coverage",
+    "Authority Mentions": "authority_mentions",
+  });
 
   return (
     <Document>
@@ -65,7 +73,7 @@ export function OmniPresenceReportPDF({
           ].map(([label, value]) => (
             <View key={label as string} style={styles.row}>
               <Text>{label}</Text>
-              <Text>{Math.round(value as number)}/100</Text>
+              <Text>{subScoreAvailable[label as string] ? `${Math.round(value as number)}/100` : "No data"}</Text>
             </View>
           ))}
         </View>
