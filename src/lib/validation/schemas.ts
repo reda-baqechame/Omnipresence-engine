@@ -178,6 +178,11 @@ export const ReportGenerateSchema = z.object({
   idempotency_key: uuid.optional(),
 });
 
+/** PATCH /api/projects/[id]/report/[reportId] — toggle public share-link access. */
+export const ReportVisibilitySchema = z.object({
+  is_public: z.boolean(),
+});
+
 export const ProjectCreateSchema = z.object({
   name: nonEmpty.max(200),
   domain: nonEmpty.max(253),
@@ -665,5 +670,6 @@ export const HARDENED_ROUTE_SCHEMAS = {
   "attribution/referrals": AttributionReferralsSchema,
   "traffic-panel/ingest": TrafficPanelIngestSchema,
   "projects/rescan": RescanSchema,
+  "projects/report-visibility": ReportVisibilitySchema,
   "geo-rewrite": GeoRewriteSchema,
 } as const;

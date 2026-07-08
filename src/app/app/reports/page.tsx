@@ -2,6 +2,7 @@ import { createClient } from "@/lib/supabase/server";
 import Link from "next/link";
 import { ExternalLink } from "lucide-react";
 import { GenerateReportForm } from "@/components/generate-report-form";
+import { ReportVisibilityToggle } from "@/components/report-visibility-toggle";
 import { canUseDeepReport } from "@/lib/plans/features";
 import type { SubscriptionPlan } from "@/types/database";
 
@@ -125,6 +126,11 @@ export default async function ReportsPage() {
                 >
                   Share
                 </Link>
+                <ReportVisibilityToggle
+                  projectId={report.project_id}
+                  reportId={report.id}
+                  initialIsPublic={report.is_public}
+                />
               </div>
             </div>
           ))}

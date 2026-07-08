@@ -67,13 +67,38 @@ const ROUTES: Array<{ path: string; mustInclude: string[] }> = [
     // (REPORT_PDF_TIMEOUT_MS, default 90s) on the legacy regeneration
     // fallback — without an explicit nodejs runtime + generous maxDuration,
     // a host's mismatched default can hard-cut the response mid-render.
-    mustInclude: ['export const runtime = "nodejs"', "export const maxDuration ="],
+    // Rate limited both per-IP (guardPublicEndpoint) and per-token
+    // (checkRateLimitDistributed keyed on the share token, not the caller's
+    // IP) — a leaked link hit from many different IPs must still be capped.
+    mustInclude: [
+      'export const runtime = "nodejs"',
+      "export const maxDuration =",
+      "guardPublicEndpoint",
+      "checkRateLimitDistributed",
+      "report-pdf-token:",
+    ],
+  },
+  {
+    path: "app/api/projects/[id]/report/[reportId]/route.ts",
+    // The only way a user can revoke a report's public share link after
+    // creation (every report is otherwise born is_public: true forever).
+    mustInclude: ["verifyProjectAccess", "ReportVisibilitySchema", "validateBody", "is_public"],
   },
   { path: "app/api/capabilities/route.ts", mustInclude: ["describeProviders"] },
   { path: "app/api/keywords/route.ts", mustInclude: ["verifyProjectAccess"] },
   { path: "app/api/ranks/route.ts", mustInclude: ["verifyProjectAccess"] },
   { path: "app/api/backlinks/route.ts", mustInclude: ["verifyProjectAccess"] },
   { path: "app/api/roi/route.ts", mustInclude: ["verifyProjectAccess"] },
+  {
+    path: "app/report/[token]/page.tsx",
+    // Same uncontrolled-regeneration-spend exposure as the PDF route above,
+    // but reachable via a plain page view (no download click needed).
+    mustInclude: ["checkPublicPageRateLimit", "RateLimitedNotice"],
+  },
+  {
+    path: "app/portal/[token]/page.tsx",
+    mustInclude: ["checkPublicPageRateLimit", "RateLimitedNotice"],
+  },
 ];
 
 test("top API routes enforce auth, rate limits, or billing contracts", () => {
