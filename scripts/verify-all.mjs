@@ -101,6 +101,7 @@ const steps = [
         "src/lib/engines/__tests__/save-intelligence-report-cancelled-gather.test.ts",
         "src/lib/engines/__tests__/report-methodology-appendix.test.ts",
         "src/lib/engines/__tests__/intelligence-report-narrative-quality-gate.test.ts",
+        "src/lib/engines/__tests__/report-quality-gate.test.ts",
         "src/lib/presence-data/__tests__/index.test.ts",
         "src/lib/engines/__tests__/benchmark-writer.test.ts",
         "src/lib/engines/__tests__/benchmark-dashboard.test.ts",

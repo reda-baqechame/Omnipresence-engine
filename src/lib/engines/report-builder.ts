@@ -3,6 +3,10 @@ import { generateReportHTML, type ReportData } from "@/lib/engines/report-genera
 import { generateReportPDF } from "@/lib/engines/report-pdf";
 import { calculateAdsEquivalent } from "@/lib/engines/ads-equivalent";
 import { getCachedRealKeywordCpc } from "@/lib/providers/keyword-cpc-cache";
+import {
+  logReportQualityValidation,
+  validateReportClaims,
+} from "@/lib/engines/report-quality-gate";
 import { buildProofReport, renderProofHTML } from "@/lib/engines/proof-report";
 import { canUseWhiteLabel } from "@/lib/plans/features";
 import { withJobContext } from "@/lib/observability/job-context";
@@ -188,6 +192,17 @@ export async function saveReportArtifacts(
   whiteLabel?: WhiteLabelBranding
 ): Promise<string> {
   return withJobContext({ reportId }, async () => {
+    const validation = validateReportClaims(reportData);
+    try {
+      logReportQualityValidation(validation, {
+        reportType: "standard",
+        projectId,
+        reportId,
+      });
+    } catch {
+      // Logging-only — must never block report delivery.
+    }
+
     const html = generateReportHTML(reportData, whiteLabel);
     const htmlFileName = `reports/${projectId}/${reportId}.html`;
     const pdfFileName = `reports/${projectId}/${reportId}.pdf`;
@@ -296,6 +311,17 @@ export async function finalizeIntelligenceReport(
   // "ready" report and must not be billed for the narrative/PDF step.
   if (isCancelled && (await isCancelled())) {
     return markCancelled();
+  }
+
+  const validation = validateReportClaims(gathered.report);
+  try {
+    logReportQualityValidation(validation, {
+      reportType: "deep",
+      projectId,
+      reportId,
+    });
+  } catch {
+    // Logging-only — must never block report delivery (incl. test stubs).
   }
 
   if (deps.onStep) await deps.onStep("narrative_generation");
