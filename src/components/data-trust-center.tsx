@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { ProvenanceBadge } from "@/components/provenance-badge";
+import { PanelError, PanelLoading } from "@/components/panel-states";
 import type { DataQuality } from "@/types/database";
 
 interface TrustPayload {
@@ -16,19 +17,24 @@ interface TrustPayload {
     gsc: { status: string; capturedOn?: string };
   };
   activeProviders: Array<{ id: string; capability: string; confidence: number; circuit: string }>;
+  missingProviders: Array<{ id: string; capability: string; reason: string }>;
   platform: { liveData: boolean; serpProvider?: string; configuredProviders: number };
 }
 
 export function DataTrustCenter({ projectId }: { projectId: string }) {
   const [data, setData] = useState<TrustPayload | null>(null);
+  const [loadError, setLoadError] = useState<string | null>(null);
 
   useEffect(() => {
     fetch(`/api/projects/${projectId}/trust`)
       .then((r) => r.json())
-      .then(setData);
+      .then(setData)
+      .catch(() => setLoadError("Couldn't load the data trust report. Check your connection and reload."));
   }, [projectId]);
 
-  if (!data) return <p className="text-sm text-muted-foreground">Loading trust report…</p>;
+  if (loadError) return <PanelError title="Data trust report unavailable" message={loadError} />;
+
+  if (!data) return <PanelLoading title="Loading data trust report" />;
 
   return (
     <div className="space-y-6">
@@ -127,6 +133,29 @@ export function DataTrustCenter({ projectId }: { projectId: string }) {
           </ul>
         )}
       </div>
+
+      {data.missingProviders.length > 0 && (
+        <div className="rounded-xl border border-yellow-500/30 bg-yellow-500/5 p-4">
+          <h3 className="font-semibold mb-1">
+            Missing data sources ({data.missingProviders.length})
+          </h3>
+          <p className="text-xs text-muted-foreground mb-3">
+            Registered but not currently usable — anything measured for these capabilities falls back
+            to another provider or shows as unavailable.
+          </p>
+          <ul className="space-y-1.5 text-sm max-h-64 overflow-y-auto">
+            {data.missingProviders.map((p) => (
+              <li key={p.id} className="flex items-center justify-between gap-2">
+                <span>
+                  <span className="font-medium">{p.id}</span>
+                  <span className="text-muted-foreground"> · {p.capability}</span>
+                </span>
+                <span className="text-xs text-yellow-500">{p.reason}</span>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
     </div>
   );
 }

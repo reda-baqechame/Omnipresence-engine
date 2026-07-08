@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { PanelError } from "@/components/panel-states";
 
 interface NapFinding {
   field: string;
@@ -27,11 +28,13 @@ export function EntityPanel({ projectId }: { projectId: string }) {
     competitors: Array<{ name: string; inWikidata: boolean; inGoogleKg: boolean; inWikipedia: boolean; inDbpedia: boolean }>;
     gaps: string[];
   } | null>(null);
+  const [loadError, setLoadError] = useState<string | null>(null);
 
   useEffect(() => {
     fetch(`/api/entity?projectId=${projectId}`)
       .then((r) => r.json())
-      .then((d) => setProfile(d.profile));
+      .then((d) => setProfile(d.profile))
+      .catch(() => setLoadError("Couldn't load entity data. Check your connection and reload."));
   }, [projectId]);
 
   function copy(text: string, key: string) {
@@ -101,6 +104,7 @@ export function EntityPanel({ projectId }: { projectId: string }) {
 
   return (
     <div className="space-y-6">
+      {loadError && <PanelError title="Entity data unavailable" message={loadError} />}
       <div className="flex items-center justify-between">
         <div>
           <h2 className="text-xl font-bold">Entity & Knowledge Graph</h2>

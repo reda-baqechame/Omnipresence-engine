@@ -4,6 +4,9 @@
  */
 import type { IntelligenceReport } from "@/types/intelligence-report";
 import { assertWithinBudget, recordSpend, BudgetExceededError } from "@/lib/providers/cost-guard";
+import { findForbiddenClaims } from "@/lib/config/claims";
+import { detectContentDefects } from "@/lib/engines/content-defects";
+import { recordMetric } from "@/lib/observability/log";
 
 export type ReportNarrative = Partial<Record<string, string>>;
 
@@ -79,6 +82,26 @@ Write 3-4 sentences of professional, actionable executive summary prose. No bull
 
   const execNarrative = await callGemini(summaryPrompt);
   if (!execNarrative) return fallback;
+
+  // Patch F (no-evidence/no-claim quality gate): a deep report's LLM
+  // executive summary must never ship an outcome promise we don't back
+  // (findForbiddenClaims — same guard generate-router.ts already applies to
+  // sovereign content generation) or a raw LLM artifact (AI self-reference,
+  // refusal, unfilled placeholder — detectContentDefects). Reusing these
+  // existing, already-tested guards rather than duplicating detection logic.
+  // On any hit, discard the LLM text entirely and keep the deterministic,
+  // evidence-derived fallback for this section — never a partial/sanitized
+  // rewrite of untrusted model output.
+  const forbidden = findForbiddenClaims(execNarrative);
+  const defects = detectContentDefects(execNarrative);
+  if (forbidden.length > 0 || defects.length > 0) {
+    recordMetric("deep_report.narrative_rejected", 1, {
+      domain: report.meta.domain,
+      forbidden: forbidden.join(",") || undefined,
+      defects: defects.join(",") || undefined,
+    });
+    return fallback;
+  }
 
   return { ...fallback, executive: execNarrative };
 }

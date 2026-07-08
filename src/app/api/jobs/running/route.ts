@@ -14,6 +14,9 @@ export interface RunningReportJob {
   progressPercent: number | null;
   shareToken: string;
   createdAt: string;
+  /** Real USD spend + tokens attributed to this job so far (0 until a guarded provider call runs). */
+  actualCost: number;
+  tokensUsed: number;
 }
 
 export interface RunningScanJob {
@@ -25,6 +28,8 @@ export interface RunningScanJob {
   currentStep: string | null;
   progressPercent: number | null;
   startedAt: string | null;
+  actualCost: number;
+  tokensUsed: number;
 }
 
 export type RunningJob = RunningReportJob | RunningScanJob;
@@ -46,14 +51,16 @@ export async function GET() {
     supabase
       .from("reports")
       .select(
-        "id, project_id, title, status, report_type, current_step, progress_percent, share_token, created_at, projects(name)"
+        "id, project_id, title, status, report_type, current_step, progress_percent, share_token, created_at, actual_cost, tokens_used, projects(name)"
       )
       .in("status", ["pending", "generating", "cancelling"])
       .order("created_at", { ascending: false })
       .limit(20),
     supabase
       .from("visibility_runs")
-      .select("id, project_id, status, current_step, progress_percent, started_at, projects(name)")
+      .select(
+        "id, project_id, status, current_step, progress_percent, started_at, actual_cost, tokens_used, projects(name)"
+      )
       .in("status", ["pending", "running", "cancelling"])
       .order("started_at", { ascending: false })
       .limit(20),
@@ -71,6 +78,10 @@ export async function GET() {
     progressPercent: r.progress_percent,
     shareToken: r.share_token,
     createdAt: r.created_at,
+    // NUMERIC columns come back as strings from PostgREST — coerce, matching
+    // the existing est_cost_usd handling in cost-guard.ts/external-api-guard.ts.
+    actualCost: Number(r.actual_cost) || 0,
+    tokensUsed: Number(r.tokens_used) || 0,
   }));
 
   const scanJobs: RunningScanJob[] = (runs || []).map((r) => ({
@@ -82,6 +93,8 @@ export async function GET() {
     currentStep: r.current_step,
     progressPercent: r.progress_percent,
     startedAt: r.started_at,
+    actualCost: Number(r.actual_cost) || 0,
+    tokensUsed: Number(r.tokens_used) || 0,
   }));
 
   return NextResponse.json({ jobs: [...reportJobs, ...scanJobs] });

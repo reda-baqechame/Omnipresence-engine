@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { ProvenanceBadge } from "@/components/provenance-badge";
 import { EvidenceDrawer } from "@/components/evidence-drawer";
 import { DataTableToolbar } from "@/components/data-table-toolbar";
+import { PanelError } from "@/components/panel-states";
 
 interface BacklinkRow {
   url: string;
@@ -70,6 +71,7 @@ export function BacklinksPanel({ projectId }: BacklinksPanelProps) {
   const [quotes, setQuotes] = useState<{ quotes?: ExpertQuote[]; platforms: { name: string; url: string }[] } | null>(null);
   const [searchQ, setSearchQ] = useState("");
   const [linkFilter, setLinkFilter] = useState("all");
+  const [loadError, setLoadError] = useState<string | null>(null);
 
   const filterLinks = useCallback(
     (items: BacklinkRow[]) =>
@@ -114,6 +116,12 @@ export function BacklinksPanel({ projectId }: BacklinksPanelProps) {
         setAuthority(data.authority);
         setWebgraphReady(Boolean(data.webgraph?.ready));
         setWebgraphIngest(Boolean(data.webgraph?.ingestInProgress));
+      })
+      .catch(() => {
+        // A failed initial load must not look like "no data yet" — that would
+        // silently tell the user their backlinks are at zero when the fetch
+        // simply never succeeded.
+        if (active) setLoadError("Couldn't load backlink data. Check your connection and reload.");
       });
     return () => {
       active = false;
@@ -148,6 +156,7 @@ export function BacklinksPanel({ projectId }: BacklinksPanelProps) {
 
   return (
     <div className="space-y-6">
+      {loadError && <PanelError title="Backlink data unavailable" message={loadError} />}
       <div className="bg-card border border-border rounded-xl p-4 flex items-center justify-between gap-4">
         <div>
           <div className="flex items-center gap-2">

@@ -3,6 +3,7 @@
 import { useEffect, useState, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import { JobProgressBar } from "@/components/job-progress-bar";
+import { formatJobCost, formatTokenCount } from "@/lib/utils";
 import type { RunningJob } from "@/app/api/jobs/running/route";
 
 const POLL_MS = 5000;
@@ -23,6 +24,17 @@ function jobSubLabel(job: RunningJob): string {
   const step = job.currentStep ? ` — ${job.currentStep}` : "";
   const state = job.status === "cancelling" ? " (stopping…)" : "";
   return `${project}${step}${state}`;
+}
+
+/**
+ * Honest running-spend readout: shows $0.00 / 0 tokens until a guarded
+ * provider call has actually landed inside this job (job-context rollup,
+ * migration 0078) — never a fabricated estimate before real spend exists.
+ */
+function jobCostLabel(job: RunningJob): string | null {
+  if (job.actualCost <= 0 && job.tokensUsed <= 0) return null;
+  const cost = formatJobCost(job.actualCost);
+  return job.tokensUsed > 0 ? `${cost} · ${formatTokenCount(job.tokensUsed)}` : cost;
 }
 
 /**
@@ -91,6 +103,7 @@ export function RunningJobsStrip() {
           label={jobLabel(job)}
           subLabel={jobSubLabel(job)}
           progressPercent={job.progressPercent}
+          costLabel={jobCostLabel(job)}
           stopping={stoppingIds.has(jobKey(job)) || job.status === "cancelling"}
           onStop={() => stopJob(job)}
         />

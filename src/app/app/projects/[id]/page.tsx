@@ -13,6 +13,11 @@ import { buildActionPlan } from "@/lib/engines/action-plan";
 import { ActionPlanPanel } from "@/components/action-plan-panel";
 import { buildPresenceGateScore } from "@/lib/scoring/presence-gate-builder";
 import { PresenceGateCard } from "@/components/presence-gate-card";
+import { isSubScoreAvailable, SCORE_DIMENSION_KEYS } from "@/lib/scoring/subscore-availability";
+import { ProofEvidenceLinks } from "@/components/proof-evidence-links";
+import { DataHealthSummaryCard } from "@/components/data-health-summary-card";
+import { describeProviders } from "@/lib/providers/router";
+import Link from "next/link";
 
 export default async function ProjectOverviewPage({
   params,
@@ -45,6 +50,12 @@ export default async function ProjectOverviewPage({
   const gate = await buildPresenceGateScore(supabase, id);
 
   const latestScore = scores?.[scores.length - 1];
+  const measuredDimensions = latestScore
+    ? SCORE_DIMENSION_KEYS.filter((k) => isSubScoreAvailable(latestScore, k)).length
+    : 0;
+  const allProviders = await describeProviders();
+  const activeProviderCount = allProviders.filter((p) => p.usableNow).length;
+  const missingProviderCount = allProviders.length - activeProviderCount;
   const previousScore = scores && scores.length >= 2 ? scores[scores.length - 2] : null;
   const scoreDelta = previousScore
     ? latestScore!.omnipresence_score - previousScore.omnipresence_score
@@ -61,11 +72,28 @@ export default async function ProjectOverviewPage({
 
       <PresenceGateCard projectId={id} gate={gate} />
 
+      <DataHealthSummaryCard
+        projectId={id}
+        measuredDimensions={measuredDimensions}
+        totalDimensions={SCORE_DIMENSION_KEYS.length}
+        activeProviderCount={activeProviderCount}
+        missingProviderCount={missingProviderCount}
+      />
+
       <ActionPlanPanel projectId={id} plan={actionPlan} />
 
       {latestScore ? (
         <>
           <div className="bg-card border border-border rounded-xl p-8">
+            <div className="flex flex-wrap items-center justify-between gap-2 mb-6">
+              <ProofEvidenceLinks projectId={id} />
+              <Link
+                href={`/app/projects/${id}/proof`}
+                className="text-xs text-primary hover:underline shrink-0"
+              >
+                Full proof report →
+              </Link>
+            </div>
             <div className="grid md:grid-cols-3 gap-8">
               <div>
                 <ScoreGauge score={latestScore.omnipresence_score} label="OmniPresence Score" size="lg" />
@@ -77,14 +105,46 @@ export default async function ProjectOverviewPage({
                 )}
               </div>
               <div className="md:col-span-2 space-y-3">
-                <SubScoreBar label="AI Visibility" score={latestScore.ai_visibility} />
-                <SubScoreBar label="Search Visibility" score={latestScore.search_visibility} />
-                <SubScoreBar label="Local Visibility" score={latestScore.local_visibility} />
-                <SubScoreBar label="Social Presence" score={latestScore.social_presence} />
-                <SubScoreBar label="Directory Coverage" score={latestScore.directory_coverage} />
-                <SubScoreBar label="Authority Mentions" score={latestScore.authority_mentions} />
-                <SubScoreBar label="Technical Readiness" score={latestScore.technical_readiness} />
-                <SubScoreBar label="Conversion Readiness" score={latestScore.conversion_readiness} />
+                <SubScoreBar
+                  label="AI Visibility"
+                  score={latestScore.ai_visibility}
+                  available={isSubScoreAvailable(latestScore, "ai_visibility")}
+                />
+                <SubScoreBar
+                  label="Search Visibility"
+                  score={latestScore.search_visibility}
+                  available={isSubScoreAvailable(latestScore, "search_visibility")}
+                />
+                <SubScoreBar
+                  label="Local Visibility"
+                  score={latestScore.local_visibility}
+                  available={isSubScoreAvailable(latestScore, "local_visibility")}
+                />
+                <SubScoreBar
+                  label="Social Presence"
+                  score={latestScore.social_presence}
+                  available={isSubScoreAvailable(latestScore, "social_presence")}
+                />
+                <SubScoreBar
+                  label="Directory Coverage"
+                  score={latestScore.directory_coverage}
+                  available={isSubScoreAvailable(latestScore, "directory_coverage")}
+                />
+                <SubScoreBar
+                  label="Authority Mentions"
+                  score={latestScore.authority_mentions}
+                  available={isSubScoreAvailable(latestScore, "authority_mentions")}
+                />
+                <SubScoreBar
+                  label="Technical Readiness"
+                  score={latestScore.technical_readiness}
+                  available={isSubScoreAvailable(latestScore, "technical_readiness")}
+                />
+                <SubScoreBar
+                  label="Conversion Readiness"
+                  score={latestScore.conversion_readiness}
+                  available={isSubScoreAvailable(latestScore, "conversion_readiness")}
+                />
               </div>
             </div>
           </div>

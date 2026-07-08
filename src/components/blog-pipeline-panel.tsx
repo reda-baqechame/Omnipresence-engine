@@ -1,6 +1,6 @@
 "use client";
 
-import { BLOG_PIPELINE_STEPS, type BlogPipelineStepKey } from "@/lib/engines/blog-pipeline";
+import { BLOG_PIPELINE_STEPS, type BlogPipelineStepKey } from "@/lib/engines/blog-pipeline-steps";
 
 interface BlogAsset {
   id: string;

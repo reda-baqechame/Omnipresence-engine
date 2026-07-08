@@ -106,6 +106,17 @@ export interface IntelligenceExecutiveSummary extends SectionMeta {
   omnipresenceScore: number;
   scoreLabel: string;
   subScores: Record<string, number>;
+  /**
+   * Per-dimension measurement gate (from OmniPresenceScore.breakdown.
+   * dimension_availability): a dimension's raw numeric value is 0 whenever
+   * we genuinely couldn't measure it (no GBP connected, no social presence
+   * data, etc.) — the SAME 0 a real zero-visibility result would produce.
+   * Renderers MUST check this before showing a subScore as a number; an
+   * unavailable dimension is "no data", never "scored zero". Omitted/true
+   * for a key means the dimension is measured (backward compatible with
+   * scores rows created before this field existed).
+   */
+  subScoresAvailable?: Record<string, boolean>;
   narrative?: string;
   keyFindings: string[];
   scoreDelta?: number;

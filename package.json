@@ -141,6 +141,7 @@
     "esbuild": "^0.28.1",
     "eslint": "^9.39.4",
     "eslint-config-next": "^16.2.9",
+    "pdfjs-dist": "^6.1.200",
     "pg": "^8.22.0",
     "postcss": "^8.5.15",
     "tailwindcss": "^4.3.1",

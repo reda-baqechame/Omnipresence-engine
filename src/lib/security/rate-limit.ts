@@ -9,12 +9,21 @@ interface Bucket {
 
 const buckets = new Map<string, Bucket>();
 
-export function getClientIp(request: NextRequest): string {
+/** Minimal shape both NextRequest.headers and next/headers()'s ReadonlyHeaders satisfy. */
+interface HeaderReader {
+  get(name: string): string | null;
+}
+
+export function getClientIpFromHeaders(headers: HeaderReader): string {
   return (
-    request.headers.get("x-forwarded-for")?.split(",")[0]?.trim() ||
-    request.headers.get("x-real-ip") ||
+    headers.get("x-forwarded-for")?.split(",")[0]?.trim() ||
+    headers.get("x-real-ip") ||
     "unknown"
   );
+}
+
+export function getClientIp(request: NextRequest): string {
+  return getClientIpFromHeaders(request.headers);
 }
 
 export function checkRateLimit(

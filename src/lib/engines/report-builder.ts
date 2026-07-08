@@ -2,12 +2,19 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import { generateReportHTML, type ReportData } from "@/lib/engines/report-generator";
 import { generateReportPDF } from "@/lib/engines/report-pdf";
 import { calculateAdsEquivalent } from "@/lib/engines/ads-equivalent";
-import { getRealKeywordCpc } from "@/lib/providers/dataforseo";
+import { getCachedRealKeywordCpc } from "@/lib/providers/keyword-cpc-cache";
 import { buildProofReport, renderProofHTML } from "@/lib/engines/proof-report";
 import { canUseWhiteLabel } from "@/lib/plans/features";
 import { withJobContext } from "@/lib/observability/job-context";
+import { createStepProgressTracker } from "@/lib/observability/job-progress";
+import { DEEP_REPORT_ALL_STEPS } from "@/lib/engines/report-step-names";
 import type { RoadmapItem, SubscriptionPlan, VisibilityResult } from "@/types/database";
-import type { IntelligenceReportSectionId } from "@/types/intelligence-report";
+import type {
+  IntelligenceReport,
+  IntelligenceReportBranding,
+  IntelligenceReportSectionId,
+} from "@/types/intelligence-report";
+import type { ReportNarrative } from "@/lib/engines/intelligence-report-narrative";
 
 export interface WhiteLabelBranding {
   name: string;
@@ -39,9 +46,26 @@ export async function getOrgWhiteLabel(
   };
 }
 
+export interface GatherReportDataOptions {
+  /**
+   * Cooperative cancellation check (Patch C.1 — hostile-audit finding: this
+   * function unconditionally called getRealKeywordCpc(), a real billable
+   * Google-Ads-Keyword-Planner-backed call, with no cancellation checkpoint
+   * at all, so a user who cancelled a deep report immediately could still
+   * trigger that one paid lookup before intelligence-report-builder.ts's own
+   * first checkpoint ever ran). Checked immediately before the CPC fetch
+   * below, not at function entry — the scores/findings/coverage/etc. queries
+   * above are cheap, non-billable DB reads with no cost/cancellation reason
+   * to gate. Callers that don't support cancellation (standard reports today)
+   * simply omit this and get the unchanged, always-fetch behavior.
+   */
+  isCancelled?: () => boolean | Promise<boolean>;
+}
+
 export async function gatherReportData(
   supabase: SupabaseClient,
-  projectId: string
+  projectId: string,
+  opts: GatherReportDataOptions = {}
 ): Promise<{ reportData: ReportData; whiteLabel?: WhiteLabelBranding } | null> {
   const { data: project } = await supabase.from("projects").select("*").eq("id", projectId).single();
   if (!project) return null;
@@ -106,7 +130,15 @@ export async function gatherReportData(
         .limit(50);
       kwList = (rankRows || []).map((k) => k.keyword).filter(Boolean);
     }
-    if (kwList.length) realCpc = await getRealKeywordCpc(kwList);
+    // Cancellation checkpoint (Patch C.1): the only paid/OmniData network call
+    // in this function is the CPC lookup immediately below — check right
+    // before it, not earlier, so a cancel requested mid-gather still skips
+    // this specific billable call without needing to also skip the cheap DB
+    // reads above.
+    const cancelled = kwList.length > 0 && opts.isCancelled ? await opts.isCancelled() : false;
+    if (kwList.length && !cancelled) {
+      realCpc = await getCachedRealKeywordCpc(supabase, kwList);
+    }
   }
 
   const adsEquivalent = attribution
@@ -191,6 +223,12 @@ export async function saveReportArtifacts(
         pdf_degraded: !pdfStoragePath,
         white_label: !!whiteLabel,
         status: "ready",
+        // Patch D: standard reports don't run through a step tracker (no
+        // named sub-steps, no cancellation support upstream), but the final
+        // write should still leave a truthful terminal state instead of the
+        // stale mid-generation step/percent a caller may have set.
+        current_step: null,
+        progress_percent: 100,
       })
       .eq("id", reportId);
 
@@ -198,11 +236,150 @@ export async function saveReportArtifacts(
   });
 }
 
+type IntelligenceGathered = { report: IntelligenceReport; branding?: IntelligenceReportBranding };
+
+interface FinalizeIntelligenceReportDeps {
+  generateReportNarrative: (report: IntelligenceReport, opts: { useLlm?: boolean }) => Promise<ReportNarrative>;
+  generateIntelligenceReportHTML: (
+    report: IntelligenceReport,
+    branding: IntelligenceReportBranding | undefined,
+    narrative: ReportNarrative
+  ) => string;
+  renderReportPdf: (html: string) => Promise<Buffer | null>;
+  /**
+   * Patch D: fired at the start of each named finalize-phase step
+   * ("narrative_generation", "pdf_render", "finalizing") so a real progress
+   * tracker (see saveIntelligenceReportArtifacts) can write truthful
+   * current_step/progress_percent. Optional and unused by existing tests'
+   * stub deps — they simply never observe a progress write, exactly as
+   * before this patch.
+   */
+  onStep?: (stepName: string) => void | Promise<void>;
+}
+
+/**
+ * Cancellation-aware "finish the deep report" step, split out from
+ * saveIntelligenceReportArtifacts so it can be unit tested with stubbed deps
+ * instead of the real dynamic-imported provider/PDF-rendering chain (mirrors
+ * why report-section-selection.ts was extracted from
+ * intelligence-report-builder.ts). Given already-gathered report data, this
+ * runs narrative generation + PDF/HTML rendering + upload + the final status
+ * write — the exact span of work a cancelled job must not pay for or present
+ * as "ready".
+ */
+export async function finalizeIntelligenceReport(
+  supabase: SupabaseClient,
+  projectId: string,
+  reportId: string,
+  gathered: IntelligenceGathered,
+  deps: FinalizeIntelligenceReportDeps,
+  isCancelled?: () => Promise<boolean>
+): Promise<string> {
+  const markCancelled = async () => {
+    await supabase
+      .from("reports")
+      .update({
+        status: "cancelled",
+        cancelled_at: new Date().toISOString(),
+        error_message: "Cancelled by user",
+      })
+      .eq("id", reportId);
+    return "";
+  };
+
+  // Cooperative cancellation checkpoint (P0 fix): gatherIntelligenceReport's
+  // internal Promise.all fan-out cannot be interrupted mid-flight without a
+  // larger architectural change (splitting it into a sequential per-section
+  // pipeline — tracked separately), but the narrative LLM call and PDF
+  // render that follow are both real, billable, avoidable work. A user who
+  // clicked Stop while the fan-out was in flight must not still get a final
+  // "ready" report and must not be billed for the narrative/PDF step.
+  if (isCancelled && (await isCancelled())) {
+    return markCancelled();
+  }
+
+  if (deps.onStep) await deps.onStep("narrative_generation");
+  const narrative = await deps.generateReportNarrative(gathered.report, { useLlm: true });
+  const html = deps.generateIntelligenceReportHTML(gathered.report, gathered.branding, narrative);
+  const htmlFileName = `reports/${projectId}/${reportId}.html`;
+  const pdfFileName = `reports/${projectId}/${reportId}.pdf`;
+
+  let pdfStoragePath: string | null = null;
+  let htmlStoragePath: string | null = null;
+
+  if (deps.onStep) await deps.onStep("pdf_render");
+  const pdfBuffer = await deps.renderReportPdf(html);
+  if (pdfBuffer) {
+    const { error: uploadError } = await supabase.storage
+      .from("reports")
+      .upload(pdfFileName, pdfBuffer, { contentType: "application/pdf", upsert: true });
+    if (!uploadError) pdfStoragePath = pdfFileName;
+  }
+
+  try {
+    const { error: uploadError } = await supabase.storage
+      .from("reports")
+      .upload(htmlFileName, html, { contentType: "text/html", upsert: true });
+    if (!uploadError) htmlStoragePath = htmlFileName;
+  } catch {
+    // HTML upload failed — download route falls back to on-demand HTML render.
+  }
+
+  // Second checkpoint: the narrative LLM call and (especially) the Playwright
+  // PDF render above can take tens of seconds — long enough for a cancel
+  // requested mid-render to still land before we'd otherwise flip the row to
+  // "ready". Re-check and, if cancelled, discard the artifacts we just
+  // generated (they're already paid for, but we must not present a
+  // cancelled job as a completed one) instead of finalizing.
+  if (isCancelled && (await isCancelled())) {
+    return markCancelled();
+  }
+
+  if (deps.onStep) await deps.onStep("finalizing");
+
+  // Guard the final write with an atomic status check: never flip a row that
+  // a concurrent cancel request already moved to cancelling/cancelled between
+  // our read above and this write.
+  const { data: finalized } = await supabase
+    .from("reports")
+    .update({
+      pdf_storage_path: pdfStoragePath,
+      html_storage_path: htmlStoragePath,
+      // Deep PDF rendering depends on the external ai-ui-capture Playwright
+      // service (ENABLE_AI_UI_CAPTURE + AI_UI_CAPTURE_URL). When it's not
+      // configured or fails, renderReportPdf returns null and the user must be
+      // told the download will be HTML, not silently handed an .html file
+      // dressed up as a PDF download.
+      pdf_degraded: !pdfStoragePath,
+      white_label: !!gathered.branding,
+      status: "ready",
+      error_message: null,
+      // Patch D: the authoritative terminal write is the only place allowed
+      // to set progress to exactly 100 / clear current_step.
+      current_step: null,
+      progress_percent: 100,
+    })
+    .eq("id", reportId)
+    .not("status", "in", "(cancelling,cancelled)")
+    .select("id")
+    .maybeSingle();
+
+  if (!finalized) {
+    // Lost the race to a cancel that landed between our checkpoint read and
+    // this write — leave the row however the cancel route left it (cancelled)
+    // rather than clobbering it back to ready.
+    return "";
+  }
+
+  return pdfStoragePath || htmlStoragePath || "";
+}
+
 export async function saveIntelligenceReportArtifacts(
   supabase: SupabaseClient,
   projectId: string,
   reportId: string,
-  organizationId: string
+  organizationId: string,
+  options?: { isCancelled?: () => Promise<boolean> }
 ): Promise<string> {
   return withJobContext({ reportId }, async () => {
     const { gatherIntelligenceReport } = await import("@/lib/engines/intelligence-report-builder");
@@ -217,49 +394,45 @@ export async function saveIntelligenceReportArtifacts(
       .single();
     const sections = (reportRow?.sections as IntelligenceReportSectionId[] | null) || undefined;
 
-    const gathered = await gatherIntelligenceReport(supabase, projectId, { sections });
+    // Patch D: one tracker spans the whole 11-step budget (8 gather steps +
+    // narrative_generation/pdf_render/finalizing) so progress_percent climbs
+    // smoothly across both phases instead of resetting between them.
+    const tracker = createStepProgressTracker(supabase, "reports", reportId, DEEP_REPORT_ALL_STEPS);
+
+    const gathered = await gatherIntelligenceReport(supabase, projectId, {
+      sections,
+      isCancelled: options?.isCancelled,
+      onStepStart: tracker.onStepStart,
+      onStepComplete: tracker.onStepComplete,
+    });
     if (!gathered) throw new Error("No intelligence report data");
 
-    const narrative = await generateReportNarrative(gathered.report, { useLlm: true });
-    const html = generateIntelligenceReportHTML(gathered.report, gathered.branding, narrative);
-    const htmlFileName = `reports/${projectId}/${reportId}.html`;
-    const pdfFileName = `reports/${projectId}/${reportId}.pdf`;
-
-    let pdfStoragePath: string | null = null;
-    let htmlStoragePath: string | null = null;
-
-    const pdfBuffer = await renderReportPdf(html);
-    if (pdfBuffer) {
-      const { error: uploadError } = await supabase.storage
+    // The gather fan-out (bounded-concurrency, cancellation-aware — see
+    // runCancellableSteps in intelligence-report-builder.ts) stopped
+    // scheduling new steps once cancellation was observed. Mirror
+    // finalizeIntelligenceReport's own markCancelled() write here so a
+    // cancel detected mid-gather is recorded immediately rather than
+    // silently dropped (the caller only gets "" back either way).
+    if (gathered.cancelled) {
+      await supabase
         .from("reports")
-        .upload(pdfFileName, pdfBuffer, { contentType: "application/pdf", upsert: true });
-      if (!uploadError) pdfStoragePath = pdfFileName;
+        .update({
+          status: "cancelled",
+          cancelled_at: new Date().toISOString(),
+          error_message: "Cancelled by user",
+        })
+        .eq("id", reportId);
+      return "";
     }
 
-    try {
-      const { error: uploadError } = await supabase.storage
-        .from("reports")
-        .upload(htmlFileName, html, { contentType: "text/html", upsert: true });
-      if (!uploadError) htmlStoragePath = htmlFileName;
-    } catch {
-      // HTML upload failed — download route falls back to on-demand HTML render.
-    }
-
-    await supabase.from("reports").update({
-      pdf_storage_path: pdfStoragePath,
-      html_storage_path: htmlStoragePath,
-      // Deep PDF rendering depends on the external ai-ui-capture Playwright
-      // service (ENABLE_AI_UI_CAPTURE + AI_UI_CAPTURE_URL). When it's not
-      // configured or fails, renderReportPdf returns null and the user must be
-      // told the download will be HTML, not silently handed an .html file
-      // dressed up as a PDF download.
-      pdf_degraded: !pdfStoragePath,
-      white_label: !!gathered.branding,
-      status: "ready",
-      error_message: null,
-    }).eq("id", reportId);
-
-    return pdfStoragePath || htmlStoragePath || "";
+    return finalizeIntelligenceReport(
+      supabase,
+      projectId,
+      reportId,
+      gathered,
+      { generateReportNarrative, generateIntelligenceReportHTML, renderReportPdf, onStep: tracker.onStepStart },
+      options?.isCancelled
+    );
   });
 }
 
@@ -275,7 +448,7 @@ export async function renderReportHtmlForView(
     const { generateIntelligenceReportHTML } = await import("@/lib/engines/intelligence-report-template");
     const { generateReportNarrative } = await import("@/lib/engines/intelligence-report-narrative");
     const gathered = await gatherIntelligenceReport(supabase, projectId, { sections });
-    if (!gathered) return null;
+    if (!gathered || gathered.cancelled) return null;
     const narrative = await generateReportNarrative(gathered.report, { useLlm: false });
     return generateIntelligenceReportHTML(gathered.report, gathered.branding, narrative);
   }

@@ -202,6 +202,14 @@ export interface VisibilityRun {
   brand_sov?: number | null;
   cancel_requested_at?: string;
   cancelled_at?: string;
+  /** Real USD spend attributed to this run via job-context rollup (0078); 0 until a guarded provider call runs inside it. */
+  actual_cost?: number;
+  /** Combined input+output LLM tokens attributed to this run. */
+  tokens_used?: number;
+  /** Count of guarded provider calls (LLM + paid external APIs) attributed to this run. */
+  provider_calls_count?: number;
+  current_step?: string | null;
+  progress_percent?: number | null;
   created_at: string;
 }
 
@@ -617,6 +625,20 @@ export interface Report {
   error_message?: string;
   cancel_requested_at?: string;
   cancelled_at?: string;
+  /** Pre-generation cost projection; not yet populated by any code path (0078) — always null today. */
+  estimated_cost?: number | null;
+  /** Real USD spend attributed to this report via job-context rollup (0078); 0 until a guarded provider call runs inside it. */
+  actual_cost?: number;
+  /** Combined input+output LLM tokens attributed to this report. */
+  tokens_used?: number;
+  /** Count of guarded provider calls (LLM + paid external APIs) attributed to this report. */
+  provider_calls_count?: number;
+  current_step?: string | null;
+  progress_percent?: number | null;
+  /** The report this one supersedes, scoped per (project_id, report_type) lineage (0081). Null for the first report in a lineage. */
+  previous_report_id?: string | null;
+  /** 1-based position in its (project_id, report_type) lineage. */
+  version?: number;
   created_at: string;
 }
 

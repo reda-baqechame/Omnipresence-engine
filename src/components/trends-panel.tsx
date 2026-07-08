@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { PanelError } from "@/components/panel-states";
 
 interface TrendItem {
   title: string;
@@ -31,6 +32,7 @@ export function TrendsPanel({ projectId, industry = "" }: TrendsPanelProps) {
   const [seasonality, setSeasonality] = useState<{ peakMonths: string[]; lowMonths: string[] } | null>(null);
   const [risingLoading, setRisingLoading] = useState(false);
   const [risingMsg, setRisingMsg] = useState("");
+  const [loadError, setLoadError] = useState<string | null>(null);
 
   useEffect(() => {
     let active = true;
@@ -40,6 +42,9 @@ export function TrendsPanel({ projectId, industry = "" }: TrendsPanelProps) {
       .then((res) => res.json())
       .then((data) => {
         if (active) setTrends(data.trends || []);
+      })
+      .catch(() => {
+        if (active) setLoadError("Couldn't load trend data. Check your connection and reload.");
       });
     return () => {
       active = false;
@@ -81,6 +86,7 @@ export function TrendsPanel({ projectId, industry = "" }: TrendsPanelProps) {
 
   return (
     <div className="space-y-6">
+      {loadError && <PanelError title="Trend data unavailable" message={loadError} />}
       <div className="bg-card border border-border rounded-xl p-4">
         <h3 className="font-semibold mb-1">Rising demand discovery</h3>
         <p className="text-sm text-muted-foreground mb-3">
@@ -147,7 +153,7 @@ export function TrendsPanel({ projectId, industry = "" }: TrendsPanelProps) {
 
       <div className="space-y-3">
         {trends.length === 0 ? (
-          <p className="text-sm text-muted-foreground">Loading trends or no matches for your industry.</p>
+          !loadError && <p className="text-sm text-muted-foreground">Loading trends or no matches for your industry.</p>
         ) : (
           trends.map((t) => (
             <div key={t.title} className="bg-card border border-border rounded-xl p-4 text-sm">

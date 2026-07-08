@@ -16,6 +16,7 @@ import { verifyLocalPresence } from "@/lib/engines/local-listings";
 import { buildEntityProfile } from "@/lib/engines/entity-engine";
 import { getSourceGraph } from "@/lib/engines/source-graph";
 import { gatherReportData } from "@/lib/engines/report-builder";
+import { getSubScoreAvailability } from "@/lib/scoring/subscore-availability";
 import type { RoadmapItem, SubscriptionPlan } from "@/types/database";
 import { canUseWhiteLabel } from "@/lib/plans/features";
 import {
@@ -26,6 +27,8 @@ import {
   type ReportDataQuality,
 } from "@/types/intelligence-report";
 import { applySectionSelection, resolveSectionsIncluded } from "@/lib/engines/report-section-selection";
+import { recordMetric } from "@/lib/observability/log";
+import { DEEP_REPORT_GATHER_STEPS } from "@/lib/engines/report-step-names";
 
 const DEFAULT_ATTRIBUTIONS: ReportAttribution[] = [
   { source: "Common Crawl", license: "Open data", url: "https://commoncrawl.org/" },
@@ -46,9 +49,137 @@ function emptySection(quality: ReportDataQuality = "not_available") {
   return { available: false, dataQuality: quality };
 }
 
+const DEEP_SUBSCORE_LABEL_KEYS = {
+  AI: "ai_visibility",
+  Search: "search_visibility",
+  Local: "local_visibility",
+  Social: "social_presence",
+  Directories: "directory_coverage",
+  Authority: "authority_mentions",
+  Technical: "technical_readiness",
+  Conversion: "conversion_readiness",
+} as const;
+
 export interface GatherIntelligenceOptions {
   sections?: IntelligenceReportSectionId[];
   organizationId?: string;
+  /**
+   * Cooperative cancellation check, polled before every named intelligence
+   * step is scheduled AND again immediately before it executes (P0 fix: the
+   * previous single unbounded `Promise.all` fan-out over ~15 provider/DB
+   * calls could not be interrupted once started — a user who clicked Stop
+   * mid-fan-out still paid for every already-dispatched call). Callers
+   * should throttle their own DB reads inside this callback, mirroring
+   * `makeRunCancellationChecker` in visibility-scanner.ts.
+   */
+  isCancelled?: () => boolean | Promise<boolean>;
+  /**
+   * Patch D: forwarded straight into runCancellableSteps() below so a
+   * caller (saveIntelligenceReportArtifacts) can attach a real progress
+   * writer. Kept optional and untyped-to-DB-writes here — this module has
+   * no Supabase-table-writing concerns of its own, matching the
+   * dependency-injection style already used by finalizeIntelligenceReport's
+   * `deps` in report-builder.ts.
+   */
+  onStepStart?: (stepName: string) => void | Promise<void>;
+  onStepComplete?: (stepName: string) => void | Promise<void>;
+}
+
+/** A single named, independently schedulable unit of expensive work. */
+export interface CancellableStep<T = unknown> {
+  name: string;
+  run: () => Promise<T>;
+}
+
+export interface RunCancellableStepsResult<T = unknown> {
+  results: Partial<Record<string, T>>;
+  cancelled: boolean;
+  completedSteps: string[];
+  skippedSteps: string[];
+  failedSteps: string[];
+}
+
+/**
+ * Bounded-concurrency, cancellation-aware task runner. Replaces an unbounded
+ * `Promise.all([...])` fan-out (which dispatches every call at once and
+ * cannot be interrupted) with a small worker pool that:
+ *
+ *  1. Checks `isCancelled()` before *scheduling* each new step.
+ *  2. Checks `isCancelled()` again immediately before *executing* each step
+ *     (closes the gap between "claimed" and "started" for a step already
+ *     picked up by a worker between the two checks).
+ *  3. Once cancellation is observed, stops claiming further steps —
+ *     already-in-flight steps (started by other workers before cancellation
+ *     was observed) are allowed to finish, but no new expensive call starts.
+ *
+ * Step failures are recorded (name + error) rather than rejecting the whole
+ * run, so one failing provider can't mask a real cancellation signal; the
+ * caller decides whether to surface `failedSteps` as a hard error.
+ */
+export async function runCancellableSteps<T = unknown>(args: {
+  steps: CancellableStep<T>[];
+  concurrency: number;
+  isCancelled: () => boolean | Promise<boolean>;
+  onStepStart?: (stepName: string) => void | Promise<void>;
+  onStepComplete?: (stepName: string) => void | Promise<void>;
+  onStepFailed?: (stepName: string, error: unknown) => void | Promise<void>;
+}): Promise<RunCancellableStepsResult<T>> {
+  const { steps, isCancelled, onStepStart, onStepComplete, onStepFailed } = args;
+  const concurrency = Math.max(1, Math.min(args.concurrency, steps.length || 1));
+
+  const results: Partial<Record<string, T>> = {};
+  const completedSteps: string[] = [];
+  const skippedSteps: string[] = [];
+  const failedSteps: string[] = [];
+  let cancelled = false;
+  let nextIndex = 0;
+
+  async function worker(): Promise<void> {
+    while (true) {
+      if (cancelled) return;
+      if (await isCancelled()) {
+        cancelled = true;
+        return;
+      }
+      if (cancelled || nextIndex >= steps.length) return;
+
+      const step = steps[nextIndex++];
+
+      // Re-check right before doing the actual (expensive) work — closes the
+      // window between claiming a slot above and starting the call itself.
+      if (cancelled || (await isCancelled())) {
+        cancelled = true;
+        skippedSteps.push(step.name);
+        return;
+      }
+
+      if (onStepStart) await onStepStart(step.name);
+      try {
+        results[step.name] = await step.run();
+        completedSteps.push(step.name);
+        if (onStepComplete) await onStepComplete(step.name);
+      } catch (error) {
+        failedSteps.push(step.name);
+        if (onStepFailed) await onStepFailed(step.name, error);
+      }
+    }
+  }
+
+  await Promise.all(Array.from({ length: concurrency }, () => worker()));
+
+  // Any step never claimed by a worker (cancellation stopped claiming before
+  // reaching it) is recorded as skipped.
+  for (let i = nextIndex; i < steps.length; i++) {
+    skippedSteps.push(steps[i].name);
+  }
+
+  return {
+    results,
+    cancelled,
+    completedSteps,
+    skippedSteps: [...new Set(skippedSteps)],
+    failedSteps,
+  };
 }
 
 export async function getOrgReportBranding(
@@ -73,12 +204,31 @@ export async function getOrgReportBranding(
   };
 }
 
+export type GatherIntelligenceResult =
+  | { cancelled: true }
+  | { cancelled: false; report: IntelligenceReport; branding?: IntelligenceReportBranding };
+
+/** Named steps every deep-report fan-out is broken into (see runCancellableSteps).
+ * `report_synthesis` and `pdf_generation` are deliberately NOT gathered here —
+ * they happen downstream in finalizeIntelligenceReport() (report-builder.ts),
+ * which already has its own pre-narrative / pre-finalize cancellation
+ * checkpoints for that half of the pipeline. Sourced from report-step-names.ts
+ * so report-builder.ts's progress tracker uses the exact same list (Patch D). */
+const DEEP_REPORT_STEP_NAMES = DEEP_REPORT_GATHER_STEPS;
+
 export async function gatherIntelligenceReport(
   supabase: SupabaseClient,
   projectId: string,
   opts: GatherIntelligenceOptions = {}
-): Promise<{ report: IntelligenceReport; branding?: IntelligenceReportBranding } | null> {
-  const base = await gatherReportData(supabase, projectId);
+): Promise<GatherIntelligenceResult | null> {
+  const isCancelled = opts.isCancelled ? async () => Boolean(await opts.isCancelled!()) : async () => false;
+
+  // Patch C.1: thread the same cancellation check into gatherReportData() so
+  // its internal real-CPC lookup (the one paid/OmniData call inside the
+  // otherwise-cheap "base" gather) is skipped too when a cancel already
+  // landed before this deep-report gather even started, not just before the
+  // named-step fan-out below.
+  const base = await gatherReportData(supabase, projectId, { isCancelled });
   if (!base) return null;
 
   const { reportData, whiteLabel } = base;
@@ -90,6 +240,12 @@ export async function gatherIntelligenceReport(
   // picked (see applySectionSelection() below, applied after `report` is built).
   const sectionsIncluded = resolveSectionsIncluded(opts.sections);
 
+  // Checkpoint: before intelligence gathering starts.
+  if (await isCancelled()) {
+    recordMetric("deep_report.cancelled", 1, { projectId, checkpoint: "before_gather" });
+    return { cancelled: true };
+  }
+
   const branding =
     (await getOrgReportBranding(supabase, project.organization_id)) ||
     (whiteLabel
@@ -99,72 +255,191 @@ export async function gatherIntelligenceReport(
   const attributions: ReportAttribution[] = [...DEFAULT_ATTRIBUTIONS];
   const providersUsed = new Set<string>(["Supabase", "OmniPresence Engine"]);
 
-  const [
-    visibilitySnap,
-    competitiveTarget,
-    competitivePeers,
-    popularityDetail,
-    backlinks,
-    authority,
-    keywordOpps,
-    rankKws,
-    schemaRows,
-    communityRows,
-    ledger,
-    proof,
-    sourceGraph,
-    localListings,
-    entityResult,
-    cwvHistory,
-  ] = await Promise.all([
-    loadProjectVisibilitySnapshot(supabase, projectId, project.name, competitors),
-    safe(() => getCompetitiveSnapshot(domain, { name: project.name, includeCwv: true }), null),
-    Promise.all(
-      competitors.slice(0, 5).map((c) =>
-        safe(() => getCompetitiveSnapshot(c, { includeCwv: true }), null)
-      )
-    ),
-    safe(() => getPopularitySignal(domain, { includeCrux: true, includeBacklinks: true }), null),
-    safe(() => getBacklinksFree(domain, 25), null),
-    safe(() => resolveDomainAuthority(domain), null),
-    supabase
-      .from("keyword_opportunities")
-      .select("keyword, volume_estimate, difficulty, intent, source")
-      .eq("project_id", projectId)
-      .order("volume_estimate", { ascending: false })
-      .limit(30),
-    supabase
-      .from("rank_keywords")
-      .select("keyword, last_position, target_url")
-      .eq("project_id", projectId)
-      .order("last_position", { ascending: true })
-      .limit(50),
-    supabase
-      .from("schema_deployments")
-      .select("schema_types, validation_status, page_url")
-      .eq("project_id", projectId)
-      .limit(20),
-    supabase
-      .from("community_mentions")
-      .select("platform, keyword, url, mention_type")
-      .eq("project_id", projectId)
-      .order("created_at", { ascending: false })
-      .limit(15),
-    getLedgerForProject(supabase, projectId, 30),
-    safe(() => buildProofReport(supabase, projectId), null),
-    safe(() => getSourceGraph(projectId), null),
-    project.location
-      ? safe(() => verifyLocalPresence({ name: project.name, domain: project.domain, location: project.location }), [])
-      : Promise.resolve([]),
-    safe(() => buildEntityProfile(project, {}), null),
-    supabase
-      .from("cwv_history")
-      .select("lcp_ms, cls, inp_ms, created_at")
-      .eq("project_id", projectId)
-      .order("created_at", { ascending: false })
-      .limit(1)
-      .maybeSingle(),
-  ]);
+  type StepResults = {
+    ai_visibility: Awaited<ReturnType<typeof loadProjectVisibilitySnapshot>>;
+    competitor_analysis: {
+      target: Awaited<ReturnType<typeof getCompetitiveSnapshot>> | null;
+      peers: Array<Awaited<ReturnType<typeof getCompetitiveSnapshot>> | null>;
+    };
+    backlink_analysis: {
+      backlinks: Awaited<ReturnType<typeof getBacklinksFree>> | null;
+      authority: Awaited<ReturnType<typeof resolveDomainAuthority>> | null;
+    };
+    serp_analysis: {
+      popularityDetail: Awaited<ReturnType<typeof getPopularitySignal>> | null;
+      rankKws: { data: Array<{ keyword: string; last_position: number; target_url: string | null }> | null };
+    };
+    keyword_analysis: {
+      keywordOpps: {
+        data: Array<{
+          keyword: string;
+          volume_estimate: number | null;
+          difficulty: number | null;
+          intent: string | null;
+          source: string | null;
+        }> | null;
+      };
+    };
+    technical_audit: {
+      schemaRows: { data: Array<{ schema_types: unknown; validation_status: unknown; page_url: string }> | null };
+      cwvHistory: { data: { lcp_ms: number; cls: number; inp_ms: number; created_at: string } | null };
+    };
+    local_analysis: { localListings: Awaited<ReturnType<typeof verifyLocalPresence>> };
+    analytics_attribution: {
+      communityRows: {
+        data: Array<{ platform: string; keyword: string | null; url: string | null; mention_type: string | null }> | null;
+      };
+      ledger: Awaited<ReturnType<typeof getLedgerForProject>>;
+      proof: Awaited<ReturnType<typeof buildProofReport>> | null;
+      sourceGraph: Awaited<ReturnType<typeof getSourceGraph>> | null;
+      entityResult: Awaited<ReturnType<typeof buildEntityProfile>> | null;
+    };
+  };
+
+  const steps: CancellableStep<unknown>[] = [
+    {
+      name: "ai_visibility",
+      run: () => loadProjectVisibilitySnapshot(supabase, projectId, project.name, competitors),
+    },
+    {
+      name: "competitor_analysis",
+      run: async () => {
+        const [target, peers] = await Promise.all([
+          safe(() => getCompetitiveSnapshot(domain, { name: project.name, includeCwv: true }), null),
+          Promise.all(
+            competitors.slice(0, 5).map((c) => safe(() => getCompetitiveSnapshot(c, { includeCwv: true }), null))
+          ),
+        ]);
+        return { target, peers };
+      },
+    },
+    {
+      name: "backlink_analysis",
+      run: async () => {
+        const [backlinks, authority] = await Promise.all([
+          safe(() => getBacklinksFree(domain, 25), null),
+          safe(() => resolveDomainAuthority(domain), null),
+        ]);
+        return { backlinks, authority };
+      },
+    },
+    {
+      name: "serp_analysis",
+      run: async () => {
+        const [popularityDetail, rankKws] = await Promise.all([
+          safe(() => getPopularitySignal(domain, { includeCrux: true, includeBacklinks: true }), null),
+          supabase
+            .from("rank_keywords")
+            .select("keyword, last_position, target_url")
+            .eq("project_id", projectId)
+            .order("last_position", { ascending: true })
+            .limit(50),
+        ]);
+        return { popularityDetail, rankKws };
+      },
+    },
+    {
+      name: "keyword_analysis",
+      run: async () => {
+        const keywordOpps = await supabase
+          .from("keyword_opportunities")
+          .select("keyword, volume_estimate, difficulty, intent, source")
+          .eq("project_id", projectId)
+          .order("volume_estimate", { ascending: false })
+          .limit(30);
+        return { keywordOpps };
+      },
+    },
+    {
+      name: "technical_audit",
+      run: async () => {
+        const [schemaRows, cwvHistory] = await Promise.all([
+          supabase
+            .from("schema_deployments")
+            .select("schema_types, validation_status, page_url")
+            .eq("project_id", projectId)
+            .limit(20),
+          supabase
+            .from("cwv_history")
+            .select("lcp_ms, cls, inp_ms, created_at")
+            .eq("project_id", projectId)
+            .order("created_at", { ascending: false })
+            .limit(1)
+            .maybeSingle(),
+        ]);
+        return { schemaRows, cwvHistory };
+      },
+    },
+    {
+      name: "local_analysis",
+      run: async () => {
+        const localListings = project.location
+          ? await safe(
+              () => verifyLocalPresence({ name: project.name, domain: project.domain, location: project.location }),
+              []
+            )
+          : [];
+        return { localListings };
+      },
+    },
+    {
+      name: "analytics_attribution",
+      run: async () => {
+        const [communityRows, ledger, proof, sourceGraph, entityResult] = await Promise.all([
+          supabase
+            .from("community_mentions")
+            .select("platform, keyword, url, mention_type")
+            .eq("project_id", projectId)
+            .order("created_at", { ascending: false })
+            .limit(15),
+          getLedgerForProject(supabase, projectId, 30),
+          safe(() => buildProofReport(supabase, projectId), null),
+          safe(() => getSourceGraph(projectId), null),
+          safe(() => buildEntityProfile(project, {}), null),
+        ]);
+        return { communityRows, ledger, proof, sourceGraph, entityResult };
+      },
+    },
+  ];
+
+  const stepErrors: Record<string, unknown> = {};
+  const stepRun = await runCancellableSteps<unknown>({
+    steps,
+    concurrency: 3,
+    isCancelled,
+    onStepStart: opts.onStepStart,
+    onStepComplete: opts.onStepComplete,
+    onStepFailed: (name, error) => {
+      stepErrors[name] = error;
+    },
+  });
+
+  if (stepRun.cancelled) {
+    recordMetric("deep_report.cancelled", 1, {
+      projectId,
+      checkpoint: "mid_gather",
+      completed: stepRun.completedSteps.length,
+      skipped: stepRun.skippedSteps.length,
+    });
+    return { cancelled: true };
+  }
+
+  // Preserve the pre-refactor Promise.all semantics: a genuine step failure
+  // (not a cancellation) still fails the whole gather rather than silently
+  // rendering a report missing a section it never actually gathered.
+  const firstFailed = DEEP_REPORT_STEP_NAMES.find((name) => stepErrors[name] !== undefined);
+  if (firstFailed) throw stepErrors[firstFailed];
+
+  const r = stepRun.results as Partial<StepResults>;
+  const visibilitySnap = r.ai_visibility as StepResults["ai_visibility"];
+  const { target: competitiveTarget, peers: competitivePeers } = r.competitor_analysis as StepResults["competitor_analysis"];
+  const { backlinks, authority } = r.backlink_analysis as StepResults["backlink_analysis"];
+  const { popularityDetail, rankKws } = r.serp_analysis as StepResults["serp_analysis"];
+  const { keywordOpps } = r.keyword_analysis as StepResults["keyword_analysis"];
+  const { schemaRows, cwvHistory } = r.technical_audit as StepResults["technical_audit"];
+  const { localListings } = r.local_analysis as StepResults["local_analysis"];
+  const { communityRows, ledger, proof, sourceGraph, entityResult } =
+    r.analytics_attribution as StepResults["analytics_attribution"];
 
   if (backlinks?.success) providersUsed.add("Common Crawl Webgraph");
     if (popularityDetail?.available) {
@@ -270,6 +545,7 @@ export async function gatherIntelligenceReport(
         Technical: reportData.score.technical_readiness,
         Conversion: reportData.score.conversion_readiness,
       },
+      subScoresAvailable: getSubScoreAvailability(reportData.score, DEEP_SUBSCORE_LABEL_KEYS),
       keyFindings: buildKeyFindings(reportData, visibilitySnap, competitiveTarget),
       scoreDelta,
     },
@@ -414,7 +690,16 @@ export async function gatherIntelligenceReport(
 
   applySectionSelection(report, sectionsIncluded);
 
-  return { report, branding };
+  // Checkpoint: after intelligence gathering completes. All expensive calls
+  // above have already been paid for (they completed successfully), but a
+  // cancel that landed during the fan-out must still stop this from being
+  // handed back as report data a caller could persist as "ready".
+  if (await isCancelled()) {
+    recordMetric("deep_report.cancelled", 1, { projectId, checkpoint: "after_gather" });
+    return { cancelled: true };
+  }
+
+  return { cancelled: false, report, branding };
 }
 
 function dedupeAttributions(items: ReportAttribution[]): ReportAttribution[] {

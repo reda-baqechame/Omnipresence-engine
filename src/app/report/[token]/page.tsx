@@ -1,6 +1,9 @@
 import { createServiceClient } from "@/lib/supabase/server";
 import { renderReportHtmlForView } from "@/lib/engines/report-builder";
 import { notFound } from "next/navigation";
+import { headers } from "next/headers";
+import { checkPublicPageRateLimit } from "@/lib/security/public-guard";
+import { RateLimitedNotice } from "@/components/rate-limited-notice";
 import type { IntelligenceReportSectionId } from "@/types/intelligence-report";
 
 export default async function PublicReportPage({
@@ -9,6 +12,12 @@ export default async function PublicReportPage({
   params: Promise<{ token: string }>;
 }) {
   const { token } = await params;
+
+  const rateLimit = await checkPublicPageRateLimit(await headers(), "report-view", 60, 60_000);
+  if (!rateLimit.allowed) {
+    return <RateLimitedNotice retryAfterSec={rateLimit.retryAfterSec} />;
+  }
+
   const supabase = await createServiceClient();
 
   const { data: report } = await supabase

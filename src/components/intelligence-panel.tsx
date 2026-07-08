@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { PanelError } from "@/components/panel-states";
 
 interface IntelligencePanelProps {
   projectId: string;
@@ -22,6 +23,7 @@ export function IntelligencePanel({ projectId }: IntelligencePanelProps) {
     };
     dataQuality?: { live: boolean; measuredRate: number };
   } | null>(null);
+  const [loadError, setLoadError] = useState<string | null>(null);
 
   useEffect(() => {
     let active = true;
@@ -29,11 +31,18 @@ export function IntelligencePanel({ projectId }: IntelligencePanelProps) {
       .then((r) => r.json())
       .then((d) => {
         if (active) setData(d);
+      })
+      .catch(() => {
+        if (active) setLoadError("Couldn't load AEO intelligence data. Check your connection and reload.");
       });
     return () => {
       active = false;
     };
   }, [projectId]);
+
+  if (loadError) {
+    return <PanelError title="AEO data unavailable" message={loadError} />;
+  }
 
   if (!data?.aeo) {
     return (

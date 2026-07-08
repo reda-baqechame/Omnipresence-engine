@@ -3,6 +3,7 @@
 import { Fragment, useEffect, useMemo, useState } from "react";
 import { EvidenceDrawer } from "@/components/evidence-drawer";
 import { DataTableToolbar } from "@/components/data-table-toolbar";
+import { PanelError } from "@/components/panel-states";
 
 const RANK_COLUMNS = [
   { id: "keyword" as const, label: "Keyword" },
@@ -70,6 +71,7 @@ export function RankPanel({ projectId }: RankPanelProps) {
   const [searchQ, setSearchQ] = useState("");
   const [rankFilter, setRankFilter] = useState("all");
   const [visibleCols, setVisibleCols] = useState<RankCol[]>(RANK_COLUMNS.map((c) => c.id));
+  const [loadError, setLoadError] = useState<string | null>(null);
 
   const filteredKeywords = useMemo(() => {
     return keywords.filter((k) => {
@@ -98,6 +100,9 @@ export function RankPanel({ projectId }: RankPanelProps) {
         setKeywords(data.keywords || []);
         setSnapshots(data.snapshots || []);
         setAlerts(data.alerts || []);
+      })
+      .catch(() => {
+        if (active) setLoadError("Couldn't load ranking data. Check your connection and reload.");
       });
     return () => {
       active = false;
@@ -140,6 +145,7 @@ export function RankPanel({ projectId }: RankPanelProps) {
 
   return (
     <div className="space-y-6">
+      {loadError && <PanelError title="Ranking data unavailable" message={loadError} />}
       {alerts.length > 0 && (
         <div className="bg-red-500/10 border border-red-500/30 rounded-xl p-4">
           <h3 className="font-semibold text-sm text-red-400 mb-2">Rank drops ({alerts.length})</h3>
