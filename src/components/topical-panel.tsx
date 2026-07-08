@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { PanelError } from "@/components/panel-states";
 
 interface Spoke {
   title: string;
@@ -39,13 +40,15 @@ export function TopicalPanel({ projectId }: { projectId: string }) {
   const [briefKeyword, setBriefKeyword] = useState("");
   const [brief, setBrief] = useState<Brief | null>(null);
   const [briefMsg, setBriefMsg] = useState("");
+  const [loadError, setLoadError] = useState<string | null>(null);
 
   useEffect(() => {
     fetch(`/api/topical?projectId=${projectId}`)
       .then((r) => r.json())
       .then((d) => {
         if (d.map?.hubs) setHubs(d.map.hubs);
-      });
+      })
+      .catch(() => setLoadError("Couldn't load the topical map. Check your connection and reload."));
   }, [projectId]);
 
   async function buildMap() {
@@ -84,6 +87,7 @@ export function TopicalPanel({ projectId }: { projectId: string }) {
 
   return (
     <div className="space-y-6">
+      {loadError && <PanelError title="Topical map unavailable" message={loadError} />}
       <div className="bg-card border border-border rounded-xl p-4">
         <div className="flex items-center justify-between mb-2">
           <h3 className="font-semibold">Topical map (hub & spoke)</h3>

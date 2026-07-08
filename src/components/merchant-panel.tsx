@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
+import { PanelError } from "@/components/panel-states";
 
 interface ProductIssue {
   field: string;
@@ -49,6 +50,7 @@ export function MerchantPanel({ projectId }: { projectId: string }) {
   const [visibility, setVisibility] = useState<ProductVisibility | null>(null);
   const [vizLoading, setVizLoading] = useState(false);
   const [vizMessage, setVizMessage] = useState<string | null>(null);
+  const [loadError, setLoadError] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     const res = await fetch(`/api/merchant?projectId=${projectId}`);
@@ -62,13 +64,17 @@ export function MerchantPanel({ projectId }: { projectId: string }) {
   useEffect(() => {
     let active = true;
     async function run() {
-      const res = await fetch(`/api/merchant?projectId=${projectId}`);
-      if (!res.ok) return;
-      const data = await res.json();
-      if (!active) return;
-      setProducts(data.products || []);
-      setSummary(data.summary || null);
-      setVisibility(data.visibility || null);
+      try {
+        const res = await fetch(`/api/merchant?projectId=${projectId}`);
+        if (!res.ok) return;
+        const data = await res.json();
+        if (!active) return;
+        setProducts(data.products || []);
+        setSummary(data.summary || null);
+        setVisibility(data.visibility || null);
+      } catch {
+        if (active) setLoadError("Couldn't load merchant data. Check your connection and reload.");
+      }
     }
     void run();
     return () => {
@@ -119,6 +125,7 @@ export function MerchantPanel({ projectId }: { projectId: string }) {
 
   return (
     <div className="space-y-6">
+      {loadError && <PanelError title="Merchant data unavailable" message={loadError} />}
       <div className="bg-card border border-border rounded-xl p-4">
         <h3 className="font-semibold mb-2">Merchant / Shopping Feed Optimizer</h3>
         <p className="text-sm text-muted-foreground mb-3">

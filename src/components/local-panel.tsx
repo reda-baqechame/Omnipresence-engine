@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { CapabilityEvidenceBar } from "@/components/capability-evidence-bar";
+import { PanelError } from "@/components/panel-states";
 
 interface GbpCheck {
   label: string;
@@ -56,11 +57,13 @@ export function LocalPanel({ projectId }: { projectId: string }) {
     citationSources: { name: string; url: string; action: string }[];
   } | null>(null);
   const [osmCategory, setOsmCategory] = useState("");
+  const [loadError, setLoadError] = useState<string | null>(null);
 
   useEffect(() => {
     fetch(`/api/local?projectId=${projectId}`)
       .then((r) => r.json())
-      .then((d) => setReviews(d.reviews || []));
+      .then((d) => setReviews(d.reviews || []))
+      .catch(() => setLoadError("Couldn't load local SEO data. Check your connection and reload."));
   }, [projectId]);
 
   async function post(action: string, extra?: Record<string, unknown>) {
@@ -109,6 +112,7 @@ export function LocalPanel({ projectId }: { projectId: string }) {
 
   return (
     <div className="space-y-6">
+      {loadError && <PanelError title="Local SEO data unavailable" message={loadError} />}
       <CapabilityEvidenceBar
         projectId={projectId}
         capability="local"

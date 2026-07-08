@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { PanelError } from "@/components/panel-states";
 
 interface Opp {
   keyword: string;
@@ -22,11 +23,13 @@ export function SerpCapturePanel({ projectId }: { projectId: string }) {
   const [msg, setMsg] = useState("");
   const [block, setBlock] = useState<Block | null>(null);
   const [decayMsg, setDecayMsg] = useState("");
+  const [loadError, setLoadError] = useState<string | null>(null);
 
   useEffect(() => {
     fetch(`/api/serp-capture?projectId=${projectId}`)
       .then((r) => r.json())
-      .then((d) => setOpps(d.opportunities || []));
+      .then((d) => setOpps(d.opportunities || []))
+      .catch(() => setLoadError("Couldn't load SERP capture data. Check your connection and reload."));
   }, [projectId]);
 
   async function detect() {
@@ -75,6 +78,7 @@ export function SerpCapturePanel({ projectId }: { projectId: string }) {
 
   return (
     <div className="space-y-6">
+      {loadError && <PanelError title="SERP capture data unavailable" message={loadError} />}
       <div className="bg-card border border-border rounded-xl p-4">
         <div className="flex items-center justify-between mb-2">
           <h3 className="font-semibold">Featured snippet &amp; PAA capture</h3>
