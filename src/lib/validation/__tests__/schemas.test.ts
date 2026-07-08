@@ -69,6 +69,15 @@ test("OpsPatchSchema rejects an out-of-allowlist status (e.g. completed)", () =>
   assert.equal(parseOrError(OpsPatchSchema, { id: UUID, status: "completed" }).ok, false);
 });
 
+test("OpsPatchSchema rejects 'cancelled' and accepts 'rejected' (ops_queue.status CHECK regression)", () => {
+  // Regression: the DFY approval panel's reject button used to send
+  // status:"cancelled", which the schema allowed but the ops_queue.status
+  // CHECK constraint (0009_v2_real_results.sql) does not — every reject
+  // click 500'd. The allowlist must stay a subset of the DB constraint.
+  assert.equal(parseOrError(OpsPatchSchema, { id: UUID, status: "cancelled" }).ok, false);
+  assert.equal(parseOrError(OpsPatchSchema, { id: UUID, status: "rejected" }).ok, true);
+});
+
 test("KeywordsSchema bounds seeds array and geo length", () => {
   assert.equal(parseOrError(KeywordsSchema, { projectId: UUID, seeds: ["a", "b"] }).ok, true);
   assert.equal(

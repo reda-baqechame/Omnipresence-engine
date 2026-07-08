@@ -25,8 +25,11 @@ const nonEmpty = z.string().trim().min(1);
 /** Known SLA risk levels for queued ops. */
 export const RISK_LEVELS = ["low", "medium", "high"] as const;
 
-/** Mutable ops-queue statuses a client is allowed to set via PATCH. */
-export const OPS_PATCH_STATUSES = ["approved", "rejected", "pending", "cancelled"] as const;
+/** Mutable ops-queue statuses a client is allowed to set via PATCH. Must match
+ * the ops_queue.status CHECK constraint (0009_v2_real_results.sql) exactly —
+ * "cancelled" was previously listed here but rejected by that constraint,
+ * which the DFY approval panel's reject button hit on every use. */
+export const OPS_PATCH_STATUSES = ["approved", "rejected", "pending"] as const;
 
 export const OpsCreateSchema = z.object({
   projectId: uuid,
@@ -169,6 +172,10 @@ export const ReportGenerateSchema = z.object({
   report_type: z.enum(["standard", "deep"]).optional(),
   sections: z.array(z.string().trim().max(64)).max(32).optional(),
   preset: z.string().trim().max(64).optional(),
+  /** Client-generated UUID so a double-clicked Generate button (or a
+   * retried request) reuses the in-flight/completed report instead of
+   * creating a duplicate row. Scoped per-project via a unique index. */
+  idempotency_key: uuid.optional(),
 });
 
 export const ProjectCreateSchema = z.object({
@@ -331,6 +338,11 @@ export const TrafficPanelIngestSchema = z.object({
 
 export const RescanSchema = z.object({
   engines: z.array(z.string().trim().max(64)).max(20).optional(),
+  /** Client-generated UUID so a double-clicked Rescan button doesn't
+   * trigger a second concurrent scan. Combined with an atomic
+   * status != 'scanning' guard so the protection also holds for callers
+   * that omit the key. */
+  idempotency_key: uuid.optional(),
 });
 
 export const GeoRewriteSchema = z.object({

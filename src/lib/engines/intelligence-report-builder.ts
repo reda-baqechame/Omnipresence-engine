@@ -19,13 +19,13 @@ import { gatherReportData } from "@/lib/engines/report-builder";
 import type { RoadmapItem, SubscriptionPlan } from "@/types/database";
 import { canUseWhiteLabel } from "@/lib/plans/features";
 import {
-  ALL_INTELLIGENCE_SECTIONS,
   type IntelligenceReport,
   type IntelligenceReportBranding,
   type IntelligenceReportSectionId,
   type ReportAttribution,
   type ReportDataQuality,
 } from "@/types/intelligence-report";
+import { applySectionSelection, resolveSectionsIncluded } from "@/lib/engines/report-section-selection";
 
 const DEFAULT_ATTRIBUTIONS: ReportAttribution[] = [
   { source: "Common Crawl", license: "Open data", url: "https://commoncrawl.org/" },
@@ -85,7 +85,10 @@ export async function gatherIntelligenceReport(
   const project = reportData.project;
   const domain = project.domain.replace(/^https?:\/\//, "").replace(/^www\./, "").split("/")[0];
   const competitors = project.competitors || [];
-  const sectionsIncluded = opts.sections?.length ? opts.sections : [...ALL_INTELLIGENCE_SECTIONS];
+  // Honor the user's selected preset (reports.sections) — previously ignored,
+  // so every deep report rendered all 16 sections regardless of what was
+  // picked (see applySectionSelection() below, applied after `report` is built).
+  const sectionsIncluded = resolveSectionsIncluded(opts.sections);
 
   const branding =
     (await getOrgReportBranding(supabase, project.organization_id)) ||
@@ -408,6 +411,8 @@ export async function gatherIntelligenceReport(
   if (sourceGraph?.nodes?.length) {
     providersUsed.add("Citation Source Graph");
   }
+
+  applySectionSelection(report, sectionsIncluded);
 
   return { report, branding };
 }

@@ -34,12 +34,14 @@ export async function POST(
 
   let reportType: "standard" | "deep" = "standard";
   let sections: IntelligenceReportSectionId[] | undefined;
+  let idempotencyKey: string | undefined;
 
   const contentType = request.headers.get("content-type") || "";
   if (contentType.includes("application/json")) {
     const parsed = await validateBody(request, ReportGenerateSchema);
     if (parsed.response) return parsed.response;
     const body = parsed.data;
+    idempotencyKey = body.idempotency_key;
     if (body.preset) {
       const preset = getReportPreset(body.preset);
       if (preset) {
@@ -49,6 +51,28 @@ export async function POST(
     } else {
       reportType = body.report_type === "deep" ? "deep" : "standard";
       sections = body.sections as IntelligenceReportSectionId[] | undefined;
+    }
+  }
+
+  const appUrl = process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000";
+
+  // Idempotency: a double-clicked Generate button (or a retried request from
+  // a flaky client) supplying the same key must reuse the existing report
+  // instead of creating a duplicate row and re-triggering generation/spend.
+  if (idempotencyKey) {
+    const { data: existing } = await supabase
+      .from("reports")
+      .select("id, status, share_token")
+      .eq("project_id", id)
+      .eq("idempotency_key", idempotencyKey)
+      .maybeSingle();
+    if (existing) {
+      return NextResponse.json({
+        url: `${appUrl}/report/${existing.share_token}`,
+        status: existing.status,
+        token: existing.share_token,
+        idempotent: true,
+      });
     }
   }
 
@@ -79,13 +103,13 @@ export async function POST(
       report_type: reportType,
       sections: sections || [],
       status: reportType === "deep" ? "pending" : "generating",
+      idempotency_key: idempotencyKey ?? null,
     })
     .select()
     .single();
 
   if (reportError || !report) return apiServerError("report create failed", reportError);
 
-  const appUrl = process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000";
   const reportUrl = `${appUrl}/report/${report.share_token}`;
 
   const useInngest = Boolean(process.env.INNGEST_EVENT_KEY) || reportType === "deep";
@@ -104,11 +128,24 @@ export async function POST(
       await saveIntelligenceReportArtifacts(service, id, report.id, "");
     } else {
       const gathered = await gatherReportData(service, id);
-      if (gathered) {
-        await saveReportArtifacts(service, id, report.id, gathered.reportData, gathered.whiteLabel);
+      if (!gathered) {
+        // Previously silent: the row was left at status "generating" forever
+        // and the caller was told "ready" anyway. No score data yet means
+        // there is nothing to render — fail the row explicitly.
+        throw new Error("No score data available yet — run a scan before generating a report.");
       }
+      await saveReportArtifacts(service, id, report.id, gathered.reportData, gathered.whiteLabel);
     }
   } catch (err) {
+    // Any failure in the synchronous path (including the "no data" case
+    // above) must not leave the row orphaned at pending/generating — mark it
+    // failed with a message so the Reports list and /report/[token] page can
+    // tell the user honestly instead of spinning forever.
+    const message = err instanceof Error ? err.message : "Report generation failed";
+    await service
+      .from("reports")
+      .update({ status: "failed", error_message: message })
+      .eq("id", report.id);
     return apiServerError("report generation failed", err);
   }
 

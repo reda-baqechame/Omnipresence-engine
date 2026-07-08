@@ -1,5 +1,5 @@
--- PresenceOS combined migration (74 files)
--- Generated 2026-07-07T02:08:55.244Z
+-- PresenceOS combined migration (80 files)
+-- Generated 2026-07-07T21:27:46.722Z
 
 -- ========== 0001_init.sql ==========
 
@@ -2858,83 +2858,12 @@ CREATE POLICY audit_leads_select_org_admin ON audit_leads
 
 -- ========== 0065_data_source_constraints.sql ==========
 
--- Platform-wide data_source CHECK constraints (trust spine enforcement at DB layer).
+-- Superseded by 0068_fix_data_source_constraints.sql.
+-- Original 0065 referenced renamed/phantom tables (deep_crawl_pages, source_graph_nodes, …)
+-- and had nested dollar-quote syntax errors. Keep this migration as a no-op so version
+-- ordering stays intact on databases that have not yet applied 0065.
 
--- Full 5-value provenance enum (nullable columns allow NULL).
-DO $$
-DECLARE
-  t TEXT;
-  tables TEXT[] := ARRAY[
-    'visibility_results',
-    'technical_findings',
-    'coverage_items',
-    'authority_opportunities',
-    'scores',
-    'keyword_opportunities',
-    'attribution_metrics',
-    'cwv_history',
-    'deep_crawl_pages',
-    'deep_crawl_issues',
-    'gsc_snapshots',
-    'ga4_snapshots',
-    'bing_snapshots',
-    'rank_snapshots',
-    'product_visibility_snapshots',
-    'source_graph_nodes',
-    'source_graph_edges',
-    'source_influence_scores',
-    'citation_authority_scores',
-    'merchant_listings',
-    'ai_probe_traces',
-    'rank_keywords',
-    'rank_history',
-    'measurement_evidence',
-    'backlink_graph_edges',
-    'traffic_panel_observations'
-  ];
-  full_check TEXT := $$data_source IS NULL OR data_source IN (
-    'measured', 'estimated', 'model_knowledge', 'simulated', 'unavailable'
-  )$$;
-BEGIN
-  FOREACH t IN ARRAY tables LOOP
-    EXECUTE format('ALTER TABLE %I DROP CONSTRAINT IF EXISTS %I', t, t || '_data_source_check');
-    IF EXISTS (
-      SELECT 1 FROM information_schema.columns
-      WHERE table_schema = 'public' AND table_name = t AND column_name = 'data_source'
-    ) THEN
-      EXECUTE format('ALTER TABLE %I ADD CONSTRAINT %I CHECK (%s)', t, t || '_data_source_check', full_check);
-    END IF;
-  END LOOP;
-END $$;
-
--- NOT NULL tables with full enum (no NULL).
-DO $$
-DECLARE
-  t TEXT;
-  tables TEXT[] := ARRAY[
-    'behavior_metrics',
-    'backlink_graph_edges'
-  ];
-  full_check_nn TEXT := $$data_source IN (
-    'measured', 'estimated', 'model_knowledge', 'simulated', 'unavailable'
-  )$$;
-BEGIN
-  FOREACH t IN ARRAY tables LOOP
-    EXECUTE format('ALTER TABLE %I DROP CONSTRAINT IF EXISTS %I', t, t || '_data_source_check');
-    IF EXISTS (
-      SELECT 1 FROM information_schema.columns
-      WHERE table_schema = 'public' AND table_name = t AND column_name = 'data_source'
-    ) THEN
-      EXECUTE format('ALTER TABLE %I ADD CONSTRAINT %I CHECK (%s)', t, t || '_data_source_check', full_check_nn);
-    END IF;
-  END LOOP;
-END $$;
-
--- Legacy citation_sources: measured | simulated only.
-ALTER TABLE citation_sources DROP CONSTRAINT IF EXISTS citation_sources_data_source_check;
-ALTER TABLE citation_sources
-  ADD CONSTRAINT citation_sources_data_source_check
-  CHECK (data_source IN ('measured', 'simulated'));
+SELECT 1;
 
 
 -- ========== 0066_provider_telemetry.sql ==========
@@ -3027,30 +2956,40 @@ DECLARE
     'backlink_graph_snapshots',
     'measurement_evidence'
   ];
-  full_check TEXT := $$data_source IS NULL OR data_source IN (
+  full_check TEXT := $check$data_source IS NULL OR data_source IN (
     'measured', 'estimated', 'model_knowledge', 'simulated', 'unavailable'
-  )$$;
-  full_check_nn TEXT := $$data_source IN (
+  )$check$;
+  full_check_nn TEXT := $check$data_source IN (
     'measured', 'estimated', 'model_knowledge', 'simulated', 'unavailable'
-  )$$;
+  )$check$;
 BEGIN
   FOREACH t IN ARRAY nullable_tables LOOP
-    EXECUTE format('ALTER TABLE %I DROP CONSTRAINT IF EXISTS %I', t, t || '_data_source_check');
     IF EXISTS (
-      SELECT 1 FROM information_schema.columns
-      WHERE table_schema = 'public' AND table_name = t AND column_name = 'data_source'
+      SELECT 1 FROM information_schema.tables
+      WHERE table_schema = 'public' AND table_name = t
     ) THEN
-      EXECUTE format('ALTER TABLE %I ADD CONSTRAINT %I CHECK (%s)', t, t || '_data_source_check', full_check);
+      EXECUTE format('ALTER TABLE %I DROP CONSTRAINT IF EXISTS %I', t, t || '_data_source_check');
+      IF EXISTS (
+        SELECT 1 FROM information_schema.columns
+        WHERE table_schema = 'public' AND table_name = t AND column_name = 'data_source'
+      ) THEN
+        EXECUTE format('ALTER TABLE %I ADD CONSTRAINT %I CHECK (%s)', t, t || '_data_source_check', full_check);
+      END IF;
     END IF;
   END LOOP;
 
   FOREACH t IN ARRAY not_null_tables LOOP
-    EXECUTE format('ALTER TABLE %I DROP CONSTRAINT IF EXISTS %I', t, t || '_data_source_check');
     IF EXISTS (
-      SELECT 1 FROM information_schema.columns
-      WHERE table_schema = 'public' AND table_name = t AND column_name = 'data_source'
+      SELECT 1 FROM information_schema.tables
+      WHERE table_schema = 'public' AND table_name = t
     ) THEN
-      EXECUTE format('ALTER TABLE %I ADD CONSTRAINT %I CHECK (%s)', t, t || '_data_source_check', full_check_nn);
+      EXECUTE format('ALTER TABLE %I DROP CONSTRAINT IF EXISTS %I', t, t || '_data_source_check');
+      IF EXISTS (
+        SELECT 1 FROM information_schema.columns
+        WHERE table_schema = 'public' AND table_name = t AND column_name = 'data_source'
+      ) THEN
+        EXECUTE format('ALTER TABLE %I ADD CONSTRAINT %I CHECK (%s)', t, t || '_data_source_check', full_check_nn);
+      END IF;
     END IF;
   END LOOP;
 END $$;
@@ -3205,5 +3144,187 @@ WHERE tracking_hmac IS NULL;
 ALTER TABLE public.projects
   ALTER COLUMN tracking_hmac SET NOT NULL,
   ALTER COLUMN tracking_hmac SET DEFAULT encode(gen_random_bytes(32), 'hex');
+
+
+-- ========== 0075_hub_perf_indexes.sql ==========
+
+-- Phase 6: hub query performance indexes (idempotent)
+
+CREATE INDEX IF NOT EXISTS idx_visibility_results_project_created
+  ON visibility_results (project_id, created_at DESC);
+
+CREATE INDEX IF NOT EXISTS idx_rank_snapshots_keyword_checked
+  ON rank_snapshots (keyword_id, checked_at DESC);
+
+
+-- ========== 0076_report_artifact_storage.sql ==========
+
+-- Report artifacts must be served from the storage object that was actually
+-- generated, not re-derived from a public URL against a bucket that
+-- migration 0073 made private (getPublicUrl() on a private bucket is a dead
+-- link). Store the storage object PATH instead, and record when a report's
+-- PDF render degraded to an HTML download so the UI/API can say so honestly
+-- instead of silently swapping content types.
+
+ALTER TABLE reports
+  ADD COLUMN IF NOT EXISTS pdf_storage_path TEXT,
+  ADD COLUMN IF NOT EXISTS html_storage_path TEXT,
+  ADD COLUMN IF NOT EXISTS pdf_degraded BOOLEAN NOT NULL DEFAULT false;
+
+COMMENT ON COLUMN reports.pdf_storage_path IS 'Object path within the private "reports" storage bucket, resolved via service-role download() — not a fetchable URL.';
+COMMENT ON COLUMN reports.html_storage_path IS 'Object path within the private "reports" storage bucket for the HTML artifact.';
+COMMENT ON COLUMN reports.pdf_degraded IS 'True when PDF rendering failed at generation time and only an HTML artifact is available for download.';
+COMMENT ON COLUMN reports.pdf_url IS 'Deprecated: historically a getPublicUrl() result against the reports bucket, which has been private since 0073_reports_bucket_private.sql. Do not treat as a fetchable link — use pdf_storage_path via the service role client instead.';
+COMMENT ON COLUMN reports.html_url IS 'Deprecated: see pdf_url. Use html_storage_path.';
+
+
+-- ========== 0077_generation_cancellation.sql ==========
+
+-- Generation cancellation: reports and visibility scans currently have no way
+-- to be stopped once started. Add cancelling/cancelled states plus timestamps
+-- so a user-initiated stop can be recorded, checked cooperatively inside the
+-- long-running loops, and reflected honestly in report/scan status.
+
+ALTER TABLE reports DROP CONSTRAINT IF EXISTS reports_status_check;
+ALTER TABLE reports
+  ADD CONSTRAINT reports_status_check
+    CHECK (status IN ('pending', 'generating', 'ready', 'failed', 'cancelling', 'cancelled'));
+
+ALTER TABLE reports
+  ADD COLUMN IF NOT EXISTS cancel_requested_at TIMESTAMPTZ,
+  ADD COLUMN IF NOT EXISTS cancelled_at TIMESTAMPTZ;
+
+-- visibility_runs.status is the scan_status ENUM (0001_init.sql), not a CHECK
+-- constraint — new enum values must be added outside the same transaction
+-- that uses them (fine here; this migration only adds the values).
+ALTER TYPE scan_status ADD VALUE IF NOT EXISTS 'cancelling';
+ALTER TYPE scan_status ADD VALUE IF NOT EXISTS 'cancelled';
+
+ALTER TABLE visibility_runs
+  ADD COLUMN IF NOT EXISTS cancel_requested_at TIMESTAMPTZ,
+  ADD COLUMN IF NOT EXISTS cancelled_at TIMESTAMPTZ;
+
+CREATE INDEX IF NOT EXISTS idx_reports_cancel_requested
+  ON reports(id) WHERE cancel_requested_at IS NOT NULL AND cancelled_at IS NULL;
+
+CREATE INDEX IF NOT EXISTS idx_visibility_runs_cancel_requested
+  ON visibility_runs(id) WHERE cancel_requested_at IS NOT NULL AND cancelled_at IS NULL;
+
+
+-- ========== 0078_job_cost_tracking.sql ==========
+
+-- Per-job cost/token attribution: spend is currently tracked platform-wide
+-- per day (api_spend_daily) and org-wide (api_usage), but nothing rolls it up
+-- per report/scan, so "what did THIS report cost" is unanswerable. Add the
+-- columns + atomic increment RPCs (mirrors increment_api_spend's pattern) and
+-- report_id/run_id on provider_telemetry for per-call auditing.
+
+ALTER TABLE reports
+  ADD COLUMN IF NOT EXISTS estimated_cost NUMERIC(12, 6),
+  ADD COLUMN IF NOT EXISTS actual_cost NUMERIC(12, 6) NOT NULL DEFAULT 0,
+  ADD COLUMN IF NOT EXISTS tokens_used INTEGER NOT NULL DEFAULT 0,
+  ADD COLUMN IF NOT EXISTS provider_calls_count INTEGER NOT NULL DEFAULT 0,
+  ADD COLUMN IF NOT EXISTS current_step TEXT,
+  ADD COLUMN IF NOT EXISTS progress_percent INTEGER;
+
+ALTER TABLE visibility_runs
+  ADD COLUMN IF NOT EXISTS actual_cost NUMERIC(12, 6) NOT NULL DEFAULT 0,
+  ADD COLUMN IF NOT EXISTS tokens_used INTEGER NOT NULL DEFAULT 0,
+  ADD COLUMN IF NOT EXISTS provider_calls_count INTEGER NOT NULL DEFAULT 0,
+  ADD COLUMN IF NOT EXISTS current_step TEXT,
+  ADD COLUMN IF NOT EXISTS progress_percent INTEGER;
+
+ALTER TABLE provider_telemetry
+  ADD COLUMN IF NOT EXISTS report_id UUID REFERENCES reports(id) ON DELETE SET NULL,
+  ADD COLUMN IF NOT EXISTS run_id UUID REFERENCES visibility_runs(id) ON DELETE SET NULL;
+
+CREATE INDEX IF NOT EXISTS provider_telemetry_report_idx
+  ON provider_telemetry(report_id) WHERE report_id IS NOT NULL;
+CREATE INDEX IF NOT EXISTS provider_telemetry_run_idx
+  ON provider_telemetry(run_id) WHERE run_id IS NOT NULL;
+
+CREATE OR REPLACE FUNCTION increment_report_usage(
+  p_report_id UUID,
+  p_cost NUMERIC,
+  p_tokens INTEGER,
+  p_calls INTEGER
+) RETURNS void
+LANGUAGE sql
+AS $$
+  UPDATE reports
+  SET actual_cost = actual_cost + p_cost,
+      tokens_used = tokens_used + p_tokens,
+      provider_calls_count = provider_calls_count + p_calls
+  WHERE id = p_report_id;
+$$;
+
+CREATE OR REPLACE FUNCTION increment_run_usage(
+  p_run_id UUID,
+  p_cost NUMERIC,
+  p_tokens INTEGER,
+  p_calls INTEGER
+) RETURNS void
+LANGUAGE sql
+AS $$
+  UPDATE visibility_runs
+  SET actual_cost = actual_cost + p_cost,
+      tokens_used = tokens_used + p_tokens,
+      provider_calls_count = provider_calls_count + p_calls
+  WHERE id = p_run_id;
+$$;
+
+
+-- ========== 0079_reports_bucket_rls_path_fix.sql ==========
+
+-- 0073_reports_bucket_private.sql wrote a policy assuming storage object
+-- paths look like {orgId}/{projectId}/{file}, but report-builder.ts has
+-- always written (and still writes) paths as reports/{projectId}/{file} —
+-- i.e. storage.foldername(name) = ARRAY['reports', projectId], not
+-- ARRAY[orgId, projectId]. The policy's org/project match therefore never
+-- matched any real object. In practice this was masked because the only
+-- reader (the report PDF download route) uses the service-role client,
+-- which bypasses RLS entirely — but the policy should still describe the
+-- access it actually grants, for any future authenticated-client read path.
+
+DROP POLICY IF EXISTS reports_org_read ON storage.objects;
+
+CREATE POLICY reports_org_read ON storage.objects
+  FOR SELECT
+  TO authenticated
+  USING (
+    bucket_id = 'reports'
+    AND EXISTS (
+      SELECT 1
+      FROM public.projects p
+      JOIN public.memberships m ON m.organization_id = p.organization_id
+      WHERE m.user_id = auth.uid()
+        AND (storage.foldername(name))[2] = p.id::text
+    )
+  );
+
+
+-- ========== 0080_generation_idempotency.sql ==========
+
+-- Idempotency for report-generate and scan-trigger: double-clicking Generate
+-- (or a retried client request) currently creates a second `reports` row /
+-- triggers a second scan with no way to detect the duplicate. Mirrors the
+-- existing webhook idempotency pattern (webhook_events UNIQUE(provider,
+-- event_id), 0005_webhook_events.sql) — a client-generated key, scoped to
+-- the project, deduplicated via a partial unique index so omitting the key
+-- (existing callers) is unaffected.
+
+ALTER TABLE reports
+  ADD COLUMN IF NOT EXISTS idempotency_key TEXT;
+
+CREATE UNIQUE INDEX IF NOT EXISTS reports_project_idempotency_key
+  ON reports(project_id, idempotency_key)
+  WHERE idempotency_key IS NOT NULL;
+
+ALTER TABLE visibility_runs
+  ADD COLUMN IF NOT EXISTS idempotency_key TEXT;
+
+CREATE UNIQUE INDEX IF NOT EXISTS visibility_runs_project_idempotency_key
+  ON visibility_runs(project_id, idempotency_key)
+  WHERE idempotency_key IS NOT NULL;
 
 

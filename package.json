@@ -138,6 +138,7 @@
     "@types/node": "^26.0.0",
     "@types/react": "^19.2.17",
     "@types/react-dom": "^19.2.3",
+    "esbuild": "^0.28.1",
     "eslint": "^9.39.4",
     "eslint-config-next": "^16.2.9",
     "pg": "^8.22.0",
@@ -146,12 +147,12 @@
     "typescript": "^6.0.3"
   },
   "optionalDependencies": {
+    "@next/swc-linux-x64-gnu": "16.2.9",
+    "@next/swc-win32-x64-msvc": "16.2.9",
     "@opentelemetry/exporter-trace-otlp-http": "^0.57.0",
     "@opentelemetry/resources": "^1.30.0",
     "@opentelemetry/sdk-node": "^0.57.0",
     "@opentelemetry/semantic-conventions": "^1.28.0",
-    "@next/swc-linux-x64-gnu": "16.2.9",
-    "@next/swc-win32-x64-msvc": "16.2.9",
     "@tailwindcss/oxide-linux-x64-gnu": "4.3.1",
     "@tailwindcss/oxide-win32-x64-msvc": "4.3.1",
     "lightningcss-linux-x64-gnu": "1.32.0",

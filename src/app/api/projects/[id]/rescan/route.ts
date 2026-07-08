@@ -21,9 +21,27 @@ export async function POST(
   const access = await verifyProjectAccess(supabase, id, user.id, "member");
   if (!access) return apiForbidden();
 
+  // Atomic claim: only the request that actually flips the project out of
+  // "scanning" gets to trigger a run. This closes the double-click race for
+  // callers that omit idempotency_key too (a near-simultaneous second POST
+  // sees zero rows updated and is a no-op), per the idempotency plan.
+  const { data: claimed } = await supabase
+    .from("projects")
+    .update({ status: "scanning" })
+    .eq("id", id)
+    .neq("status", "scanning")
+    .select("id")
+    .maybeSingle();
+
+  if (!claimed) {
+    const appUrl = process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000";
+    return NextResponse.redirect(`${appUrl}/app/projects/${id}?scanning=true`);
+  }
+
   try {
-    await supabase.from("projects").update({ status: "scanning" }).eq("id", id);
-    await triggerProjectScan(id, access.organizationId);
+    await triggerProjectScan(id, access.organizationId, {
+      idempotencyKey: parsed.data.idempotency_key,
+    });
   } catch (error) {
     if (error instanceof ApiCreditExceededError) {
       return apiError("API credit limit exceeded. Upgrade your plan.", 402);

@@ -4,7 +4,7 @@ import { analyzePassageReadiness } from "@/lib/engines/passage-readiness";
 import { computeAndRecordFindingDiff } from "@/lib/engines/finding-diff";
 import { extractBrandProfile } from "@/lib/engines/brand-extraction";
 import { generatePromptUniverse } from "@/lib/engines/prompt-generator";
-import { runVisibilityScan, extractCitationSources } from "@/lib/engines/visibility-scanner";
+import { runVisibilityScan, extractCitationSources, makeRunCancellationChecker } from "@/lib/engines/visibility-scanner";
 import { getActiveScanEngines } from "@/lib/config/scan-engines";
 import { checkPlatformCoverage } from "@/lib/engines/coverage-checker";
 import { findAuthorityOpportunities } from "@/lib/engines/authority-finder";
@@ -45,14 +45,15 @@ function toTechnicalFinding(
 
 export interface ScanResult {
   projectId: string;
-  score: number;
+  score: number | null;
   demo: boolean;
+  cancelled?: boolean;
 }
 
 export async function runProjectScan(
   supabase: SupabaseClient,
   projectId: string,
-  options?: { notifyEmail?: string }
+  options?: { notifyEmail?: string; idempotencyKey?: string }
 ): Promise<ScanResult> {
   const { data: project } = await supabase.from("projects").select("*").eq("id", projectId).single();
   if (!project) throw new Error("Project not found");
@@ -115,6 +116,7 @@ export async function runProjectScan(
       engines: getActiveScanEngines(),
       prompt_count: prompts.length,
       started_at: new Date().toISOString(),
+      idempotency_key: options?.idempotencyKey ?? null,
     })
     .select()
     .single();
@@ -123,7 +125,7 @@ export async function runProjectScan(
   await supabase.from("visibility_results").delete().eq("project_id", projectId);
   await supabase.from("ai_probe_traces").delete().eq("project_id", projectId);
 
-  const { results: visibilityResults } = await runVisibilityScan({
+  const { results: visibilityResults, cancelled: scanCancelled } = await runVisibilityScan({
     projectId,
     runId: run!.id,
     organizationId: p.organization_id,
@@ -133,10 +135,32 @@ export async function runProjectScan(
     location: p.location || "United States",
     prompts: prompts.map((pr) => ({ text: pr.text, priority: pr.priority })),
     maxPrompts: maxScanPrompts,
+    isCancelled: makeRunCancellationChecker(supabase, run!.id),
     onProbeResult: async (result) => {
       await insertVisibilityResultRows(supabase, [result]);
     },
   });
+
+  if (scanCancelled) {
+    // User-initiated stop: record the honest state and end the pipeline here.
+    // Probes measured before cancellation stay in visibility_results (real
+    // data), but no score/roadmap/coverage summary is produced from a run
+    // that never reached a conclusion.
+    await supabase
+      .from("visibility_runs")
+      .update({
+        status: "cancelled",
+        cancelled_at: new Date().toISOString(),
+        completed_at: new Date().toISOString(),
+        error_message: "Cancelled by user",
+      })
+      .eq("id", run!.id);
+    await supabase
+      .from("projects")
+      .update({ status: p.last_scan_at ? "active" : "draft" })
+      .eq("id", projectId);
+    return { projectId, score: null, demo: false, cancelled: true };
+  }
 
   const citationRows = extractCitationSources(
     visibilityResults as import("@/lib/engines/visibility-scanner").VisibilityScanResult[],

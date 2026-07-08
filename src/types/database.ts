@@ -1,6 +1,6 @@
 export type MembershipRole = "owner" | "admin" | "member" | "viewer";
 export type ProjectStatus = "draft" | "scanning" | "active" | "paused" | "archived";
-export type ScanStatus = "pending" | "running" | "completed" | "failed";
+export type ScanStatus = "pending" | "running" | "completed" | "failed" | "cancelling" | "cancelled";
 export type FindingSeverity = "critical" | "high" | "medium" | "low" | "info";
 export type PromptCategory =
   | "best_of"
@@ -200,6 +200,8 @@ export interface VisibilityRun {
   error_message?: string;
   /** Prominence-weighted brand share of voice (0–1), persisted at scan finalize. */
   brand_sov?: number | null;
+  cancel_requested_at?: string;
+  cancelled_at?: string;
   created_at: string;
 }
 
@@ -587,19 +589,34 @@ export interface AttributionMetric {
   created_at: string;
 }
 
+export type ReportStatus =
+  | "pending"
+  | "generating"
+  | "ready"
+  | "failed"
+  | "cancelling"
+  | "cancelled";
+
 export interface Report {
   id: string;
   project_id: string;
   share_token: string;
   title: string;
+  /** @deprecated dead link since the reports bucket went private (0073) — use pdf_storage_path. */
   pdf_url?: string;
+  /** @deprecated see pdf_url — use html_storage_path. */
   html_url?: string;
+  pdf_storage_path?: string;
+  html_storage_path?: string;
+  pdf_degraded?: boolean;
   is_public: boolean;
   white_label: boolean;
   report_type?: "standard" | "deep";
   sections?: string[];
-  status?: "pending" | "generating" | "ready" | "failed";
+  status?: ReportStatus;
   error_message?: string;
+  cancel_requested_at?: string;
+  cancelled_at?: string;
   created_at: string;
 }
 

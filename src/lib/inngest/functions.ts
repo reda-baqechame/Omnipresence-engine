@@ -91,8 +91,33 @@ export const runFullScan = inngest.createFunction(
     },
   },
   async ({ event, step }) => {
-    const { projectId, organizationId } = event.data as { projectId: string; organizationId: string };
+    const { projectId, organizationId, idempotencyKey } = event.data as {
+      projectId: string;
+      organizationId: string;
+      idempotencyKey?: string;
+    };
     const supabase = await createServiceClient();
+
+    // A double-fired trigger (e.g. a retried HTTP request from trigger-scan.ts)
+    // supplying the same key must not spin up a second full pipeline run.
+    // Wrapped in step.run so Inngest's own internal retries of *this* function
+    // run (which reuse memoized step results) don't re-check and self-abort —
+    // only a genuinely separate function run (a real duplicate trigger) sees
+    // the row this check found.
+    const isDuplicate = idempotencyKey
+      ? await step.run("idempotency-check", async () => {
+          const { data: existingRun } = await supabase
+            .from("visibility_runs")
+            .select("id")
+            .eq("project_id", projectId)
+            .eq("idempotency_key", idempotencyKey)
+            .maybeSingle();
+          return !!existingRun;
+        })
+      : false;
+    if (isDuplicate) {
+      return { projectId, duplicate: true };
+    }
 
     const project = await step.run("load-project", async () => {
       const { data } = await supabase.from("projects").select("*").eq("id", projectId).single();
@@ -107,20 +132,40 @@ export const runFullScan = inngest.createFunction(
 
     await step.run("brand-extract", () => stepBrandExtract(supabase, project));
 
-    const prep = await step.run("visibility-prep", () => prepareVisibilityScan(supabase, project));
+    const prep = await step.run("visibility-prep", () =>
+      prepareVisibilityScan(supabase, project, { idempotencyKey })
+    );
     const activeEngines = getActiveScanEngines();
     const allVisibility: VisibilityScanResult[] = [];
     let scanPartial = false;
+    let scanCancelled = false;
     for (const engine of activeEngines) {
       const batch = await step.run(`visibility-${engine}`, () =>
         runVisibilityEngineBatch(supabase, project, prep, engine)
       );
       allVisibility.push(...batch.results);
       scanPartial = scanPartial || batch.scanPartial;
+      if (batch.cancelled) {
+        scanCancelled = true;
+        break;
+      }
     }
     await step.run("visibility-finalize", () =>
-      finalizeVisibilityScan(supabase, project, prep.runId, allVisibility, { scanPartial })
+      finalizeVisibilityScan(supabase, project, prep.runId, allVisibility, {
+        scanPartial,
+        cancelled: scanCancelled,
+      })
     );
+
+    if (scanCancelled) {
+      await step.run("cancelled-finalize", async () => {
+        await supabase
+          .from("projects")
+          .update({ status: project.last_scan_at ? "active" : "draft" })
+          .eq("id", projectId);
+      });
+      return { projectId, cancelled: true };
+    }
 
     const { score } = await step.run("score-roadmap", () =>
       stepScoreAndRoadmap(supabase, project, technicalFindings)
@@ -292,8 +337,39 @@ export const generateReport = inngest.createFunction(
     const supabase = await createServiceClient();
 
     await step.run("mark-generating", async () => {
-      await supabase.from("reports").update({ status: "generating" }).eq("id", reportId);
+      await supabase
+        .from("reports")
+        .update({ status: "generating" })
+        .eq("id", reportId)
+        .in("status", ["pending", "generating"]);
     });
+
+    // Cooperative cancellation checkpoint: cheap DB read before the expensive
+    // work (gatherIntelligenceReport fans out ~15 provider/engine calls; the
+    // standard path's PDF render is comparatively cheap but still real work).
+    // The deep-report internal pipeline currently gathers its sections via a
+    // single Promise.all fan-out rather than a sequential per-section loop,
+    // so mid-generation cancellation there would need an architecture change
+    // (splitting that fan-out into an interruptible sequence) — out of scope
+    // for this ticket. This checkpoint still guarantees a cancel requested
+    // before generation starts is honored, and never produces a final report
+    // for a cancelled run.
+    const cancelledBeforeStart = await step.run("check-cancel-before-generate", async () => {
+      const { data } = await supabase
+        .from("reports")
+        .select("cancel_requested_at, status")
+        .eq("id", reportId)
+        .single();
+      return Boolean(data?.cancel_requested_at) || data?.status === "cancelling";
+    });
+
+    if (cancelledBeforeStart) {
+      await supabase
+        .from("reports")
+        .update({ status: "cancelled", cancelled_at: new Date().toISOString(), error_message: "Cancelled by user" })
+        .eq("id", reportId);
+      return { success: false, cancelled: true, reportId };
+    }
 
     try {
       if (reportType === "deep") {
@@ -308,6 +384,23 @@ export const generateReport = inngest.createFunction(
         if (!gathered) {
           await supabase.from("reports").update({ status: "failed", error_message: "No report data" }).eq("id", reportId);
           return { success: false, error: "No report data" };
+        }
+
+        const cancelledAfterGather = await step.run("check-cancel-before-save", async () => {
+          const { data } = await supabase
+            .from("reports")
+            .select("cancel_requested_at, status")
+            .eq("id", reportId)
+            .single();
+          return Boolean(data?.cancel_requested_at) || data?.status === "cancelling";
+        });
+
+        if (cancelledAfterGather) {
+          await supabase
+            .from("reports")
+            .update({ status: "cancelled", cancelled_at: new Date().toISOString(), error_message: "Cancelled by user" })
+            .eq("id", reportId);
+          return { success: false, cancelled: true, reportId };
         }
 
         await step.run("save-report", async () => {

@@ -1,6 +1,7 @@
 import { createServiceClient } from "@/lib/supabase/server";
 import { renderReportHtmlForView } from "@/lib/engines/report-builder";
 import { notFound } from "next/navigation";
+import type { IntelligenceReportSectionId } from "@/types/intelligence-report";
 
 export default async function PublicReportPage({
   params,
@@ -12,7 +13,7 @@ export default async function PublicReportPage({
 
   const { data: report } = await supabase
     .from("reports")
-    .select("project_id, is_public, report_type, status, error_message, title")
+    .select("project_id, is_public, report_type, status, error_message, title, sections")
     .eq("share_token", token)
     .single();
 
@@ -33,6 +34,30 @@ export default async function PublicReportPage({
     );
   }
 
+  if (report.status === "cancelling") {
+    return (
+      <div className="min-h-screen flex flex-col items-center justify-center gap-4 p-8">
+        <div className="h-10 w-10 animate-spin rounded-full border-4 border-amber-500 border-t-transparent" />
+        <h1 className="text-xl font-semibold">Stopping {report.title}</h1>
+        <p className="text-muted-foreground text-center max-w-md">
+          Cancellation requested — generation will halt before its next step. Refresh shortly.
+        </p>
+        <meta httpEquiv="refresh" content="10" />
+      </div>
+    );
+  }
+
+  if (report.status === "cancelled") {
+    return (
+      <div className="min-h-screen flex flex-col items-center justify-center gap-4 p-8">
+        <h1 className="text-xl font-semibold">Report cancelled</h1>
+        <p className="text-muted-foreground">
+          {report.error_message || "This report was cancelled before it finished generating."}
+        </p>
+      </div>
+    );
+  }
+
   if (report.status === "failed") {
     return (
       <div className="min-h-screen flex flex-col items-center justify-center gap-4 p-8">
@@ -45,7 +70,8 @@ export default async function PublicReportPage({
   const html = await renderReportHtmlForView(
     supabase,
     report.project_id,
-    (report.report_type as "standard" | "deep") || "standard"
+    (report.report_type as "standard" | "deep") || "standard",
+    (report.sections as IntelligenceReportSectionId[] | null) || undefined
   );
   if (!html) notFound();
 

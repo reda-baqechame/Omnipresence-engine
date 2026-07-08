@@ -15,6 +15,8 @@ const ALLOWLIST = new Set([
   "src/app/api/webhooks/stripe/route.ts", // constructEvent on raw body
   "src/app/api/auth/signout/route.ts", // redirect-only, no JSON body
   "src/app/api/projects/[id]/scan/route.ts", // project id from URL, no body
+  "src/app/api/projects/[id]/scan/cancel/route.ts", // project id from URL, no body
+  "src/app/api/projects/[id]/report/[reportId]/cancel/route.ts", // ids from URL, no body
 ]);
 
 const MUTATION_HANDLER = /export\s+async\s+function\s+(POST|PATCH|PUT)\s*\(/;

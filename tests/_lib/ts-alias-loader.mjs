@@ -9,8 +9,9 @@
  * stripping stay with Node.
  */
 import { pathToFileURL, fileURLToPath } from "node:url";
-import { existsSync, statSync } from "node:fs";
+import { existsSync, statSync, readFileSync } from "node:fs";
 import path from "node:path";
+import { transformSync } from "esbuild";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..", "..");
 const SRC = path.join(root, "src");
@@ -86,4 +87,27 @@ export async function resolve(specifier, context, nextResolve) {
   }
 
   return nextResolve(specifier, context);
+}
+
+/**
+ * `.tsx` files are unsupported by Node's native type stripping (JSX is not
+ * "erasable" TypeScript syntax) — see https://nodejs.org/api/typescript.html.
+ * Golden tests that exercise the real @react-pdf/renderer template
+ * (report-pdf.tsx / report-pdf-document.tsx) need it, so transform just
+ * those files with esbuild (already a devDependency-free, no-native-addon
+ * bundler) instead of pulling in a full test framework. Every other
+ * extension keeps Node's default load behavior (native `.ts` stripping).
+ */
+export async function load(url, context, nextLoad) {
+  if (url.endsWith(".tsx")) {
+    const source = readFileSync(fileURLToPath(url), "utf8");
+    const { code } = transformSync(source, {
+      loader: "tsx",
+      format: "esm",
+      target: "node22",
+      sourcefile: url,
+    });
+    return { format: "module", source: code, shortCircuit: true };
+  }
+  return nextLoad(url, context);
 }
