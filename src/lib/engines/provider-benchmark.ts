@@ -25,7 +25,7 @@ export interface BenchmarkInputs {
   queries?: string[];
 }
 
-interface SideMetric {
+export interface SideMetric {
   ran: boolean;
   success: boolean;
   ms: number;
@@ -36,7 +36,7 @@ interface SideMetric {
   error?: string;
 }
 
-interface CapabilityResult {
+export interface CapabilityResult {
   input: string;
   sovereign: SideMetric;
   paid: SideMetric | null;

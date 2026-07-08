@@ -16,6 +16,7 @@ const POLICY_ALLOWLIST = new Set([
   "webhook_events",
   "api_spend_daily",
   "keyword_cpc_cache",
+  "benchmark_runs",
 ]);
 
 function extractTables(sql) {

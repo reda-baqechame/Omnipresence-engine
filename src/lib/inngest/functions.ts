@@ -38,6 +38,8 @@ import {
 import { runAllRankChecks } from "@/lib/engines/rank-tracker-service";
 import { runDueRankSchedules } from "@/lib/engines/rank-schedule-service";
 import { snapshotProjectBacklinks, snapshotProjectBacklinkGraph } from "@/lib/engines/backlink-monitor";
+import { runProviderBenchmark } from "@/lib/engines/provider-benchmark";
+import { persistBenchmarkRun } from "@/lib/engines/benchmark-writer";
 import { processScheduledContent } from "@/lib/engines/content-publish-scheduler";
 import {
   runKeywordResearch,
@@ -1655,6 +1657,43 @@ export const weeklyProviderRecalibration = inngest.createFunction(
   }
 );
 
+/**
+ * PresenceData OS benchmark layer (Section 9 of the plan): runs the SAME real
+ * sovereign-vs-paid engine the /api/admin/provider-benchmark route and
+ * `npm run benchmark:live` already use, and persists every derivable metric
+ * into `benchmark_runs` so the platform accumulates a durable, queryable
+ * comparison history instead of only file-based JSON snapshots. Existing
+ * per-call spend guards (external-api-guard.ts, already wired into
+ * dataForSEORequest()/scrapePageFirecrawl()) apply transitively to whatever
+ * paid calls this run makes — there is currently one SHARED daily/monthly
+ * budget across customer traffic and this cron, not a separate
+ * benchmark-only sub-budget; if the shared budget is already exhausted, the
+ * paid side simply fails closed (unavailable), it never overspends.
+ *
+ * Writes no rows that claim a capability "passed" without genuinely
+ * evaluating it this run — see benchmark-writer.ts's module doc for the
+ * honesty rules `passed: null` follows. No promotion/demotion decision is
+ * made here; this function only records evidence.
+ */
+export const nightlyProviderBenchmark = inngest.createFunction(
+  { id: "nightly-provider-benchmark", retries: 1, triggers: [{ cron: "0 2 * * *" }] },
+  async ({ step }) => {
+    const supabase = await createServiceClient();
+    return step.run("run-and-persist-benchmark", async () => {
+      const inputs = {
+        urls: process.env.BENCHMARK_URLS?.split(",").map((s) => s.trim()).filter(Boolean),
+        domains: process.env.BENCHMARK_DOMAINS?.split(",").map((s) => s.trim()).filter(Boolean),
+        queries: process.env.BENCHMARK_QUERIES?.split(",").map((s) => s.trim()).filter(Boolean),
+      };
+      const report = await runProviderBenchmark(inputs);
+      const { inserted } = await persistBenchmarkRun(supabase, report);
+      const { recordMetric } = await import("@/lib/observability/log");
+      recordMetric("benchmark.nightly.rows_inserted", inserted);
+      return { inserted, durationMs: report.durationMs };
+    });
+  }
+);
+
 export const functions = [
   runFullScan,
   runFullScanLegacy,
@@ -1691,6 +1730,7 @@ export const functions = [
   weeklyPanelRun,
   sloCheckCron,
   weeklyProviderRecalibration,
+  nightlyProviderBenchmark,
   runOpsItem,
   opsQueueDrain,
   deployVerificationSweep,

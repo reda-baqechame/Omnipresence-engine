@@ -132,20 +132,45 @@ for provider/capability metadata).
 output vs. a fixed ground-truth fixture — proves internal consistency, NOT
 parity with a paid vendor), `scripts/provider-superiority.mjs` (structural
 registry + golden-dataset presence check, runnable with `--strict`),
-`scripts/provider-live-benchmark.mjs` (`npm run benchmark:live` — has the
-plumbing to run OmniData and a paid vendor side-by-side on the same query set
-when both are configured, but **no committed run has ever done so** — see
-`docs/benchmarks/scorecard.json`, where every capability's `"paid"` field is
-`null`).
+`scripts/provider-live-benchmark.mjs` / `src/lib/engines/provider-benchmark.ts`
+(`npm run benchmark:live` — runs OmniData and a paid vendor side-by-side on
+the same query set when both are configured), and — as of this patch —
+`benchmark_runs` (`supabase/migrations/0083_benchmark_runs.sql`) +
+`src/lib/engines/benchmark-writer.ts` + the `nightly-provider-benchmark`
+Inngest cron (`src/lib/inngest/functions.ts`, `0 2 * * *`), which runs that
+same live comparison every night and writes one row per honestly-derivable
+metric into `benchmark_runs`.
 
-**Not yet built** (tracked as a separate follow-up patch, not part of this
-consolidation): a `benchmark_runs` table giving that live-comparison harness
-a durable, queryable history instead of only file-based JSON snapshots, and a
-scheduled nightly cron that actually runs it. Until that lands and has
-accumulated ≥30 days of passing data per capability, **no claim that OmniData
-replaces DataForSEO for any capability is true**, and `router.ts` must not be
-changed to reflect one. This is the enforcement gate the plan calls "Patch J"
-— it is evidence-gated, not date-gated.
+**What this closes**: the platform now has a durable, queryable comparison
+history instead of only file-based JSON snapshots (`docs/benchmarks/*.json`
+still exist and are unaffected — this is additive).
+
+**What this does NOT close** (still honest gaps, not fabricated):
+- `benchmark-writer.ts` only derives `failure_rate` and
+  `cost_per_successful_result` for crawl/backlinks/serp/generate, plus a
+  `backlink_referring_domain_overlap` proxy metric — it does NOT compute
+  SERP position delta, rank repeatability, keyword volume/CPC availability,
+  domain authority correlation, or PageSpeed/CrUX parity (Section 9 lists all
+  of these). Those require extending `provider-benchmark.ts`'s engine itself,
+  which is separate follow-up work, not something this patch fabricates.
+- `passed` is `null` (never coerced to true/false) whenever a metric wasn't
+  actually evaluated that run — no paid vendor configured, or sample size
+  below `MIN_SAMPLES_FOR_STATISTICAL_PASS` (10). A capability only becomes
+  eligible for promotion once it has **30 consecutive days of real
+  `passed = true` rows** for every threshold that applies to it.
+- The nightly cron shares the SAME daily/monthly external-API budget as
+  customer traffic (`external-api-guard.ts`) — there is no separate
+  benchmark-only sub-budget yet. It fails closed (informational-only rows)
+  if the shared budget is already spent, never overspends, but this means a
+  busy day could reduce how many capabilities get a real paid comparison
+  that night. A dedicated benchmark budget tag is a follow-up enhancement.
+
+Until 30 days of real passing evidence accumulates in `benchmark_runs` per
+capability, **no claim that OmniData replaces DataForSEO for any capability
+is true**, and `router.ts` must not be changed to reflect one. This is the
+enforcement gate the plan calls "Patch J" — it is evidence-gated, not
+date-gated. Patch H (internal parity dashboard) reads directly from
+`benchmark_runs` to make that evidence visible without waiting on Patch J.
 
 ## What NOT to do with this module
 
