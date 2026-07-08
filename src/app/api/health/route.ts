@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
-import { createClient, createServiceClient } from "@/lib/supabase/server";
+import { createServiceClient } from "@/lib/supabase/server";
+import { isPlatformAdminAuthorized } from "@/lib/security/admin-auth";
 import { getCapabilitiesSummary } from "@/lib/config/capabilities";
 import { getProductionReadiness } from "@/lib/config/production";
 import { hasIntelligenceApi } from "@/lib/providers/intelligence-api";
@@ -12,26 +13,7 @@ import { hasCloudflareRadarCapability } from "@/lib/providers/cloudflare-radar";
 import { getWebgraphStatus } from "@/lib/providers/webgraph";
 
 async function isHealthAuthorized(request: NextRequest): Promise<boolean> {
-  const adminSecret = process.env.HEALTH_ADMIN_SECRET;
-  if (adminSecret) {
-    const bearer = request.headers.get("authorization")?.replace(/^Bearer\s+/i, "");
-    if (bearer === adminSecret) return true;
-  }
-
-  const supabase = await createClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-  if (!user) return false;
-
-  const { data: membership } = await supabase
-    .from("memberships")
-    .select("role")
-    .eq("user_id", user.id)
-    .limit(1)
-    .single();
-
-  return Boolean(membership && ["owner", "admin"].includes(membership.role));
+  return isPlatformAdminAuthorized(request, "HEALTH_ADMIN_SECRET");
 }
 
 export async function GET(request: NextRequest) {

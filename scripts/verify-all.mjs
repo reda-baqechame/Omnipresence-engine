@@ -31,6 +31,10 @@ const steps = [
     ok: () =>
       run("node", [
         "--disable-warning=MODULE_TYPELESS_PACKAGE_JSON",
+        // Node <22.18 gates native `.ts` type stripping behind this flag; later
+        // Node versions stabilized it and ignore/ack the flag as a no-op, so it
+        // is safe to pass unconditionally across the Node versions this repo runs on.
+        "--experimental-strip-types",
         // Lets behavioral route/trigger tests intercept real dependencies
         // (Supabase client, Inngest, next/server's after()) via
         // node:test's mock.module() instead of source-text/regex assertions.
@@ -90,6 +94,7 @@ const steps = [
         "src/lib/engines/__tests__/intelligence-report-narrative-quality-gate.test.ts",
         "src/lib/presence-data/__tests__/index.test.ts",
         "src/lib/engines/__tests__/benchmark-writer.test.ts",
+        "src/lib/engines/__tests__/benchmark-dashboard.test.ts",
         "src/lib/scoring/__tests__/subscore-availability.test.ts",
         "src/lib/observability/__tests__/job-context.test.ts",
         "src/lib/observability/__tests__/job-progress.test.ts",

@@ -46,8 +46,9 @@ flowchart TB
     subgraph Bench [5. Benchmark Layer — PARTIAL]
         Golden["tests/golden/*.accuracy.test.ts:\nsovereign output vs fixed ground truth"]
         Scorecard["docs/benchmarks/scorecard.json:\nself-reported, sovereign-only"]
-        LiveBench["scripts/provider-live-benchmark.mjs:\ncan run sovereign vs paid, no committed schedule yet"]
-        BenchDB[("benchmark_runs — planned, see below")]
+        LiveBench["nightly-provider-benchmark cron (0 2 * * *)\n+ scripts/provider-live-benchmark.mjs (manual):\nruns sovereign vs paid on the same query set"]
+        BenchDB[("benchmark_runs")]
+        Dashboard["/app/ops/data-parity:\nconsecutive-pass-day streak per capability/metric"]
     end
 
     Router --> Env
@@ -62,7 +63,8 @@ flowchart TB
     Env --> AiEvidence
     Router --> Golden
     Golden --> Scorecard
-    LiveBench -.->|planned| BenchDB
+    LiveBench --> BenchDB
+    BenchDB --> Dashboard
 ```
 
 ## Pillar 1 — Provider registry
@@ -169,8 +171,25 @@ Until 30 days of real passing evidence accumulates in `benchmark_runs` per
 capability, **no claim that OmniData replaces DataForSEO for any capability
 is true**, and `router.ts` must not be changed to reflect one. This is the
 enforcement gate the plan calls "Patch J" — it is evidence-gated, not
-date-gated. Patch H (internal parity dashboard) reads directly from
-`benchmark_runs` to make that evidence visible without waiting on Patch J.
+date-gated.
+
+**Patch H (internal parity dashboard)**, added on top of this table, makes
+that evidence visible without waiting on Patch J:
+`GET /api/admin/benchmark-runs` (`src/app/api/admin/benchmark-runs/route.ts`)
+groups `benchmark_runs` rows by `(capability, metric_name)`, collapses
+same-day re-runs to the latest run for that day, and derives a *consecutive
+calendar-day* pass streak per group (`src/lib/engines/benchmark-dashboard.ts`
+— `summarizeBenchmarkRuns()`). A single failing day, a not-evaluated
+(`passed: null`) day, or a missing day (cron didn't run) resets that streak
+to zero; there is no partial credit and no group is ever reported
+"promotion-ready" (`consecutivePassDays >= 30`) without 30 *unbroken* daily
+passes. The dashboard UI lives at `/app/ops/data-parity`
+(`src/app/app/ops/data-parity/page.tsx`, linked from the ops console) and the
+route is gated by the shared `isPlatformAdminAuthorized()` helper
+(`src/lib/security/admin-auth.ts` — a `BENCHMARK_SECRET` bearer token, or any
+authenticated owner/admin org membership; `benchmark_runs` has no
+tenant/organization column, so there is no per-project scope to check
+instead).
 
 ## What NOT to do with this module
 

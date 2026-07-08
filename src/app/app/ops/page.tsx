@@ -55,9 +55,14 @@ export default function OpsConsolePage() {
       <p className="text-muted-foreground mb-4">
         Cross-client action queue — approve, reject, or bulk-execute fulfillment tasks
       </p>
-      <a href="/app/ops/ai-capture" className="text-sm text-primary hover:underline mb-8 inline-block">
-        AI capture surface health →
-      </a>
+      <div className="flex gap-4 mb-8">
+        <a href="/app/ops/ai-capture" className="text-sm text-primary hover:underline inline-block">
+          AI capture surface health →
+        </a>
+        <a href="/app/ops/data-parity" className="text-sm text-primary hover:underline inline-block">
+          OmniData vs paid-provider parity →
+        </a>
+      </div>
 
       <div className="space-y-3">
         {items.map((item) => (
