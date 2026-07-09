@@ -15,7 +15,7 @@ import {
   isReportQualityBlockCriticalEnabled,
   isReportQualitySanitizeEnabled,
 } from "@/lib/engines/report-quality-flags";
-import { fetchBacklinks } from "@/lib/providers/capability-runners";
+import { getBacklinksFree } from "@/lib/providers/backlinks-free";
 import { getValidOAuthToken } from "@/lib/oauth/tokens";
 import { fetchGscTopQueries } from "@/lib/engines/gsc-queries";
 
@@ -247,7 +247,10 @@ export async function loadSearchOpsCommandCenter(
 
   const grounded = visibilitySnapshot.groundedResults;
   const aiRate = visibilitySnapshot.ratesReliable ? visibilitySnapshot.metrics.mentionRate : null;
-  const aiDq: DataQuality = grounded.length ? "measured" : "unavailable";
+  // Headline rates are measured only when grounded probes are reliable — never
+  // mark "measured" quality while withholding the rate as null.
+  const aiDq: DataQuality =
+    visibilitySnapshot.ratesReliable && grounded.length > 0 && aiRate != null ? "measured" : "unavailable";
 
   const sov = visibilitySnapshot.sov?.brand?.shareOfVoice ?? null;
   const sovDq: DataQuality =
@@ -368,10 +371,12 @@ export async function loadSearchOpsCommandCenter(
     evidenceHref: `${base}/coverage`,
   });
 
+  // Sovereign-only: never call fetchBacklinks() here — that router path can
+  // fail over to paid DataForSEO on every page view.
   let authDomains: number | null = null;
   let authDq: DataQuality = "unavailable";
   try {
-    const bl = await fetchBacklinks(project.domain, 25);
+    const bl = await getBacklinksFree(project.domain, 25);
     if (bl.success && bl.data) {
       authDomains = bl.data.length;
       authDq = "measured";
@@ -396,7 +401,7 @@ export async function loadSearchOpsCommandCenter(
       value: authDomains,
       display: String(authDomains),
       status: "measured",
-      source: "fetchBacklinks / OmniData webgraph",
+      source: "getBacklinksFree / OmniData webgraph",
       freshness: new Date().toISOString(),
       confidence: 0.75,
       evidenceHref: `${base}/backlinks`,

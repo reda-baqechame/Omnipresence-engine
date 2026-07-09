@@ -102,3 +102,17 @@ test("GSC disconnected yields unavailable opportunity, not fake CTR", () => {
   assert.equal(gsc!.impactType, "unavailable");
   assert.ok(!gsc!.title.toLowerCase().includes("ctr 0"));
 });
+
+test("unreliable AI probes do not claim zero probes while sampleSize > 0", () => {
+  const ops = buildSearchOpsOpportunities({
+    projectId: "p1",
+    aiMentionRate: null,
+    aiSampleSize: 4,
+    aiDataQuality: "unavailable",
+  });
+  const ai = ops.find((o) => o.id.includes("ai_visibility:unavailable"));
+  assert.ok(ai);
+  assert.match(ai!.diagnosis, /4 grounded/);
+  assert.ok(!/No grounded AI-visibility probes are available/i.test(ai!.diagnosis));
+  assert.equal(ai!.impactType, "unavailable");
+});

@@ -58,7 +58,8 @@ function proofLabel(state: ProofState): string {
   }
 }
 
-function deriveState(
+/** Exported for unit tests — keep aligned with demotion gate (all metrics). */
+export function deriveState(
   groups: ParityGroupSummary[],
   hasSovereign: boolean,
   hasPaid: boolean
@@ -74,21 +75,16 @@ function deriveState(
     };
   }
   const maxStreak = Math.max(...groups.map((g) => g.consecutivePassDays), 0);
-  const anyPromo = groups.some((g) => g.promotionReady);
-  if (anyPromo) {
+  // Match demotionReadinessReport: every recorded metric must be promotion-ready.
+  const allPromo = groups.every((g) => g.promotionReady);
+  if (allPromo) {
     return { state: "benchmark_proven", consecutivePassDays: maxStreak, promotionReady: true };
   }
   if (maxStreak > 0 && maxStreak < 7) {
     return { state: "smoke_in_progress", consecutivePassDays: maxStreak, promotionReady: false };
   }
-  if (maxStreak >= 7) {
-    return { state: "promotion_not_met", consecutivePassDays: maxStreak, promotionReady: false };
-  }
-  return {
-    state: "infrastructure_ready_no_evidence",
-    consecutivePassDays: 0,
-    promotionReady: false,
-  };
+  // Rows exist (including failed / zero-streak runs) — never claim "no evidence".
+  return { state: "promotion_not_met", consecutivePassDays: maxStreak, promotionReady: false };
 }
 
 export async function loadProviderProofCockpit(

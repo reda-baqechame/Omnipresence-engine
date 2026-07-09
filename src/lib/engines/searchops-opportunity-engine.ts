@@ -157,26 +157,37 @@ export function buildSearchOpsOpportunities(input: SearchOpsEngineInput): Search
   const aiDq = dqToStatus(input.aiDataQuality);
   const aiN = input.aiSampleSize ?? 0;
   if (aiDq === "unavailable" || input.aiMentionRate == null || aiN <= 0) {
+    const unreliableButPresent = aiN > 0 && input.aiMentionRate == null;
     out.push({
       id: `${pid}:ai_visibility:unavailable`,
       projectId: pid,
       category: "ai_visibility",
-      title: "AI visibility not measured for this project",
-      diagnosis:
-        "No grounded AI-visibility probes are available for the latest run. Mention rate cannot be shown as zero.",
+      title: unreliableButPresent
+        ? "AI visibility rate not reliable enough to report"
+        : "AI visibility not measured for this project",
+      diagnosis: unreliableButPresent
+        ? `${aiN} grounded probe(s) exist but rates are not yet reliable (sample/confidence gate). Mention rate stays unavailable — not zero.`
+        : "No grounded AI-visibility probes are available for the latest run. Mention rate cannot be shown as zero.",
       evidence: [
         {
           label: "Grounded AI probes",
           source: "visibility_results",
           status: "unavailable",
           confidence: null,
-          value: { sampleSize: aiN, reason: "no measured probes in latest run" },
+          value: {
+            sampleSize: aiN,
+            reason: unreliableButPresent
+              ? "probes present but ratesReliable=false"
+              : "no measured probes in latest run",
+          },
         },
       ],
       priority: "medium",
       impactType: "unavailable",
       effort: "medium",
-      recommendedAction: "Run a visibility scan with at least one configured LLM or SERP-grounded probe path.",
+      recommendedAction: unreliableButPresent
+        ? "Run additional grounded visibility probes until the reliability gate passes (typically ≥ 10 grounded samples)."
+        : "Run a visibility scan with at least one configured LLM or SERP-grounded probe path.",
       verificationPlan:
         "After the next completed visibility run, confirm grounded sample size ≥ 10 and mention rate is labeled measured.",
       limitations: ["Unavailable is not a measured zero.", "Model-knowledge probes do not count toward headline rates."],

@@ -18,6 +18,7 @@ import { getBacklinks, hasLabsApi, searchGoogleOrganic } from "@/lib/providers/d
 import { generateContent } from "@/lib/providers/generate-router";
 import { hasOllamaCapability } from "@/lib/providers/ollama";
 import { resolveDomainAuthority } from "@/lib/providers/domain-authority";
+import { sameRegistrableDomain } from "@/lib/engines/brand-matcher";
 
 export interface BenchmarkInputs {
   urls?: string[];
@@ -213,7 +214,7 @@ export async function runProviderBenchmark(inputs?: BenchmarkInputs): Promise<Be
     const top10 = results.slice(0, 10);
     const brandHost = brandDomain ? normDomain(brandDomain) : "";
     const brandPosIdx = brandHost
-      ? top10.findIndex((r) => normDomain(r.url).includes(brandHost) || normDomain(r.url) === brandHost)
+      ? top10.findIndex((r) => sameRegistrableDomain(r.url, brandHost))
       : -1;
     const sovMetric: SideMetric = {
       ran: true,
@@ -237,7 +238,7 @@ export async function runProviderBenchmark(inputs?: BenchmarkInputs): Promise<Be
       const paidOrganic = p.value?.data?.organicResults || [];
       const paidTop10 = paidOrganic.slice(0, 10);
       const paidBrandIdx = brandHost
-        ? paidTop10.findIndex((r) => normDomain(r.url).includes(brandHost) || normDomain(r.url) === brandHost)
+        ? paidTop10.findIndex((r) => sameRegistrableDomain(r.url, brandHost))
         : -1;
       paid = {
         ran: true,
