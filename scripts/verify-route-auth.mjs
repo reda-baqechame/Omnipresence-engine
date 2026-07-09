@@ -36,6 +36,8 @@ const ALLOWLIST = {
   "api/traffic-panel/pixel.js/route.ts": "public embed script — no tenant data, points to beacon",
   "api/admin/benchmark-runs/route.ts":
     "benchmark_runs carries no tenant/organization column (service-role-only table per verify-rls-coverage.mjs); route gates itself via isPlatformAdminAuthorized (BENCHMARK_SECRET bearer or owner/admin membership), not per-project ownership",
+  "api/admin/report-quality-violations/route.ts":
+    "report_quality_violations is service-role observability telemetry (no tenant RLS); route gates via isPlatformAdminAuthorized (BENCHMARK_SECRET bearer or owner/admin membership)",
 };
 
 function walk(dir) {

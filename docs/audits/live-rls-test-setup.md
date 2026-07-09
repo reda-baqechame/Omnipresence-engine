@@ -22,7 +22,9 @@ The test file refuses to run unless **all** of the following are true:
 | `SUPABASE_TEST_ANON_KEY` set | Anon key for user-scoped clients |
 | `SUPABASE_TEST_SERVICE_ROLE_KEY` set | Service role for setup/teardown only |
 | `SUPABASE_TEST_ALLOW_LIVE_RLS=1` set | Explicit opt-in — prevents accidental CI runs |
-| URL blocklist | Rejects URLs containing `prod`, `production`, or matching `NEXT_PUBLIC_SUPABASE_URL` if that looks like production |
+| `SUPABASE_TEST_CONFIRM_NON_PROD=1` set | Second explicit confirmation — not production |
+| Safe environment marker (one of) | `SUPABASE_TEST_ENV=staging` or `test`, OR `SUPABASE_TEST_PROJECT_REF` matching URL, OR `SUPABASE_TEST_URL_CONFIRM=I_UNDERSTAND_THIS_IS_NOT_PRODUCTION` |
+| URL blocklist | Rejects URLs containing `prod`, `production`, `live`, or `primary`; also blocks when test URL matches a production-looking `NEXT_PUBLIC_SUPABASE_URL` |
 
 **Never set these variables to production credentials.**
 
@@ -40,6 +42,12 @@ export SUPABASE_TEST_SERVICE_ROLE_KEY="eyJ..."
 
 # Explicit opt-in
 export SUPABASE_TEST_ALLOW_LIVE_RLS=1
+export SUPABASE_TEST_CONFIRM_NON_PROD=1
+
+# Safe environment marker (pick one approach)
+export SUPABASE_TEST_ENV=staging
+# OR: export SUPABASE_TEST_PROJECT_REF="<test-ref>"
+# OR: export SUPABASE_TEST_URL_CONFIRM=I_UNDERSTAND_THIS_IS_NOT_PRODUCTION
 
 # Optional: pre-created test users (skips auth.admin user creation)
 export SUPABASE_TEST_USER_A_EMAIL="rls-test-a@example.test"

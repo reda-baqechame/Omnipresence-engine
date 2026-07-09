@@ -9,7 +9,13 @@
  *      industry default otherwise (label `industry_estimate`). Never claims a real
  *      CPC we didn't measure.
  */
-import { getSerpIntelligence, getRealKeywordCpc } from "@/lib/providers/dataforseo";
+import type { SupabaseClient } from "@supabase/supabase-js";
+import {
+  routeSerpIntelligence,
+  isSerpIntelligenceAvailable,
+  serpIntelligenceUnavailableReason,
+} from "@/lib/providers/serp-intelligence-router";
+import { getCachedRealKeywordCpc } from "@/lib/providers/keyword-cpc-cache";
 import { calculateAdsEquivalent, type AdsEquivalentResult } from "@/lib/engines/ads-equivalent";
 
 export interface CompetitorAd {
@@ -30,6 +36,10 @@ export interface CompetitorAdSnapshot {
   provider?: string;
 }
 
+export interface CaptureCompetitorAdsOptions {
+  isCancelled?: () => Promise<boolean>;
+}
+
 /**
  * Capture the live paid block for a set of money keywords and roll it up by
  * advertiser. Honest: returns available=false when no SERP backend is configured,
@@ -38,11 +48,22 @@ export interface CompetitorAdSnapshot {
 export async function captureCompetitorAds(
   keywords: string[],
   location = "United States",
-  device: "desktop" | "mobile" = "desktop"
+  device: "desktop" | "mobile" = "desktop",
+  options?: CaptureCompetitorAdsOptions
 ): Promise<CompetitorAdSnapshot> {
   const clean = [...new Set(keywords.map((k) => k.trim()).filter(Boolean))].slice(0, 15);
   if (clean.length === 0) {
     return { available: false, reason: "No keywords supplied to scan for ads.", keywordsScanned: 0, keywordsWithAds: 0, advertisers: [] };
+  }
+
+  if (!isSerpIntelligenceAvailable()) {
+    return {
+      available: false,
+      reason: serpIntelligenceUnavailableReason(),
+      keywordsScanned: 0,
+      keywordsWithAds: 0,
+      advertisers: [],
+    };
   }
 
   const byAdvertiser = new Map<string, CompetitorAd>();
@@ -52,8 +73,10 @@ export async function captureCompetitorAds(
   let anyBackend = false;
 
   for (const keyword of clean) {
-    const serp = await getSerpIntelligence(keyword, location, device);
-    if (!serp) continue; // backend unavailable for this query
+    if (options?.isCancelled && (await options.isCancelled())) break;
+
+    const serp = await routeSerpIntelligence(keyword, location, device);
+    if (!serp) continue;
     anyBackend = true;
     scanned++;
     provider = serp.provider;
@@ -80,7 +103,7 @@ export async function captureCompetitorAds(
   if (!anyBackend) {
     return {
       available: false,
-      reason: "SERP ads need the sovereign OmniData SERP backend (set OMNIDATA_BASE_URL) or DataForSEO.",
+      reason: serpIntelligenceUnavailableReason(),
       keywordsScanned: 0,
       keywordsWithAds: 0,
       advertisers: [],
@@ -95,22 +118,36 @@ export interface PpcSavings extends AdsEquivalentResult {
   /** Estimated cost to acquire the same sessions via paid search. */
   estimatedPaidCost: number;
   keywordsPriced: number;
+  /** Provenance for the CPC used in savings math. */
+  cpcProvenance: "real" | "industry_estimate" | "unavailable";
 }
 
-/**
- * CPC/CAC savings: value of organic + AI sessions vs. what they'd cost as paid
- * search. Uses the REAL Keyword Planner CPC for the supplied keywords when
- * available; otherwise an industry default (honestly labeled via `cpcSource`).
- */
-export async function estimatePpcSavings(opts: {
+export interface EstimatePpcSavingsOptions {
+  supabase: SupabaseClient;
   organicSessions: number;
   aiReferralSessions: number;
   monthlyAdSpend?: number;
   industry?: string;
   keywords?: string[];
-}): Promise<PpcSavings> {
+  isCancelled?: () => Promise<boolean>;
+  /** When false, only cached real CPC is used (no fresh paid lookup). */
+  allowFreshDataForSeoCpc?: boolean;
+}
+
+/**
+ * CPC/CAC savings: value of organic + AI sessions vs. what they'd cost as paid
+ * search. Uses cache-first real Keyword Planner CPC; otherwise industry default
+ * (honestly labeled via `cpcSource`). Never returns measured zero when unavailable.
+ */
+export async function estimatePpcSavings(opts: EstimatePpcSavingsOptions): Promise<PpcSavings> {
   const keywords = opts.keywords || [];
-  const realCpc = keywords.length ? await getRealKeywordCpc(keywords) : null;
+  let realCpc: number | null = null;
+
+  if (keywords.length > 0 && !(opts.isCancelled && (await opts.isCancelled()))) {
+    realCpc = await getCachedRealKeywordCpc(opts.supabase, keywords, {
+      allowFreshDataForSeoCpc: opts.allowFreshDataForSeoCpc,
+    });
+  }
 
   const base = calculateAdsEquivalent({
     organicSessions: opts.organicSessions,
@@ -121,10 +158,13 @@ export async function estimatePpcSavings(opts: {
   });
 
   const estimatedPaidCost = Math.round((opts.organicSessions + opts.aiReferralSessions) * base.estimatedCpc);
+  const cpcProvenance: PpcSavings["cpcProvenance"] =
+    base.cpcSource === "real" ? "real" : realCpc === null && keywords.length > 0 ? "unavailable" : "industry_estimate";
 
   return {
     ...base,
     estimatedPaidCost,
     keywordsPriced: realCpc !== null ? keywords.length : 0,
+    cpcProvenance,
   };
 }

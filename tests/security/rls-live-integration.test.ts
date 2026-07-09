@@ -11,13 +11,11 @@
 import { test, before, after } from "node:test";
 import assert from "node:assert/strict";
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
+import { evaluateRlsLiveGuard } from "@/lib/security/rls-live-guard";
 
 const TEST_URL = process.env.SUPABASE_TEST_URL;
 const TEST_ANON = process.env.SUPABASE_TEST_ANON_KEY;
 const TEST_SERVICE = process.env.SUPABASE_TEST_SERVICE_ROLE_KEY;
-const ALLOW_LIVE = process.env.SUPABASE_TEST_ALLOW_LIVE_RLS === "1";
-
-const PROD_URL_HINTS = ["prod", "production"];
 const PUBLIC_URL = process.env.NEXT_PUBLIC_SUPABASE_URL || process.env.SUPABASE_URL || "";
 
 interface LiveContext {
@@ -39,20 +37,12 @@ interface LiveContext {
 let ctx: LiveContext | null = null;
 
 function skipReason(): string | null {
-  if (!TEST_URL || !TEST_ANON || !TEST_SERVICE) {
-    return "Missing SUPABASE_TEST_URL, SUPABASE_TEST_ANON_KEY, or SUPABASE_TEST_SERVICE_ROLE_KEY — see docs/audits/live-rls-test-setup.md";
-  }
-  if (!ALLOW_LIVE) {
-    return "SUPABASE_TEST_ALLOW_LIVE_RLS is not set to 1 — refusing to run live RLS tests without explicit opt-in";
-  }
-  const lower = TEST_URL.toLowerCase();
-  if (PROD_URL_HINTS.some((h) => lower.includes(h))) {
-    return `SUPABASE_TEST_URL looks like production (${TEST_URL}) — refusing`;
-  }
-  if (PUBLIC_URL && TEST_URL === PUBLIC_URL && PROD_URL_HINTS.some((h) => PUBLIC_URL.toLowerCase().includes(h))) {
-    return "SUPABASE_TEST_URL matches a production-looking NEXT_PUBLIC_SUPABASE_URL — refusing";
-  }
-  return null;
+  return evaluateRlsLiveGuard({
+    testUrl: TEST_URL,
+    testAnon: TEST_ANON,
+    testService: TEST_SERVICE,
+    publicUrl: PUBLIC_URL,
+  });
 }
 
 function uid(prefix: string): string {

@@ -1,9 +1,5 @@
-import {
-  getBacklinks,
-  resolveCompetitorDomain,
-} from "@/lib/providers/dataforseo";
+import { routeReferringDomains } from "@/lib/providers/backlink-intelligence";
 import { fetchWithTimeout } from "@/lib/providers/http";
-import { getBacklinksFree } from "@/lib/providers/backlinks-free";
 import {
   resolveCompetitorDomainFree,
   type ResolvedCompetitor,
@@ -147,44 +143,35 @@ export async function findAuthorityOpportunities(
     }
   } else {
     for (const competitor of competitors.slice(0, 3)) {
-      const domainResolved =
-        (await resolveCompetitorDomainFree(competitor, industry)) ||
-        (hasLLMMentionsCapability()
-          ? await resolveCompetitorDomain(competitor, industry)
-          : null);
+      const domainResolved = await resolveCompetitorDomainFree(competitor, industry);
       if (domainResolved) resolved.push({ name: competitor, domain: domainResolved });
     }
   }
 
   for (const { name, domain: compDomain } of resolved) {
-    let backlinksResult = await getBacklinksFree(compDomain, 20);
-    if ((!backlinksResult.success || !backlinksResult.data?.length) && hasLLMMentionsCapability()) {
-      backlinksResult = await getBacklinks(compDomain, 20);
-    }
+    const compBacklinks = await routeReferringDomains(compDomain, 20);
+    if (!compBacklinks.available || compBacklinks.data.length === 0) continue;
 
-    if (backlinksResult.success && backlinksResult.data) {
-      let brandBacklinks = await getBacklinksFree(domain, 20);
-      if ((!brandBacklinks.success || !brandBacklinks.data?.length) && hasLLMMentionsCapability()) {
-        brandBacklinks = await getBacklinks(domain, 20);
-      }
-      const brandDomains = new Set((brandBacklinks.data || []).map((b) => b.domain));
+    const brandBacklinks = await routeReferringDomains(domain, 20);
+    const brandDomains = new Set(
+      brandBacklinks.available ? brandBacklinks.data.map((b) => b.domain) : []
+    );
 
-      for (const link of backlinksResult.data) {
-        if (!brandDomains.has(link.domain)) {
-          addOpp({
-            project_id: projectId,
-            type: "backlink",
-            target_site: link.domain,
-            target_url: link.url,
-            pitch_angle: `Competitor ${name} (${compDomain}) has a backlink here. Pitch ${brandName} as an alternative.`,
-            status: "identified",
-            domain_authority: link.rank,
-            estimated_impact: Math.min(link.rank, 100),
-            difficulty_score: link.rank > 50 ? 70 : 40,
-            competitor_present: true,
-            measured: true,
-          });
-        }
+    for (const link of compBacklinks.data) {
+      if (!brandDomains.has(link.domain)) {
+        addOpp({
+          project_id: projectId,
+          type: "backlink",
+          target_site: link.domain,
+          target_url: link.url,
+          pitch_angle: `Competitor ${name} (${compDomain}) has a backlink here. Pitch ${brandName} as an alternative.`,
+          status: "identified",
+          domain_authority: link.rank,
+          estimated_impact: Math.min(link.rank, 100),
+          difficulty_score: link.rank > 50 ? 70 : 40,
+          competitor_present: true,
+          measured: compBacklinks.provider != null,
+        });
       }
     }
   }

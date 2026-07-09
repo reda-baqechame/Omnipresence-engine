@@ -1,7 +1,9 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
-import { getBacklinks, getBacklinkGraph, getLinkIntersection } from "@/lib/providers/dataforseo";
-import { getBacklinksFree } from "@/lib/providers/backlinks-free";
-import { hasSerpCapability } from "@/lib/config/capabilities";
+import {
+  routeBacklinkGraph,
+  routeLinkIntersection,
+  routeReferringDomains,
+} from "@/lib/providers/backlink-intelligence";
 import { recordMeasurementEvidence } from "@/lib/engines/evidence";
 
 const BACKLINK_GRAPH_PARSER_VERSION = "backlink-graph@1";
@@ -20,20 +22,14 @@ export interface BacklinkDiff {
 }
 
 async function fetchCurrentBacklinks(domain: string): Promise<BacklinkRow[]> {
-  const omnidata = await getBacklinks(domain);
-  if (omnidata.success && omnidata.data?.length) {
-    return omnidata.data.map((b) => ({
+  const routed = await routeReferringDomains(domain, 30);
+  if (routed.available && routed.data.length > 0) {
+    return routed.data.map((b) => ({
       url: b.url,
       domain: b.domain,
       rank: b.rank,
     }));
   }
-
-  if (hasSerpCapability()) {
-    const free = await getBacklinksFree(domain, 30);
-    if (free.success && free.data) return free.data;
-  }
-
   return [];
 }
 
@@ -102,20 +98,21 @@ export async function snapshotProjectBacklinkGraph(
   domain: string,
   competitors: string[] = []
 ): Promise<BacklinkGraphSnapshotResult> {
-  const graph = await getBacklinkGraph(domain, 40);
-  if (!graph || graph.dataSource === "unavailable") {
+  const graphResult = await routeBacklinkGraph(domain, 40);
+  if (!graphResult.available || !graphResult.graph) {
     return {
       available: false,
-      reason: "URL-level graph unavailable (OmniData/webgraph not ingested).",
+      reason: graphResult.reason ?? "URL-level graph unavailable (OmniData/webgraph not ingested).",
       totalLinks: 0,
       newCount: 0,
       lostCount: 0,
       toxicCount: 0,
     };
   }
+  const graph = graphResult.graph;
 
   const intersection = competitors.length
-    ? await getLinkIntersection(domain, competitors, 2)
+    ? await routeLinkIntersection(domain, competitors, 2)
     : null;
 
   const topLinks = graph.links

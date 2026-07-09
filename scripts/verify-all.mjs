@@ -24,6 +24,10 @@ const steps = [
   { name: "route-auth", ok: () => run("node", ["scripts/verify-route-auth.mjs"]) },
   { name: "claims-benchmark", ok: () => run("node", ["scripts/benchmark.mjs"]) },
   { name: "output-quality", ok: () => run("node", ["scripts/verify-output-quality.mjs"]) },
+  {
+    name: "staging-proof-readiness",
+    ok: () => run("node", ["scripts/check-staging-proof-readiness.mjs"]),
+  },
   // Non-blocking audit report: regenerates docs/audits/dataforseo-bypass-inventory.md
   // and prints bypass counts. Always exits 0 — does not fail CI (see repo hardening PR).
   {
@@ -104,6 +108,9 @@ const steps = [
         "src/lib/engines/__tests__/report-quality-gate.test.ts",
         "src/lib/engines/__tests__/report-quality-sanitizer.test.ts",
         "src/lib/engines/__tests__/report-quality-blocking.test.ts",
+        "src/lib/engines/__tests__/ppc-intelligence.test.ts",
+        "src/lib/engines/__tests__/backlink-monitor.test.ts",
+        "src/lib/engines/__tests__/authority-finder-bypass.test.ts",
         "src/lib/presence-data/__tests__/index.test.ts",
         "src/lib/engines/__tests__/benchmark-writer.test.ts",
         "src/lib/engines/__tests__/benchmark-dashboard.test.ts",
@@ -112,6 +119,8 @@ const steps = [
         "src/lib/providers/__tests__/first-party-analytics.test.ts",
         "src/app/api/__tests__/connectors-health-route.test.ts",
         "src/app/api/__tests__/benchmark-runs-route.test.ts",
+        "src/app/api/__tests__/report-quality-violations-route.test.ts",
+        "src/app/api/__tests__/serp-explorer-route.test.ts",
         "src/lib/scoring/__tests__/subscore-availability.test.ts",
         "src/lib/observability/__tests__/job-context.test.ts",
         "src/lib/observability/__tests__/job-progress.test.ts",
@@ -136,6 +145,7 @@ const steps = [
         "tests/security/cross-tenant-report-visibility.test.ts",
         "tests/security/cross-tenant-report-pdf.test.ts",
         "tests/security/rls-live-integration.test.ts",
+        "tests/security/rls-live-guard.test.ts",
         "src/lib/engines/__tests__/keyword-intelligence.test.ts",
         "src/lib/engines/__tests__/source-influence.test.ts",
         "src/app/api/__tests__/routes-contract.test.ts",

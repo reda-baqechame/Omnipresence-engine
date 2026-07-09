@@ -3,8 +3,11 @@ import { createClient } from "@/lib/supabase/server";
 import { verifyProjectAccess } from "@/lib/security/project-access";
 import { apiError, apiForbidden, apiUnauthorized, validateBody } from "@/lib/security/api-response";
 import { SerpExplorerSchema } from "@/lib/validation/schemas";
-import { getSerpIntelligence, isOmniDataActive } from "@/lib/providers/dataforseo";
-import { getActiveSerpProvider } from "@/lib/providers/serp-router";
+import {
+  routeSerpIntelligence,
+  isSerpIntelligenceAvailable,
+  serpIntelligenceUnavailableReason,
+} from "@/lib/providers/serp-intelligence-router";
 import { recordMeasurementEvidence } from "@/lib/engines/evidence";
 import { logProviderError } from "@/lib/observability/log";
 
@@ -26,16 +29,14 @@ export async function POST(request: NextRequest) {
   const access = await verifyProjectAccess(supabase, projectId, user.id, "viewer");
   if (!access) return apiForbidden();
 
-  // Honest availability: a real SERP backend (OmniData sovereign or DataForSEO) must be active.
-  const provider = getActiveSerpProvider();
-  if (!isOmniDataActive() && provider !== "omnidata" && provider !== "dataforseo") {
+  if (!isSerpIntelligenceAvailable()) {
     return NextResponse.json({
       available: false,
-      reason: "SERP intelligence needs the sovereign OmniData SERP backend (set OMNIDATA_BASE_URL) or DataForSEO.",
+      reason: serpIntelligenceUnavailableReason(),
     });
   }
 
-  const serp = await getSerpIntelligence(keyword.trim(), location, device);
+  const serp = await routeSerpIntelligence(keyword.trim(), location, device);
   if (!serp) {
     return NextResponse.json({
       available: false,
@@ -43,7 +44,6 @@ export async function POST(request: NextRequest) {
     });
   }
 
-  // Persist tamper-evident evidence of the captured SERP.
   await recordMeasurementEvidence(supabase, {
     projectId,
     capability: "serp",
