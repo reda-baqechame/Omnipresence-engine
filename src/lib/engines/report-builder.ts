@@ -4,10 +4,18 @@ import { generateReportPDF } from "@/lib/engines/report-pdf";
 import { calculateAdsEquivalent } from "@/lib/engines/ads-equivalent";
 import { getCachedRealKeywordCpc } from "@/lib/providers/keyword-cpc-cache";
 import {
+  hasCriticalViolations,
   logReportQualityValidation,
   validateReportClaims,
+  type ReportQualityValidationResult,
 } from "@/lib/engines/report-quality-gate";
 import { persistReportQualityViolations } from "@/lib/engines/report-quality-persistence";
+import {
+  isReportQualityBlockCriticalEnabled,
+  isReportQualitySanitizeEnabled,
+  REPORT_QUALITY_BLOCK_MESSAGE,
+} from "@/lib/engines/report-quality-flags";
+import { sanitizeReportClaims } from "@/lib/engines/report-quality-sanitizer";
 import { buildProofReport, renderProofHTML } from "@/lib/engines/proof-report";
 import { canUseWhiteLabel } from "@/lib/plans/features";
 import { withJobContext } from "@/lib/observability/job-context";
@@ -21,6 +29,30 @@ import type {
 } from "@/types/intelligence-report";
 import type { ReportNarrative } from "@/lib/engines/intelligence-report-narrative";
 
+export interface ReportQualityGateResult {
+  report: ReportData | IntelligenceReport;
+  narrative?: ReportNarrative;
+  validation: ReportQualityValidationResult;
+  blocked: boolean;
+  sanitizedCount: number;
+}
+
+async function markReportQualityBlocked(
+  supabase: SupabaseClient,
+  reportId: string | undefined
+): Promise<void> {
+  if (!reportId) return;
+  await supabase
+    .from("reports")
+    .update({
+      status: "failed",
+      error_message: REPORT_QUALITY_BLOCK_MESSAGE,
+      current_step: null,
+      progress_percent: 100,
+    })
+    .eq("id", reportId);
+}
+
 async function applyReportQualityGate(
   supabase: SupabaseClient,
   report: ReportData | IntelligenceReport,
@@ -31,15 +63,47 @@ async function applyReportQualityGate(
     orgId?: string | null;
     renderPath: string;
     narrative?: ReportNarrative;
+    htmlView?: boolean;
   }
-): Promise<void> {
+): Promise<ReportQualityGateResult> {
+  const fallback: ReportQualityGateResult = {
+    report,
+    narrative: ctx.narrative,
+    validation: { passed: true, violations: [], inventory: [] },
+    blocked: false,
+    sanitizedCount: 0,
+  };
+
   try {
-    const validation = validateReportClaims(report, { narrative: ctx.narrative });
+    const validation = validateReportClaims(report, {
+      narrative: ctx.narrative,
+      projectId: ctx.projectId,
+      orgId: ctx.orgId ?? undefined,
+    });
     logReportQualityValidation(validation, {
       reportType: ctx.reportType === "standard" ? "standard" : "deep",
       projectId: ctx.projectId,
       reportId: ctx.reportId,
     });
+
+    const blockEnabled = isReportQualityBlockCriticalEnabled();
+    const blocked = blockEnabled && hasCriticalViolations(validation);
+
+    const sanitizeMode = isReportQualitySanitizeEnabled() ? "sanitize" : "observe";
+    const sanitized = sanitizeReportClaims(
+      report,
+      validation,
+      {
+        mode: sanitizeMode,
+        reportType: ctx.htmlView
+          ? "html_view"
+          : ctx.reportType === "standard"
+            ? "standard"
+            : "deep_intelligence",
+      },
+      ctx.narrative
+    );
+
     await persistReportQualityViolations({
       supabase,
       result: validation,
@@ -48,9 +112,23 @@ async function applyReportQualityGate(
       orgId: ctx.orgId ?? null,
       reportId: ctx.reportId ?? null,
       renderPath: ctx.renderPath,
+      sanitizedCount: sanitized.sanitizedCount,
     });
+
+    if (blocked) {
+      await markReportQualityBlocked(supabase, ctx.reportId);
+    }
+
+    return {
+      report: sanitized.report,
+      narrative: sanitized.narrative ?? ctx.narrative,
+      validation,
+      blocked,
+      sanitizedCount: sanitized.sanitizedCount,
+    };
   } catch {
-    // Non-blocking — logging and persistence must never block report delivery.
+    // Non-blocking when flags are off; persistence/sanitizer must never block delivery by default.
+    return fallback;
   }
 }
 
@@ -226,15 +304,17 @@ export async function saveReportArtifacts(
   whiteLabel?: WhiteLabelBranding
 ): Promise<string> {
   return withJobContext({ reportId }, async () => {
-    await applyReportQualityGate(supabase, reportData, {
+    const gate = await applyReportQualityGate(supabase, reportData, {
       reportType: "standard",
       projectId,
       reportId,
       orgId: reportData.project.organization_id,
       renderPath: "save_report_artifacts",
     });
+    if (gate.blocked) return "";
 
-    const html = generateReportHTML(reportData, whiteLabel);
+    const outputReport = gate.report as ReportData;
+    const html = generateReportHTML(outputReport, whiteLabel);
     const htmlFileName = `reports/${projectId}/${reportId}.html`;
     const pdfFileName = `reports/${projectId}/${reportId}.pdf`;
 
@@ -242,7 +322,7 @@ export async function saveReportArtifacts(
     let htmlStoragePath: string | null = null;
 
     try {
-      const pdfBuffer = await generateReportPDF(reportData, whiteLabel);
+      const pdfBuffer = await generateReportPDF(outputReport, whiteLabel);
       const { error: uploadError } = await supabase.storage
         .from("reports")
         .upload(pdfFileName, pdfBuffer, { contentType: "application/pdf", upsert: true });
@@ -344,22 +424,41 @@ export async function finalizeIntelligenceReport(
     return markCancelled();
   }
 
-  if (deps.onStep) await deps.onStep("narrative_generation");
-  const narrative = await deps.generateReportNarrative(gathered.report, { useLlm: true });
+  const orgId =
+    "meta" in gathered.report && gathered.report.meta?.project
+      ? gathered.report.meta.project.organization_id
+      : null;
 
-  await applyReportQualityGate(supabase, gathered.report, {
+  const preGate = await applyReportQualityGate(supabase, gathered.report, {
     reportType: "deep_intelligence",
     projectId,
     reportId,
-    orgId:
-      "meta" in gathered.report && gathered.report.meta?.project
-        ? gathered.report.meta.project.organization_id
-        : null,
+    orgId,
+    renderPath: "finalize_intelligence_report_pre_narrative",
+  });
+  if (preGate.blocked) return "";
+
+  if (deps.onStep) await deps.onStep("narrative_generation");
+  const narrative = await deps.generateReportNarrative(gathered.report, { useLlm: true });
+
+  const postGate = await applyReportQualityGate(supabase, gathered.report, {
+    reportType: "deep_intelligence",
+    projectId,
+    reportId,
+    orgId,
     renderPath: "finalize_intelligence_report",
     narrative,
   });
+  if (postGate.blocked) return "";
 
-  const html = deps.generateIntelligenceReportHTML(gathered.report, gathered.branding, narrative);
+  const reportForRender = postGate.report as IntelligenceReport;
+  const narrativeForRender = postGate.narrative ?? narrative;
+
+  const html = deps.generateIntelligenceReportHTML(
+    reportForRender,
+    gathered.branding,
+    narrativeForRender
+  );
   const htmlFileName = `reports/${projectId}/${reportId}.html`;
   const pdfFileName = `reports/${projectId}/${reportId}.pdf`;
 
@@ -509,7 +608,7 @@ export async function renderReportHtmlForView(
     const gathered = await gatherIntelligenceReport(supabase, projectId, { sections });
     if (!gathered || gathered.cancelled) return null;
     const narrative = await generateReportNarrative(gathered.report, { useLlm: false });
-    await applyReportQualityGate(supabase, gathered.report, {
+    const gate = await applyReportQualityGate(supabase, gathered.report, {
       reportType: "deep_intelligence",
       projectId,
       orgId:
@@ -518,17 +617,25 @@ export async function renderReportHtmlForView(
           : null,
       renderPath: "render_report_html_for_view_deep",
       narrative,
+      htmlView: true,
     });
-    return generateIntelligenceReportHTML(gathered.report, gathered.branding, narrative);
+    if (gate.blocked) return null;
+    return generateIntelligenceReportHTML(
+      gate.report as IntelligenceReport,
+      gathered.branding,
+      gate.narrative ?? narrative
+    );
   }
 
   const gathered = await gatherReportData(supabase, projectId);
   if (!gathered) return null;
-  await applyReportQualityGate(supabase, gathered.reportData, {
+  const gate = await applyReportQualityGate(supabase, gathered.reportData, {
     reportType: "standard",
     projectId,
     orgId: gathered.reportData.project.organization_id,
     renderPath: "render_report_html_for_view_standard",
+    htmlView: true,
   });
-  return generateReportHTML(gathered.reportData, gathered.whiteLabel);
+  if (gate.blocked) return null;
+  return generateReportHTML(gate.report as ReportData, gathered.whiteLabel);
 }

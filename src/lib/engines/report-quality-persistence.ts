@@ -15,6 +15,7 @@ export interface PersistReportQualityViolationsParams {
   orgId?: string | null;
   reportId?: string | null;
   renderPath?: string | null;
+  sanitizedCount?: number;
 }
 
 /**
@@ -23,8 +24,9 @@ export interface PersistReportQualityViolationsParams {
 export async function persistReportQualityViolations(
   params: PersistReportQualityViolationsParams
 ): Promise<void> {
-  const { supabase, result, reportType, projectId, orgId, reportId, renderPath } = params;
-  if (result.violations.length === 0) return;
+  const { supabase, result, reportType, projectId, orgId, reportId, renderPath, sanitizedCount } =
+    params;
+  if (result.violations.length === 0 && (sanitizedCount ?? 0) === 0) return;
 
   const inventoryByKey = new Map(
     result.inventory.map((item) => [`${item.section}::${item.claimType}::${item.field}`, item])
@@ -46,7 +48,7 @@ export async function persistReportQualityViolations(
       source_label: item?.sourceLabel ?? null,
       classification: (item?.classification ?? null) as ClaimClassification | null,
       render_path: renderPath ?? null,
-      metadata: {},
+      metadata: sanitizedCount != null && sanitizedCount > 0 ? { sanitized_count: sanitizedCount } : {},
     };
   });
 

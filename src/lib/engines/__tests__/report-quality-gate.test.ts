@@ -7,6 +7,7 @@ import {
   validateReportClaims,
   validateClaimInventoryItems,
   summarizeReportClaimViolations,
+  hasCriticalViolations,
   type ReportClaimInventoryItem,
 } from "../report-quality-gate.ts";
 
@@ -413,6 +414,42 @@ test("summarizeReportClaimViolations describes violation counts", () => {
   });
   const summary = summarizeReportClaimViolations(validateReportClaims(report));
   assert.match(summary, /violation/i);
+});
+
+test("forbidden guaranteed phrase creates critical error violation", () => {
+  const report = baseReportData({
+    roadmapItems: [
+      {
+        week: 1,
+        title: "Guaranteed win",
+        description: "We guarantee you will rank #1 on Google within 30 days",
+        impact: "high",
+        category: "content",
+      },
+    ],
+  });
+  const result = validateReportClaims(report);
+  assert.ok(
+    result.violations.some(
+      (v) =>
+        v.severity === "error" &&
+        v.reason.includes("Unsupported guaranteed ranking/traffic/revenue claim")
+    )
+  );
+});
+
+test("hasCriticalViolations identifies measured-without-evidence", () => {
+  const item: ReportClaimInventoryItem = {
+    claimId: "score.overall",
+    section: "score",
+    claimType: "overall_score",
+    field: "omnipresence_score",
+    value: 55,
+    classification: "measured",
+    evidencePointer: null,
+    sourceLabel: null,
+  };
+  assert.ok(hasCriticalViolations(validateClaimInventoryItems([item])));
 });
 
 test("persistReportQualityViolations stores rows and catches DB errors without throwing", async () => {
