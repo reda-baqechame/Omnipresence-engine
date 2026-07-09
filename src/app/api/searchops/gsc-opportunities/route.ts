@@ -61,16 +61,19 @@ export async function GET(request: NextRequest) {
 
   const token = await getValidOAuthToken(supabase, projectId, "google_search_console");
   if (!token) {
+    // Still return measured rank SERP opportunities (striking distance + cannibalization).
+    // Do not blank gscOpportunities — that previously hid rank signals when GSC was off.
     const opportunities = buildSearchOpsOpportunities({
       projectId,
       brandName: project.name,
       gscConnected: false,
-      gscOpportunities: [],
+      gscOpportunities,
       extraOpportunities: cannibalization,
     });
     return NextResponse.json({
       available: false,
-      reason: "Google Search Console is not connected for this project.",
+      reason:
+        "Google Search Console is not connected for this project. Rank-tracker SERP opportunities are still included when measured.",
       opportunities: opportunities.filter((o) => o.category === "gsc" || o.category === "serp"),
       liveGsc: false,
     });

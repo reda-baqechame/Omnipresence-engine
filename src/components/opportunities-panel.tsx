@@ -82,12 +82,16 @@ export function OpportunitiesPanel({
         setGscNote(json.error || "GSC refresh failed");
         return;
       }
+      const live = (json.opportunities || []) as SearchOpsOpportunity[];
+      // Always apply returned GSC/SERP rows (includes measured rank opportunities when GSC is off).
+      if (live.length) setGscOverlay(live);
       if (json.available === false) {
-        setGscNote(json.reason || "GSC not connected");
+        setGscNote(
+          json.reason ||
+            "GSC not connected — first-party impressions/CTR unavailable. Rank SERP opportunities still shown when measured."
+        );
         return;
       }
-      const live = (json.opportunities || []) as SearchOpsOpportunity[];
-      setGscOverlay(live);
       setGscNote(
         json.liveGsc
           ? `Loaded ${live.length} measured GSC/SERP opportunities from Search Console.`
@@ -173,9 +177,27 @@ export function OpportunitiesPanel({
       {gscNote && <p className="text-xs text-muted-foreground">{gscNote}</p>}
 
       {filtered.length === 0 ? (
-        <p className="text-sm text-muted-foreground border border-border rounded-lg p-6">
-          No opportunities match these filters.
-        </p>
+        <div className="text-sm text-muted-foreground border border-border rounded-lg p-6 space-y-2">
+          <p className="font-medium text-foreground">No opportunities match these filters.</p>
+          <p>
+            Professional opportunity mining needs measured inputs. Connect or sync the signals below,
+            then refresh — unavailable data is never shown as zero.
+          </p>
+          <ul className="list-disc pl-5 text-xs space-y-1">
+            <li>
+              <span className="text-foreground">GSC</span> — connect Search Console, then use Refresh
+              GSC for impressions, CTR, and decay.
+            </li>
+            <li>
+              <span className="text-foreground">Ranks</span> — run rank checks for striking distance
+              and cannibalization.
+            </li>
+            <li>
+              <span className="text-foreground">Technical</span> — run technical audit / crawl for
+              CWV history, schema, internal links, and canonicals.
+            </li>
+          </ul>
+        </div>
       ) : (
         <ul className="space-y-3">
           {filtered.map((op) => {
@@ -198,16 +220,31 @@ export function OpportunitiesPanel({
                   <ProvenanceBadge quality={op.impactType} />
                 </div>
                 <h3 className="font-medium text-sm">{op.title}</h3>
-                <p className="text-xs text-muted-foreground">{op.diagnosis}</p>
                 <div className="text-xs space-y-1">
+                  <p>
+                    <span className="text-muted-foreground">Why this exists: </span>
+                    {op.diagnosis}
+                  </p>
                   <p>
                     <span className="text-muted-foreground">Action: </span>
                     {op.recommendedAction}
                   </p>
                   <p>
-                    <span className="text-muted-foreground">Verification plan: </span>
+                    <span className="text-muted-foreground">How we verify: </span>
                     {op.verificationPlan}
                   </p>
+                  {op.impactType === "unavailable" && (
+                    <p className="text-muted-foreground">
+                      Unavailable because measured evidence is missing for this claim — not a zero
+                      result.
+                    </p>
+                  )}
+                  {(op.impactType === "model_knowledge" || op.impactType === "estimated") && (
+                    <p className="text-muted-foreground">
+                      {op.impactType === "estimated" ? "Estimated" : "Model guidance"} — do not treat
+                      as a measured lift.
+                    </p>
+                  )}
                 </div>
                 {op.evidence.length > 0 && (
                   <ul className="text-[11px] text-muted-foreground space-y-0.5 border-t border-border pt-2">

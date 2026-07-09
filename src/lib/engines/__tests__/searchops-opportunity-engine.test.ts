@@ -103,6 +103,32 @@ test("GSC disconnected yields unavailable opportunity, not fake CTR", () => {
   assert.ok(!gsc!.title.toLowerCase().includes("ctr 0"));
 });
 
+test("GSC disconnected still surfaces measured rank striking-distance as SERP", () => {
+  const ops = buildSearchOpsOpportunities({
+    projectId: "p1",
+    aiMentionRate: 0.5,
+    aiSampleSize: 20,
+    aiDataQuality: "measured",
+    gscConnected: false,
+    gscOpportunities: [
+      { kind: "striking_distance", queryOrUrl: "roof repair", impressions: 0, position: 8 },
+      {
+        kind: "low_ctr",
+        queryOrUrl: "emergency roof",
+        impressions: 500,
+        ctr: 0.004,
+        position: 3,
+      },
+    ],
+  });
+  const strike = ops.find((o) => o.id.includes("gsc:strike:roof repair"));
+  assert.ok(strike);
+  assert.equal(strike!.category, "serp");
+  assert.equal(strike!.impactType, "measured");
+  // Impression/CTR opportunities must not appear without GSC.
+  assert.ok(!ops.some((o) => o.id.includes("lowctr")));
+});
+
 test("unreliable AI probes do not claim zero probes while sampleSize > 0", () => {
   const ops = buildSearchOpsOpportunities({
     projectId: "p1",

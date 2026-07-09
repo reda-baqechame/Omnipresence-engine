@@ -91,6 +91,8 @@ export function mineCannibalizationOpportunities(
 
 /**
  * Cluster striking-distance queries that share the same target_url.
+ * Only includes keywords present in `strikingQueries` (the mined opportunity list),
+ * so relatedQueries never overstates queries that were sliced/filtered out.
  * Returns a map of normalized target URL → related query strings (2+ only).
  */
 export function clusterStrikingDistanceByTargetUrl(
@@ -98,18 +100,16 @@ export function clusterStrikingDistanceByTargetUrl(
   strikingQueries: string[]
 ): Map<string, string[]> {
   const strikeSet = new Set(strikingQueries.map((q) => q.toLowerCase()));
+  if (strikeSet.size === 0) return new Map();
+
   const byUrl = new Map<string, string[]>();
 
   for (const row of rankRows) {
     const keyword = String(row.keyword || "").trim();
     const target = String(row.target_url || "").trim();
     if (!keyword || !target) continue;
-    const pos = Number(row.last_position);
-    const isStrike =
-      row.is_striking_distance === true ||
-      (Number.isFinite(pos) && pos > 3 && pos <= 20) ||
-      strikeSet.has(keyword.toLowerCase());
-    if (!isStrike) continue;
+    // Strict membership: only mine-list queries, never broader heuristics.
+    if (!strikeSet.has(keyword.toLowerCase())) continue;
 
     const key = target.toLowerCase();
     const list = byUrl.get(key) || [];

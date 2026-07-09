@@ -188,6 +188,8 @@ export function mineSchemaGapOpportunities(
     const dq = (f.data_quality || f.data_source || "measured") as DataQuality;
     if (dq === "unavailable" || dq === "simulated") continue;
 
+    const absenceStatus: "measured" | "estimated" =
+      dq === "estimated" ? "estimated" : "measured";
     const affected = f.affected_url?.trim() || null;
     const fix = f.fix_recommendation?.trim() || null;
     const severity = f.severity || "medium";
@@ -197,18 +199,19 @@ export function mineSchemaGapOpportunities(
       projectId,
       category: "technical",
       title: `Schema gap: ${title}`,
-      diagnosis: `Measured crawl/audit found a schema gap${affected ? ` on ${affected}` : ""}${f.description ? `: ${f.description}` : "."}`,
+      diagnosis: `${absenceStatus === "measured" ? "Measured" : "Estimated"} crawl/audit found a schema gap${affected ? ` on ${affected}` : ""}${f.description ? `: ${f.description}` : "."}`,
       evidence: [
         {
           label: "Schema absence / gap (crawl)",
           source: "technical_findings",
-          status: "measured",
-          confidence: 0.85,
+          status: absenceStatus,
+          confidence: absenceStatus === "measured" ? 0.85 : 0.55,
           value: {
             severity,
             category: "schema",
             affected_url: affected,
             title,
+            data_quality: dq,
           },
           evidenceId: f.id ?? null,
         },
@@ -225,6 +228,7 @@ export function mineSchemaGapOpportunities(
       ],
       priority:
         severity === "critical" ? "critical" : severity === "high" ? "high" : "medium",
+      // Recommended type remains model_knowledge; do not claim measured ranking impact.
       impactType: "model_knowledge",
       effort: "medium",
       recommendedAction: fix
@@ -233,7 +237,9 @@ export function mineSchemaGapOpportunities(
       verificationPlan:
         "Re-run technical audit / schema validation; confirm the schema finding is resolved or severity drops.",
       limitations: [
-        "Schema presence is measured; ranking or rich-result eligibility is not guaranteed.",
+        absenceStatus === "measured"
+          ? "Schema presence is measured; ranking or rich-result eligibility is not guaranteed."
+          : "Schema absence evidence is estimated for this finding — re-crawl before treating as measured.",
         "Recommended schema types are model_knowledge, not measured impact.",
       ],
     });

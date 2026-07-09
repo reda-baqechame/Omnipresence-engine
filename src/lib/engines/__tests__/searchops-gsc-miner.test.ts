@@ -85,6 +85,18 @@ test("clusterStrikingDistanceByTargetUrl only keeps clusters with 2+ queries", (
   assert.deepEqual(related, ["q1", "q2"]);
 });
 
+test("clusterStrikingDistanceByTargetUrl never cites queries outside the mine list", () => {
+  const clusters = clusterStrikingDistanceByTargetUrl(
+    [
+      { keyword: "q1", target_url: "https://ex.com/page", last_position: 8, is_striking_distance: true },
+      { keyword: "q2", target_url: "https://ex.com/page", last_position: 10, is_striking_distance: true },
+      { keyword: "sliced-out", target_url: "https://ex.com/page", last_position: 12, is_striking_distance: true },
+    ],
+    ["q1", "q2"] // sliced-out was not in mined opportunity list
+  );
+  assert.deepEqual(clusters.get("https://ex.com/page"), ["q1", "q2"]);
+});
+
 test("enrichStrikingDistanceWithClusters attaches relatedQueries when cluster exists", () => {
   const clusters = clusterStrikingDistanceByTargetUrl(
     [

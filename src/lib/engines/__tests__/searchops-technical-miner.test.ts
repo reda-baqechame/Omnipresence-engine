@@ -58,6 +58,22 @@ test("schema gap at medium severity surfaces with model_knowledge impact + measu
   assert.equal(assertOpportunityQuality(op).length, 0);
 });
 
+test("schema gap with estimated data_quality does not claim measured absence", () => {
+  const ops = mineSchemaGapOpportunities("p1", [
+    {
+      id: "s2",
+      severity: "medium",
+      category: "schema",
+      title: "Missing FAQPage",
+      data_quality: "estimated",
+    },
+  ]);
+  assert.equal(ops.length, 1);
+  assert.ok(ops[0].evidence.some((e) => e.label.includes("absence") && e.status === "estimated"));
+  assert.ok(!ops[0].evidence.some((e) => e.label.includes("absence") && e.status === "measured"));
+  assert.match(ops[0].diagnosis, /Estimated/i);
+});
+
 test("schema miner ignores non-schema findings", () => {
   assert.deepEqual(
     mineSchemaGapOpportunities("p1", [
