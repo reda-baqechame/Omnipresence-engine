@@ -53,6 +53,30 @@ export interface ReportQualityValidationResult {
 
 export interface ValidateReportClaimsOptions {
   narrative?: ReportNarrative;
+  projectId?: string;
+  orgId?: string;
+}
+
+/** Error-severity violations that may block report delivery when REPORT_QUALITY_BLOCK_CRITICAL=1. */
+const CRITICAL_VIOLATION_REASONS = [
+  "Measured claim has no evidence pointer or source label.",
+  "Unavailable data is represented as zero.",
+  "Ads-replacement value appears measured but CPC source is not real.",
+  "Unsupported guaranteed ranking/traffic/revenue claim.",
+  "Evidence pointer references a different project.",
+] as const;
+
+export function isCriticalViolation(violation: ReportClaimViolation): boolean {
+  if (violation.severity !== "error") return false;
+  return (CRITICAL_VIOLATION_REASONS as readonly string[]).includes(violation.reason);
+}
+
+export function getCriticalViolations(violations: ReportClaimViolation[]): ReportClaimViolation[] {
+  return violations.filter(isCriticalViolation);
+}
+
+export function hasCriticalViolations(result: ReportQualityValidationResult): boolean {
+  return getCriticalViolations(result.violations).length > 0;
 }
 
 const GENERIC_UNSUPPORTED_PHRASES = [
@@ -874,7 +898,42 @@ export function inventoryReportClaims(
   return items;
 }
 
-function validateInventoryItem(item: ReportClaimInventoryItem): ReportClaimViolation[] {
+function validateCrossTenantEvidence(
+  item: ReportClaimInventoryItem,
+  ctx?: { projectId?: string; orgId?: string }
+): ReportClaimViolation | null {
+  if (!ctx?.projectId) return null;
+  const pointer = item.evidencePointer;
+  if (!pointer) return null;
+  const projectMatch = pointer.match(/project_id:([0-9a-f-]{36})/i);
+  if (projectMatch && projectMatch[1] !== ctx.projectId) {
+    return {
+      claimId: item.claimId,
+      section: item.section,
+      claimType: item.claimType,
+      field: item.field,
+      reason: "Evidence pointer references a different project.",
+      severity: "error",
+    };
+  }
+  const orgMatch = pointer.match(/org_id:([0-9a-f-]{36})/i);
+  if (orgMatch && ctx.orgId && orgMatch[1] !== ctx.orgId) {
+    return {
+      claimId: item.claimId,
+      section: item.section,
+      claimType: item.claimType,
+      field: item.field,
+      reason: "Evidence pointer references a different project.",
+      severity: "error",
+    };
+  }
+  return null;
+}
+
+function validateInventoryItem(
+  item: ReportClaimInventoryItem,
+  ctx?: { projectId?: string; orgId?: string }
+): ReportClaimViolation[] {
   const violations: ReportClaimViolation[] = [];
   const base = {
     claimId: item.claimId,
@@ -960,15 +1019,19 @@ function validateInventoryItem(item: ReportClaimInventoryItem): ReportClaimViola
       forbiddenHits.length > 0 &&
       (item.claimType === "executive_summary" ||
         item.claimType === "key_finding" ||
-        item.claimType === "narrative_section")
+        item.claimType === "narrative_section" ||
+        item.claimType === "roadmap_item")
     ) {
       violations.push({
         ...base,
-        reason: "Generic unsupported recommendation phrase.",
-        severity: "warning",
+        reason: "Unsupported guaranteed ranking/traffic/revenue claim.",
+        severity: "error",
       });
     }
   }
+
+  const crossTenant = validateCrossTenantEvidence(item, ctx);
+  if (crossTenant) violations.push(crossTenant);
 
   return violations;
 }
@@ -978,15 +1041,17 @@ export function validateReportClaims(
   options?: ValidateReportClaimsOptions
 ): ReportQualityValidationResult {
   const inventory = inventoryReportClaims(report, options);
-  return validateClaimInventoryItems(inventory);
+  return validateClaimInventoryItems(inventory, options);
 }
 
 export function validateClaimInventoryItems(
-  inventory: ReportClaimInventoryItem[]
+  inventory: ReportClaimInventoryItem[],
+  options?: Pick<ValidateReportClaimsOptions, "projectId" | "orgId">
 ): ReportQualityValidationResult {
   const violations: ReportClaimViolation[] = [];
+  const ctx = options ? { projectId: options.projectId, orgId: options.orgId } : undefined;
   for (const item of inventory) {
-    violations.push(...validateInventoryItem(item));
+    violations.push(...validateInventoryItem(item, ctx));
   }
   const passed = violations.filter((v) => v.severity === "error").length === 0;
   return { passed, violations, inventory };
