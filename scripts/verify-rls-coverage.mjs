@@ -17,6 +17,7 @@ const POLICY_ALLOWLIST = new Set([
   "api_spend_daily",
   "keyword_cpc_cache",
   "benchmark_runs",
+  "report_quality_violations",
 ]);
 
 function extractTables(sql) {
