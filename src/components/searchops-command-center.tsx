@@ -267,8 +267,9 @@ export function SearchOpsCommandCenterView({ data }: { data: SearchOpsCommandCen
       </section>
 
       <p className="text-[11px] text-muted-foreground">
-        Generated {new Date(data.generatedAt).toLocaleString()} · No fake metrics · Estimates labeled
-        · DataForSEO remains fallback-only
+        Generated {new Date(data.generatedAt).toLocaleString()} · Snapshot-backed SSR (no live paid
+        calls) · No fake metrics · Estimates labeled · DataForSEO remains fallback-only · Use
+        Opportunities → Refresh GSC for live Search Console mining
       </p>
     </div>
   );

@@ -1,6 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
+  mineGscOpportunitiesFromInsights,
   mineGscOpportunitiesFromQueryRows,
   mineGscOpportunitiesFromRanks,
 } from "../searchops-command-center.ts";
@@ -30,4 +31,18 @@ test("mineGscOpportunitiesFromQueryRows mines high-impr low-CTR and striking dis
 
 test("mineGscOpportunitiesFromQueryRows returns empty when no measured rows", () => {
   assert.deepEqual(mineGscOpportunitiesFromQueryRows([]), []);
+});
+
+test("mineGscOpportunitiesFromInsights merges strike/low-ctr/decay without inventing volume", () => {
+  const ops = mineGscOpportunitiesFromInsights({
+    strikingDistance: [
+      { query: "roof repair", impressions: 200, clicks: 10, ctr: 0.05, position: 8 },
+    ],
+    lowCtr: [{ query: "emergency roof", impressions: 400, clicks: 2, ctr: 0.005, position: 4 }],
+    decay: [{ url: "https://example.com/old", currImpressions: 40, prevImpressions: 120 }],
+  });
+  assert.ok(ops.some((o) => o.kind === "striking_distance"));
+  assert.ok(ops.some((o) => o.kind === "low_ctr"));
+  assert.ok(ops.some((o) => o.kind === "decay"));
+  assert.ok(ops.every((o) => o.impressions > 0));
 });

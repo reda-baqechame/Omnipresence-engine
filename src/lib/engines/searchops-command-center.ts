@@ -15,9 +15,6 @@ import {
   isReportQualityBlockCriticalEnabled,
   isReportQualitySanitizeEnabled,
 } from "@/lib/engines/report-quality-flags";
-import { getBacklinksFree } from "@/lib/providers/backlinks-free";
-import { getValidOAuthToken } from "@/lib/oauth/tokens";
-import { fetchGscTopQueries } from "@/lib/engines/gsc-queries";
 
 export type MetricStatus = "measured" | "estimated" | "unavailable" | "simulated" | "model_knowledge";
 
@@ -140,6 +137,57 @@ function expectedCtrForPosition(position: number): number {
 }
 
 /**
+ * Convert stored/live GSC insight buckets into opportunity rows (measured only).
+ */
+export function mineGscOpportunitiesFromInsights(insights: {
+  strikingDistance?: Array<{
+    query: string;
+    impressions: number;
+    clicks: number;
+    ctr: number;
+    position: number;
+  }>;
+  lowCtr?: Array<{
+    query: string;
+    impressions: number;
+    clicks: number;
+    ctr: number;
+    position: number;
+  }>;
+  decay?: Array<{ url: string; currImpressions: number; prevImpressions: number }>;
+}): GscOpp[] {
+  const fromStrike = mineGscOpportunitiesFromQueryRows(insights.strikingDistance || []);
+  const fromLow = (insights.lowCtr || []).map(
+    (q): GscOpp => ({
+      kind: "low_ctr",
+      queryOrUrl: q.query,
+      impressions: q.impressions,
+      clicks: q.clicks,
+      ctr: q.ctr,
+      position: q.position,
+    })
+  );
+  const fromDecay = (insights.decay || []).slice(0, 10).map(
+    (d): GscOpp => ({
+      kind: "decay",
+      queryOrUrl: d.url,
+      impressions: d.currImpressions,
+      clicks: undefined,
+      position: undefined,
+    })
+  );
+  const seen = new Set<string>();
+  return [...fromStrike, ...fromLow, ...fromDecay]
+    .filter((o) => {
+      const key = `${o.kind}:${o.queryOrUrl}`;
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    })
+    .slice(0, 25);
+}
+
+/**
  * Mine first-party GSC query opportunities from measured Search Analytics rows.
  * Never invents impressions — rows with no measured impressions are skipped.
  */
@@ -207,6 +255,8 @@ export async function loadSearchOpsCommandCenter(
   const id = project.id;
   const base = `/app/projects/${id}`;
 
+  // SSR-safe: only Supabase reads + in-process aggregation. No live GSC /
+  // OmniData / paid provider calls on page render (avoids 504s + spend).
   const [
     { data: scores },
     { data: findings },
@@ -216,6 +266,9 @@ export async function loadSearchOpsCommandCenter(
     { data: oauthRows },
     { data: rqRows },
     { data: rankKeywords },
+    { data: backlinkGraphSnap },
+    { data: backlinkSnap },
+    { data: gscSnap },
   ] = await Promise.all([
     supabase.from("scores").select("*").eq("project_id", id).order("created_at", { ascending: true }),
     supabase.from("technical_findings").select("*").eq("project_id", id).order("severity"),
@@ -235,6 +288,27 @@ export async function loadSearchOpsCommandCenter(
       .eq("project_id", id)
       .order("last_position", { ascending: true })
       .limit(80),
+    supabase
+      .from("backlink_graph_snapshots")
+      .select("referring_domains, total_links, data_source, created_at")
+      .eq("project_id", id)
+      .order("created_at", { ascending: false })
+      .limit(1)
+      .maybeSingle(),
+    supabase
+      .from("backlink_snapshots")
+      .select("total_count, created_at")
+      .eq("project_id", id)
+      .order("created_at", { ascending: false })
+      .limit(1)
+      .maybeSingle(),
+    supabase
+      .from("gsc_snapshots")
+      .select("clicks, impressions, ctr, avg_position, captured_on, data_source")
+      .eq("project_id", id)
+      .order("captured_on", { ascending: false })
+      .limit(1)
+      .maybeSingle(),
   ]);
 
   const latestScore = scores?.[scores.length - 1] ?? null;
@@ -371,39 +445,59 @@ export async function loadSearchOpsCommandCenter(
     evidenceHref: `${base}/coverage`,
   });
 
-  // Sovereign-only: never call fetchBacklinks() here — that router path can
-  // fail over to paid DataForSEO on every page view.
+  // Prefer stored graph snapshot; fall back to legacy backlink_snapshots count.
+  // Never live-fetch OmniData/DataForSEO during SSR.
   let authDomains: number | null = null;
   let authDq: DataQuality = "unavailable";
-  try {
-    const bl = await getBacklinksFree(project.domain, 25);
-    if (bl.success && bl.data) {
-      authDomains = bl.data.length;
-      authDq = "measured";
-    }
-  } catch {
-    authDq = "unavailable";
+  let authSource = "backlink_graph_snapshots";
+  let authFreshness: string | null = null;
+  if (
+    backlinkGraphSnap &&
+    backlinkGraphSnap.data_source !== "unavailable" &&
+    backlinkGraphSnap.referring_domains != null &&
+    Number(backlinkGraphSnap.referring_domains) >= 0
+  ) {
+    authDomains = Number(backlinkGraphSnap.referring_domains);
+    authDq = "measured";
+    authFreshness = backlinkGraphSnap.created_at ?? null;
+  } else if (backlinkSnap && backlinkSnap.total_count != null && Number(backlinkSnap.total_count) >= 0) {
+    authDomains = Number(backlinkSnap.total_count);
+    authDq = "measured";
+    authSource = "backlink_snapshots";
+    authFreshness = backlinkSnap.created_at ?? null;
+  } else if (latestScore && isSubScoreAvailable(latestScore, "authority_mentions")) {
+    metrics.push({
+      id: "authority",
+      label: "Authority mentions score",
+      value: latestScore.authority_mentions,
+      display: String(Math.round(latestScore.authority_mentions)),
+      status: "measured",
+      source: "scores.authority_mentions",
+      freshness: latestScore.created_at,
+      confidence: 0.7,
+      evidenceHref: `${base}/authority`,
+    });
   }
 
-  if (authDq === "unavailable" || authDomains == null) {
+  if (authDq === "unavailable" && !metrics.some((m) => m.id === "authority")) {
     metrics.push(
       metricUnavailable(
         "authority",
         "Authority / referring domains",
-        "No sovereign backlink index result — unavailable, not zero.",
+        "No stored backlink snapshot yet — unavailable, not zero. Open Backlinks to refresh the index.",
         `${base}/backlinks`
       )
     );
-  } else {
+  } else if (authDq === "measured" && authDomains != null) {
     metrics.push({
       id: "authority",
-      label: "Referring domains (sample)",
+      label: "Referring domains (snapshot)",
       value: authDomains,
       display: String(authDomains),
       status: "measured",
-      source: "getBacklinksFree / OmniData webgraph",
-      freshness: new Date().toISOString(),
-      confidence: 0.75,
+      source: authSource,
+      freshness: authFreshness,
+      confidence: 0.8,
       evidenceHref: `${base}/backlinks`,
     });
   }
@@ -531,39 +625,9 @@ export async function loadSearchOpsCommandCenter(
   };
 
   const gscConnected = dataSources.find((d) => d.id === "gsc")?.status === "connected";
-  let gscOpportunities = mineGscOpportunitiesFromRanks(rankKeywords || []);
-
-  // Optional data improvement A: first-party GSC query mining when OAuth is live.
-  // Cache-free live read; empty on failure — never invent impressions.
-  if (gscConnected) {
-    try {
-      const token = await getValidOAuthToken(supabase, id, "google_search_console");
-      if (token) {
-        const end = new Date();
-        const start = new Date(end.getTime() - 28 * 24 * 60 * 60 * 1000);
-        const fmt = (d: Date) => d.toISOString().slice(0, 10);
-        const queryRows = await fetchGscTopQueries(token, project.domain, fmt(start), fmt(end), 200);
-        const fromGsc = mineGscOpportunitiesFromQueryRows(queryRows);
-        if (fromGsc.length) {
-          // Prefer measured GSC rows; keep rank-only striking distance for queries not in GSC.
-          const gscKeys = new Set(fromGsc.map((o) => o.queryOrUrl.toLowerCase()));
-          const rankOnly = gscOpportunities.filter((o) => !gscKeys.has(o.queryOrUrl.toLowerCase()));
-          gscOpportunities = [...fromGsc, ...rankOnly].slice(0, 25);
-        }
-      }
-    } catch {
-      // Keep rank_keywords mining only.
-    }
-  }
-
-  // Surface GSC snapshot totals on search visibility when available (measured only).
-  const { data: gscSnap } = await supabase
-    .from("gsc_snapshots")
-    .select("clicks, impressions, ctr, avg_position, captured_on, data_source")
-    .eq("project_id", id)
-    .order("captured_on", { ascending: false })
-    .limit(1)
-    .maybeSingle();
+  // Rank-tracker striking distance only on SSR. Live GSC query mining belongs
+  // on an explicit sync/API path — never block page render on Google APIs.
+  const gscOpportunities = mineGscOpportunitiesFromRanks(rankKeywords || []);
 
   if (gscSnap && gscSnap.impressions != null && Number(gscSnap.impressions) >= 0) {
     const idx = metrics.findIndex((m) => m.id === "search_visibility");
