@@ -39,6 +39,8 @@ export interface BenchmarkRunRow {
 /** Section 9 thresholds (see docs/PRESENCEDATA_OS.md / the PresenceData OS plan). */
 export const FAILURE_RATE_MAX = 0.05;
 export const BACKLINK_OVERLAP_MIN = 0.65;
+export const SERP_TOP10_OVERLAP_MIN = 0.8;
+export const SERP_POSITION_DELTA_MAX = 2;
 /**
  * A pass/fail verdict on fewer samples than this is not statistically
  * meaningful — recorded as informational (passed=null) rather than a false
@@ -135,14 +137,88 @@ function backlinkOverlapRows(results: CapabilityResult[]): BenchmarkRunRow[] {
     }));
 }
 
+function serpTop10OverlapRows(results: CapabilityResult[]): BenchmarkRunRow[] {
+  return results
+    .filter((r) => r.paid && r.overlap !== undefined)
+    .map((r) => ({
+      capability: "serp",
+      metric_name: "serp_top10_overlap",
+      sovereign_provider: r.sovereign.provider ?? null,
+      paid_provider: r.paid!.provider ?? null,
+      dataset_ref: r.input,
+      sovereign_value: r.sovereign.signal?.top10Count ?? r.sovereign.count ?? null,
+      paid_value: r.paid!.signal?.top10Count ?? r.paid!.count ?? null,
+      delta: Number((r.overlap as number).toFixed(4)),
+      passed: (r.overlap as number) >= SERP_TOP10_OVERLAP_MIN,
+      threshold_note: `Section 9 threshold: top-10 domain set overlap >= ${(SERP_TOP10_OVERLAP_MIN * 100).toFixed(0)}%. Requires paid Labs side-by-side; never fabricated.`,
+    }));
+}
+
+function serpPositionDeltaRow(results: CapabilityResult[]): BenchmarkRunRow | null {
+  const compared = results.filter(
+    (r) =>
+      r.paid?.ran &&
+      r.sovereign.signal?.position != null &&
+      r.paid.signal?.position != null
+  );
+  if (compared.length === 0) return null;
+  const avgDelta =
+    compared.reduce(
+      (s, r) => s + Math.abs(r.sovereign.signal!.position! - r.paid!.signal!.position!),
+      0
+    ) / compared.length;
+  const enoughSamples = compared.length >= MIN_SAMPLES_FOR_STATISTICAL_PASS;
+  return {
+    capability: "serp",
+    metric_name: "serp_position_delta",
+    sovereign_provider: compared[0].sovereign.provider ?? null,
+    paid_provider: compared[0].paid!.provider ?? null,
+    dataset_ref: datasetRef(compared),
+    sovereign_value: Number(avgDelta.toFixed(4)),
+    paid_value: null,
+    delta: null,
+    passed: enoughSamples ? avgDelta <= SERP_POSITION_DELTA_MAX : null,
+    threshold_note: enoughSamples
+      ? `Section 9 threshold: avg brand position delta <= ${SERP_POSITION_DELTA_MAX} (n=${compared.length}).`
+      : `Section 9 threshold: avg brand position delta <= ${SERP_POSITION_DELTA_MAX} — n=${compared.length} below ${MIN_SAMPLES_FOR_STATISTICAL_PASS}-sample floor; passed=null.`,
+  };
+}
+
+function serpAiOverviewMatchRow(results: CapabilityResult[]): BenchmarkRunRow | null {
+  const compared = results.filter(
+    (r) =>
+      r.paid?.ran &&
+      r.sovereign.signal?.aiOverview != null &&
+      r.paid.signal?.aiOverview != null
+  );
+  if (compared.length === 0) return null;
+  const matches = compared.filter(
+    (r) => r.sovereign.signal!.aiOverview === r.paid!.signal!.aiOverview
+  ).length;
+  const rate = matches / compared.length;
+  const enoughSamples = compared.length >= MIN_SAMPLES_FOR_STATISTICAL_PASS;
+  return {
+    capability: "serp",
+    metric_name: "serp_ai_overview_match",
+    sovereign_provider: compared[0].sovereign.provider ?? null,
+    paid_provider: compared[0].paid!.provider ?? null,
+    dataset_ref: datasetRef(compared),
+    sovereign_value: Number(rate.toFixed(4)),
+    paid_value: null,
+    delta: null,
+    passed: enoughSamples ? rate >= 0.7 : null,
+    threshold_note: enoughSamples
+      ? `AI Overview presence agreement >= 70% (n=${compared.length}).`
+      : `AI Overview presence agreement — n=${compared.length} below sample floor; passed=null.`,
+  };
+}
+
 /**
  * Derives every benchmark_runs row this module can honestly compute from one
  * runProviderBenchmark() report. Intentionally does NOT invent rows for
- * Section 9 metrics this harness has no data for (SERP position delta, rank
- * repeatability, keyword volume/CPC availability, domain authority
- * correlation, PageSpeed/CrUX parity) — those require extending
- * provider-benchmark.ts itself, tracked as follow-up work, not fabricated
- * here.
+ * Section 9 metrics still lacking harness data (rank repeatability, keyword
+ * volume/CPC availability, domain authority correlation, PageSpeed/CrUX
+ * parity) — those remain follow-up work, not fabricated here.
  */
 export function deriveBenchmarkRows(report: BenchmarkReport): BenchmarkRunRow[] {
   const rows: BenchmarkRunRow[] = [];
@@ -161,6 +237,11 @@ export function deriveBenchmarkRows(report: BenchmarkReport): BenchmarkRunRow[] 
   }
 
   rows.push(...backlinkOverlapRows(report.backlinks));
+  rows.push(...serpTop10OverlapRows(report.serp));
+  const posDelta = serpPositionDeltaRow(report.serp);
+  if (posDelta) rows.push(posDelta);
+  const aio = serpAiOverviewMatchRow(report.serp);
+  if (aio) rows.push(aio);
   return rows;
 }
 

@@ -99,6 +99,42 @@ for (const [, id, category] of dataForSeoAdapterPairs) {
   );
 }
 
+// Commercial claim policy — forbidden superiority / replacement phrases must
+// not appear in customer-facing marketing surfaces (landing, agencies, tools).
+// See docs/COMMERCIAL_CLAIM_POLICY.md. Product honesty docs may discuss the
+// forbidden phrases as examples; those paths are excluded below.
+const claimPolicy = read("docs/COMMERCIAL_CLAIM_POLICY.md");
+assert(
+  /Forbidden unless benchmark evidence exists/i.test(claimPolicy),
+  "docs/COMMERCIAL_CLAIM_POLICY.md must define forbidden claims until benchmark evidence exists"
+);
+const marketingSurfaces = [
+  "src/app/page.tsx",
+  "src/app/agencies/page.tsx",
+  "src/app/tools/page.tsx",
+];
+const forbiddenMarketing = [
+  /better than ahrefs/i,
+  /better than semrush/i,
+  /replaced dataforseo/i,
+  /we replaced dataforseo/i,
+  /most accurate seo platform/i,
+  /benchmark-proven provider parity/i,
+  /30-day proven replacement/i,
+  /commercial-grade backlink replacement/i,
+];
+for (const surface of marketingSurfaces) {
+  let text = "";
+  try {
+    text = read(surface);
+  } catch {
+    continue;
+  }
+  for (const re of forbiddenMarketing) {
+    assert(!re.test(text), `commercial claim policy: "${re}" must not appear in ${surface}`);
+  }
+}
+
 if (failures.length) {
   console.error("\nOutput quality gate failed:\n");
   for (const failure of failures) console.error(`- ${failure}`);

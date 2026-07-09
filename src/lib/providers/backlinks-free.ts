@@ -1,4 +1,4 @@
-import { getBacklinks, isOmniDataActive, hasLabsApi } from "@/lib/providers/dataforseo";
+import { getBacklinks, isOmniDataActive } from "@/lib/providers/dataforseo";
 import { resolveDomainAuthority } from "@/lib/providers/domain-authority";
 import { buildProviderEnvelope } from "@/lib/providers/envelope";
 import type { ProviderResult } from "./types";
@@ -37,10 +37,13 @@ export async function enrichWithAuthority(items: BacklinkItem[]): Promise<Backli
 }
 
 /**
- * Inbound links for a domain from a REAL backlink index (OmniData Common Crawl
- * webgraph or DataForSEO). When no index is configured it returns
- * `success:false` (unavailable) rather than fabricating data — callers should
- * surface "backlinks unavailable", never a misleading 0.
+ * Sovereign inbound-link fetch for the `commoncrawl-webgraph` router adapter.
+ *
+ * OmniData Common Crawl webgraph ONLY — never calls paid DataForSEO Labs.
+ * Paid fallback is the separate `dataforseo-backlinks` adapter in
+ * `capability-runners.ts` (via `fetchBacklinks()` → `rankedAdapters()`).
+ * When OmniData is inactive this returns `success:false` (unavailable),
+ * never a fabricated zero.
  */
 export async function getBacklinksFree(
   domain: string,
@@ -56,8 +59,8 @@ export async function getBacklinksFree(
     return { success: false, error: "Invalid domain" };
   }
 
-  // 1) Real index first (webgraph via OmniData, or DataForSEO backlinks).
-  if (isOmniDataActive() || hasLabsApi()) {
+  // Sovereign path only — Patch J: paid DataForSEO must not run inside this adapter.
+  if (isOmniDataActive()) {
     const real = await getBacklinks(cleanDomain, limit);
     if (real.success && real.data && real.data.length > 0) {
       const seen = new Set<string>();
@@ -71,14 +74,13 @@ export async function getBacklinksFree(
       }
       if (items.length > 0) {
         await enrichWithAuthority(items);
-        const provider = isOmniDataActive() ? "omnidata-webgraph" : "dataforseo";
         return {
           success: true,
           data: items,
           creditsUsed: real.creditsUsed,
           envelope: buildProviderEnvelope({
             capability: "backlinks",
-            provider,
+            provider: "omnidata-webgraph",
             providerClass: "surface_measurement",
             dataSource: "measured",
             freshness: "recent",
@@ -91,16 +93,15 @@ export async function getBacklinksFree(
     }
   }
 
-  // 2) No real backlink index available.
+  // No sovereign backlink index available.
   //
-  // We deliberately DO NOT fall back to Google's deprecated `link:` operator: it
-  // returns almost nothing and forces a fabricated "rank" from SERP position,
-  // i.e. invented authority presented as data. An expert (and refund-safety)
-  // demands we say "unavailable" instead of emitting noise. Connect OmniData
-  // (keyless Common Crawl webgraph) or DataForSEO for real referring domains.
+  // We deliberately DO NOT fall back to Google's deprecated `link:` operator or
+  // call paid DataForSEO from this adapter (that would bypass Patch J ranking).
+  // Callers that need failover should use `fetchBacklinks()` from
+  // capability-runners, which tries commoncrawl-webgraph then dataforseo-backlinks.
   return {
     success: false,
     error:
-      "No backlink index configured. Enable OmniData (keyless Common Crawl webgraph) or DataForSEO for real referring-domain data.",
+      "No sovereign backlink index configured. Enable OmniData (keyless Common Crawl webgraph). Paid DataForSEO is available only via fetchBacklinks() router failover.",
   };
 }

@@ -118,7 +118,7 @@ If PageSpeed, Tranco, HN, or tech-stack HTTP surfaces are needed later:
 
 ## Action items
 
-- [x] Close PR #5 on GitHub with link to this document — **attempted 2026-07-09; permission denied** (`Resource not accessible by integration`). PR remains open; treat as abandoned per this doc.
+- [x] Close PR #5 on GitHub with link to this document — **closed 2026-07-09** by repo owner (`reda-baqechame`) with comment citing this document.
 - [ ] Do not delete branch immediately (reference only); archive after team acknowledgment.
 - [ ] Track HTTP-surface requests as separate, small PRs against `main` providers — not provider rewrites.
 

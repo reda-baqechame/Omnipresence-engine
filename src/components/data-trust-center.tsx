@@ -1,9 +1,21 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import Link from "next/link";
 import { ProvenanceBadge } from "@/components/provenance-badge";
 import { PanelError, PanelLoading } from "@/components/panel-states";
+import { EvidenceDrawer } from "@/components/evidence-drawer";
 import type { DataQuality } from "@/types/database";
+
+const SETUP_HREF: Record<string, string> = {
+  serp: "settings",
+  backlinks: "backlinks",
+  crawl: "technical",
+  generate: "content",
+  gsc: "gsc",
+  attribution: "attribution",
+  analytics: "attribution",
+};
 
 interface TrustPayload {
   dimensions: Array<{ key: string; label: string; available: boolean; status: string }>;
@@ -125,8 +137,15 @@ export function DataTrustCenter({ projectId }: { projectId: string }) {
                   <span className="font-medium">{p.id}</span>
                   <span className="text-muted-foreground"> · {p.capability}</span>
                 </span>
-                <span className="text-xs text-muted-foreground">
+                <span className="flex items-center gap-2 text-xs text-muted-foreground">
                   {Math.round(p.confidence * 100)}% · {p.circuit}
+                  <EvidenceDrawer
+                    projectId={projectId}
+                    capability={p.capability}
+                    target={p.id}
+                    label="Proof"
+                    className="text-xs"
+                  />
                 </span>
               </li>
             ))}
@@ -144,15 +163,28 @@ export function DataTrustCenter({ projectId }: { projectId: string }) {
             to another provider or shows as unavailable.
           </p>
           <ul className="space-y-1.5 text-sm max-h-64 overflow-y-auto">
-            {data.missingProviders.map((p) => (
-              <li key={p.id} className="flex items-center justify-between gap-2">
-                <span>
-                  <span className="font-medium">{p.id}</span>
-                  <span className="text-muted-foreground"> · {p.capability}</span>
-                </span>
-                <span className="text-xs text-yellow-500">{p.reason}</span>
-              </li>
-            ))}
+            {data.missingProviders.map((p) => {
+              const setup = SETUP_HREF[p.capability];
+              return (
+                <li key={p.id} className="flex items-center justify-between gap-2">
+                  <span>
+                    <span className="font-medium">{p.id}</span>
+                    <span className="text-muted-foreground"> · {p.capability}</span>
+                  </span>
+                  <span className="flex items-center gap-2 text-xs">
+                    <span className="text-yellow-500">{p.reason}</span>
+                    {setup && (
+                      <Link
+                        href={`/app/projects/${projectId}/${setup}`}
+                        className="text-primary hover:underline whitespace-nowrap"
+                      >
+                        Set up
+                      </Link>
+                    )}
+                  </span>
+                </li>
+              );
+            })}
           </ul>
         </div>
       )}

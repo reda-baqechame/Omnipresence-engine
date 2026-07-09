@@ -106,8 +106,10 @@ export async function keywordDifficultyLive(keyword: string) {
   }
 
   if (!USE_OMNIDATA && hasLabsApi()) {
-    const { searchGoogleOrganic } = await import("@/lib/providers/dataforseo");
-    const serp = await searchGoogleOrganic(keyword, "United States", "", []);
+    // Route through sovereign-first SERP router — never import searchGoogleOrganic
+    // directly (Patch J bypass). Paid DataForSEO only runs if rankedAdapters selects it.
+    const { searchGoogleOrganicRouter } = await import("@/lib/providers/serp-router");
+    const serp = await searchGoogleOrganicRouter(keyword, "United States", "", []);
     if (!serp.success || !serp.data) return null;
     const top = serp.data.organicResults.slice(0, 10);
     const avgPos = top.length

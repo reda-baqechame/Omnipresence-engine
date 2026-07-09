@@ -52,7 +52,11 @@ jobs:
       - name: railway:verify
         run: npm run railway:verify
       - name: production:ready
+        # verify:all already ran above — skip the duplicate (also avoids
+        # historical maxBuffer false-fails when production-ready buffered output).
         run: npm run production:ready
+        env:
+          PRODUCTION_READY_SKIP_VERIFY_ALL: "1"
       - name: verify:stress (weekly load proof)
         if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
         run: npm run verify:stress

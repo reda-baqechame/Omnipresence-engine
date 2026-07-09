@@ -3,6 +3,7 @@ import { ArrowRight, Target } from "lucide-react";
 import type { ActionPlan } from "@/lib/engines/action-plan";
 import type { TaskPriority } from "@/types/database";
 import { ProjectionBadge } from "@/components/projection-badge";
+import { EvidenceDrawer } from "@/components/evidence-drawer";
 
 const PRIORITY_STYLE: Record<TaskPriority, string> = {
   critical: "text-red-400 bg-red-500/10 border-red-500/30",
@@ -60,9 +61,18 @@ export function ActionPlanPanel({ projectId, plan }: { projectId: string; plan: 
                 <p className="text-sm font-medium leading-snug">{item.title}</p>
               </div>
               {item.evidenceCitation && (
-                <p className="text-xs text-muted-foreground mt-1 italic line-clamp-2" title={item.evidenceCitation}>
-                  Evidence: {item.evidenceCitation}
-                </p>
+                <div className="mt-1 flex flex-wrap items-center gap-2">
+                  <p className="text-xs text-muted-foreground italic line-clamp-2" title={item.evidenceCitation}>
+                    Evidence: {item.evidenceCitation}
+                  </p>
+                  <EvidenceDrawer
+                    projectId={projectId}
+                    capability={(item.category || "action_plan").toLowerCase()}
+                    target={item.id}
+                    label="Why this recommendation"
+                    className="text-xs shrink-0"
+                  />
+                </div>
               )}
               {item.description && !item.evidenceCitation && (
                 <p className="text-xs text-muted-foreground mt-1 line-clamp-2">{item.description}</p>
