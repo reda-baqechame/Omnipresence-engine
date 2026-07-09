@@ -118,6 +118,15 @@ If PageSpeed, Tranco, HN, or tech-stack HTTP surfaces are needed later:
 
 ## Action items
 
-- [ ] Close PR #5 on GitHub with link to this document.
+- [x] Close PR #5 on GitHub with link to this document — **attempted 2026-07-09; permission denied** (`Resource not accessible by integration`). PR remains open; treat as abandoned per this doc.
 - [ ] Do not delete branch immediately (reference only); archive after team acknowledgment.
 - [ ] Track HTTP-surface requests as separate, small PRs against `main` providers — not provider rewrites.
+
+### GitHub close attempt log
+
+| Date | Action | Result |
+|------|--------|--------|
+| 2026-07-09 | `gh pr close 5 --comment "..."` | Failed — insufficient token permissions |
+| 2026-07-09 | `gh pr close 5` (no comment) | Failed — insufficient token permissions |
+
+**Manual action required:** A repo maintainer should close PR #5 and link this document.

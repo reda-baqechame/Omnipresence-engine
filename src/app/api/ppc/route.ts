@@ -69,6 +69,7 @@ export async function POST(request: NextRequest) {
 
   if (action === "savings") {
     const savings = await estimatePpcSavings({
+      supabase,
       organicSessions: organicSessions || 0,
       aiReferralSessions: aiReferralSessions || 0,
       monthlyAdSpend,

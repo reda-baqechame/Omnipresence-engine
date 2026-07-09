@@ -16,6 +16,25 @@ Confirm these migrations exist and are applied on staging:
 |-----------|-----------------|
 | `0082_keyword_cpc_cache.sql` | `keyword_cpc_cache` — CPC cache (Patch C.1) |
 | `0083_benchmark_runs.sql` | `benchmark_runs` — nightly benchmark persistence (Patch H) |
+| `0084_report_quality_violations.sql` | `report_quality_violations` — report quality telemetry (Patch F.1b) |
+
+### Staging readiness script (Shot 2)
+
+Run offline configuration check (no paid provider calls by default):
+
+```bash
+node scripts/check-staging-proof-readiness.mjs
+```
+
+This validates required env vars, confirms migration tables exist in `combined.sql`, and warns when live benchmark proof has not started. It never creates fake `benchmark_runs` rows.
+
+Optional live smoke (manual only — does not run in normal CI):
+
+```bash
+RUN_LIVE_BENCHMARK_CHECK=1 node scripts/check-staging-proof-readiness.mjs
+```
+
+See `docs/audits/staging-benchmark-runbook.md` for the full 7-day smoke process.
 
 ```bash
 npm run db:migrate:plan   # dry-run — review SQL
