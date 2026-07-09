@@ -64,6 +64,8 @@ export interface SearchOpsEngineInput {
     title: string;
     category?: string | null;
     data_quality?: DataQuality | null;
+    affected_url?: string | null;
+    fix_recommendation?: string | null;
   }>;
   coverageGaps?: Array<{
     id?: string;
@@ -80,12 +82,19 @@ export interface SearchOpsEngineInput {
     clicks?: number;
     ctr?: number;
     position?: number;
+    /** Related striking-distance queries sharing the same target URL (page cluster). */
+    relatedQueries?: string[];
   }>;
   gscConnected?: boolean;
   authorityReferringDomains?: number | null;
   authorityDataQuality?: DataQuality | null;
   reportQualityErrorCount?: number;
   existingTasks?: Pick<ExecutionTask, "title" | "status">[];
+  /**
+   * Pre-built opportunities from deep miners (GSC v2, technical, etc.).
+   * Merged before quality filter / sort / id-dedupe — same pipeline as built-ins.
+   */
+  extraOpportunities?: SearchOpsOpportunity[];
 }
 
 const GENERIC_TITLE =
@@ -249,32 +258,39 @@ export function buildSearchOpsOpportunities(input: SearchOpsEngineInput): Search
   }
 
   // --- Technical ---
+  // Schema findings are owned by searchops-technical-miner (all severities) via
+  // extraOpportunities — skip here to avoid duplicate cards.
   for (const f of input.technicalFindings || []) {
     if (f.severity !== "critical" && f.severity !== "high") continue;
+    if ((f.category || "").toLowerCase() === "schema") continue;
     const status = dqToStatus(f.data_quality ?? "measured");
     if (status === "unavailable" || status === "simulated") continue;
     const title = f.title?.trim() || "Technical finding";
     if (isGenericSeoCopy(title)) continue;
+    const affected = f.affected_url?.trim() || null;
+    const fix = f.fix_recommendation?.trim() || null;
     out.push({
       id: `${pid}:technical:${f.id || title.slice(0, 40)}`,
       projectId: pid,
       category: "technical",
       title: `${f.severity === "critical" ? "Critical" : "High"} technical issue: ${title}`,
-      diagnosis: `Measured technical audit flagged this as ${f.severity}${f.category ? ` (${f.category})` : ""}.`,
+      diagnosis: `Measured technical audit flagged this as ${f.severity}${f.category ? ` (${f.category})` : ""}${affected ? ` on ${affected}` : ""}.`,
       evidence: [
         {
           label: "Technical finding",
           source: "technical_findings",
           status: status === "estimated" ? "estimated" : "measured",
           confidence: status === "measured" ? 0.9 : 0.6,
-          value: { severity: f.severity, category: f.category },
+          value: { severity: f.severity, category: f.category, affected_url: affected },
           evidenceId: f.id ?? null,
         },
       ],
       priority: priorityFromSeverity(f.severity),
       impactType: status === "estimated" ? "estimated" : "measured",
       effort: effortFromSeverity(f.severity),
-      recommendedAction: `Fix “${title}” on the affected URLs, then re-run technical audit.`,
+      recommendedAction: fix
+        ? `${fix}${affected ? ` Affected URL: ${affected}.` : ""} Then re-run technical audit.`
+        : `Fix “${title}”${affected ? ` on ${affected}` : " on the affected URLs"}, then re-run technical audit.`,
       verificationPlan: "Re-scan technical audit; confirm finding severity drops or finding is resolved.",
       limitations: ["Fixing a finding does not guarantee ranking change."],
     });
@@ -359,6 +375,7 @@ export function buildSearchOpsOpportunities(input: SearchOpsEngineInput): Search
                 clicks: g.clicks ?? null,
                 position: g.position,
                 ctr: g.ctr ?? null,
+                relatedQueries: g.relatedQueries?.length ? g.relatedQueries : undefined,
               },
             },
           ],
@@ -373,6 +390,9 @@ export function buildSearchOpsOpportunities(input: SearchOpsEngineInput): Search
             "Position improvement is not guaranteed.",
             "Impact estimates are not fabricated.",
             ...(hasImpr ? [] : ["Impressions unavailable — do not invent volume."]),
+            ...(g.relatedQueries && g.relatedQueries.length > 1
+              ? [`Page/query cluster: ${g.relatedQueries.length} striking-distance queries share this target URL.`]
+              : []),
           ],
         });
       } else if (g.kind === "low_ctr") {
@@ -390,9 +410,17 @@ export function buildSearchOpsOpportunities(input: SearchOpsEngineInput): Search
               confidence: 0.95,
               value: { impressions: g.impressions, ctr: g.ctr, position: g.position },
             },
+            {
+              label: "Expected CTR heuristic",
+              source: "position CTR model",
+              status: "model_knowledge",
+              confidence: 0.5,
+              value: { note: "Expected CTR is a heuristic for prioritization only." },
+            },
           ],
           priority: "medium",
-          impactType: "measured",
+          // Measured CTR/position; expected-CTR gap impact is model_knowledge, not measured lift.
+          impactType: "model_knowledge",
           effort: "low",
           recommendedAction: `Rewrite title/meta for the ranking URL of “${g.queryOrUrl}” to match query intent; keep claims factual.`,
           verificationPlan: "Re-check GSC CTR for the same query after 14–28 days; require measured impressions ≥ 50.",
@@ -477,6 +505,11 @@ export function buildSearchOpsOpportunities(input: SearchOpsEngineInput): Search
     });
   }
 
+  // Deep miners (GSC v2, technical, etc.) — same quality pipeline as built-ins.
+  for (const extra of input.extraOpportunities || []) {
+    out.push(extra);
+  }
+
   // Drop duplicates already open as tasks (title match) and invalid generics.
   const filtered = out.filter((op) => {
     if (openTitles.has(op.title.toLowerCase())) return false;
@@ -484,7 +517,13 @@ export function buildSearchOpsOpportunities(input: SearchOpsEngineInput): Search
     return errs.length === 0;
   });
 
-  return filtered.sort((a, b) => {
+  // Deterministic id dedupe (first wins) — miners + built-ins share one namespace.
+  const byId = new Map<string, SearchOpsOpportunity>();
+  for (const op of filtered) {
+    if (!byId.has(op.id)) byId.set(op.id, op);
+  }
+
+  return [...byId.values()].sort((a, b) => {
     const pd = PRIORITY_ORDER[a.priority] - PRIORITY_ORDER[b.priority];
     if (pd !== 0) return pd;
     const cd = a.category.localeCompare(b.category);

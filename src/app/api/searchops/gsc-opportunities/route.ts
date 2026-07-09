@@ -8,6 +8,11 @@ import {
   mineGscOpportunitiesFromInsights,
   mineGscOpportunitiesFromRanks,
 } from "@/lib/engines/searchops-command-center";
+import {
+  clusterStrikingDistanceByTargetUrl,
+  enrichStrikingDistanceWithClusters,
+  mineCannibalizationOpportunities,
+} from "@/lib/engines/searchops-gsc-miner";
 import { buildSearchOpsOpportunities } from "@/lib/engines/searchops-opportunity-engine";
 
 export const runtime = "nodejs";
@@ -38,12 +43,19 @@ export async function GET(request: NextRequest) {
 
   const { data: rankKeywords } = await supabase
     .from("rank_keywords")
-    .select("keyword, last_position, is_striking_distance")
+    .select("keyword, last_position, is_striking_distance, cannibalization_urls, target_url")
     .eq("project_id", projectId)
     .order("last_position", { ascending: true })
     .limit(80);
 
-  let gscOpportunities = mineGscOpportunitiesFromRanks(rankKeywords || []);
+  const rankRows = rankKeywords || [];
+  let gscOpportunities = mineGscOpportunitiesFromRanks(rankRows);
+  const strikeQueries = gscOpportunities
+    .filter((o) => o.kind === "striking_distance")
+    .map((o) => o.queryOrUrl);
+  const clusters = clusterStrikingDistanceByTargetUrl(rankRows, strikeQueries);
+  gscOpportunities = enrichStrikingDistanceWithClusters(gscOpportunities, clusters, rankRows);
+  const cannibalization = mineCannibalizationOpportunities(projectId, rankRows);
   let gscConnected = false;
   let liveGsc = false;
 
@@ -54,6 +66,7 @@ export async function GET(request: NextRequest) {
       brandName: project.name,
       gscConnected: false,
       gscOpportunities: [],
+      extraOpportunities: cannibalization,
     });
     return NextResponse.json({
       available: false,
@@ -71,7 +84,8 @@ export async function GET(request: NextRequest) {
       liveGsc = true;
       const gscKeys = new Set(fromGsc.map((o) => o.queryOrUrl.toLowerCase()));
       const rankOnly = gscOpportunities.filter((o) => !gscKeys.has(o.queryOrUrl.toLowerCase()));
-      gscOpportunities = [...fromGsc, ...rankOnly].slice(0, 25);
+      const merged = [...fromGsc, ...rankOnly].slice(0, 25);
+      gscOpportunities = enrichStrikingDistanceWithClusters(merged, clusters, rankRows);
     }
   } catch {
     // Keep rank_keywords mining only.
@@ -82,6 +96,7 @@ export async function GET(request: NextRequest) {
     brandName: project.name,
     gscConnected,
     gscOpportunities,
+    extraOpportunities: cannibalization,
   }).filter((o) => o.category === "gsc" || o.category === "serp");
 
   return NextResponse.json({

@@ -12,6 +12,17 @@ import {
   type SearchOpsOpportunity,
 } from "@/lib/engines/searchops-opportunity-engine";
 import {
+  clusterStrikingDistanceByTargetUrl,
+  enrichStrikingDistanceWithClusters,
+  mineCannibalizationOpportunities,
+} from "@/lib/engines/searchops-gsc-miner";
+import {
+  mineCanonicalMismatchOpportunities,
+  mineCwvOpportunities,
+  mineInternalLinkOpportunities,
+  mineSchemaGapOpportunities,
+} from "@/lib/engines/searchops-technical-miner";
+import {
   isReportQualityBlockCriticalEnabled,
   isReportQualitySanitizeEnabled,
 } from "@/lib/engines/report-quality-flags";
@@ -94,6 +105,7 @@ type GscOpp = {
   clicks?: number;
   ctr?: number;
   position?: number;
+  relatedQueries?: string[];
 };
 
 /**
@@ -269,6 +281,9 @@ export async function loadSearchOpsCommandCenter(
     { data: backlinkGraphSnap },
     { data: backlinkSnap },
     { data: gscSnap },
+    { data: cwvHistory },
+    { data: internalLinkRows },
+    { data: crawlPages },
   ] = await Promise.all([
     supabase.from("scores").select("*").eq("project_id", id).order("created_at", { ascending: true }),
     supabase.from("technical_findings").select("*").eq("project_id", id).order("severity"),
@@ -284,7 +299,7 @@ export async function loadSearchOpsCommandCenter(
       .limit(100),
     supabase
       .from("rank_keywords")
-      .select("keyword, last_position, is_striking_distance")
+      .select("keyword, last_position, is_striking_distance, cannibalization_urls, target_url")
       .eq("project_id", id)
       .order("last_position", { ascending: true })
       .limit(80),
@@ -309,6 +324,23 @@ export async function loadSearchOpsCommandCenter(
       .order("captured_on", { ascending: false })
       .limit(1)
       .maybeSingle(),
+    supabase
+      .from("cwv_history")
+      .select("collected_on, lcp_ms, inp_ms, cls, data_source")
+      .eq("project_id", id)
+      .order("collected_on", { ascending: false })
+      .limit(10),
+    supabase
+      .from("internal_link_opportunities")
+      .select("id, source_url, target_url, anchor_suggestion, relevance_score, status")
+      .eq("project_id", id)
+      .order("relevance_score", { ascending: false })
+      .limit(25),
+    supabase
+      .from("crawl_pages")
+      .select("url, canonical")
+      .eq("project_id", id)
+      .limit(200),
   ]);
 
   const latestScore = scores?.[scores.length - 1] ?? null;
@@ -627,7 +659,26 @@ export async function loadSearchOpsCommandCenter(
   const gscConnected = dataSources.find((d) => d.id === "gsc")?.status === "connected";
   // Rank-tracker striking distance only on SSR. Live GSC query mining belongs
   // on an explicit sync/API path — never block page render on Google APIs.
-  const gscOpportunities = mineGscOpportunitiesFromRanks(rankKeywords || []);
+  const rankRows = rankKeywords || [];
+  const minedRanks = mineGscOpportunitiesFromRanks(rankRows);
+  const strikeQueries = minedRanks
+    .filter((o) => o.kind === "striking_distance")
+    .map((o) => o.queryOrUrl);
+  const pageClusters = clusterStrikingDistanceByTargetUrl(rankRows, strikeQueries);
+  const gscOpportunities: GscOpp[] = enrichStrikingDistanceWithClusters(
+    minedRanks,
+    pageClusters,
+    rankRows
+  );
+
+  const hasCrawlData = (crawlPages || []).length > 0 || (internalLinkRows || []).length > 0;
+  const extraOpportunities: SearchOpsOpportunity[] = [
+    ...mineCannibalizationOpportunities(id, rankRows),
+    ...mineCwvOpportunities(id, cwvHistory || []),
+    ...mineSchemaGapOpportunities(id, findings || []),
+    ...mineInternalLinkOpportunities(id, internalLinkRows || [], hasCrawlData),
+    ...mineCanonicalMismatchOpportunities(id, crawlPages || []),
+  ];
 
   if (gscSnap && gscSnap.impressions != null && Number(gscSnap.impressions) >= 0) {
     const idx = metrics.findIndex((m) => m.id === "search_visibility");
@@ -670,6 +721,8 @@ export async function loadSearchOpsCommandCenter(
       title: f.title,
       category: f.category,
       data_quality: (f.data_source || f.data_quality) as DataQuality | undefined,
+      affected_url: f.affected_url ?? null,
+      fix_recommendation: f.fix_recommendation ?? null,
     })),
     coverageGaps: (coverage || []).map((c) => ({
       id: c.id,
@@ -684,6 +737,7 @@ export async function loadSearchOpsCommandCenter(
     authorityDataQuality: authDq,
     reportQualityErrorCount: reportQuality.errorCount,
     existingTasks: taskList.map((t) => ({ title: t.title, status: t.status })),
+    extraOpportunities,
   });
 
   return {

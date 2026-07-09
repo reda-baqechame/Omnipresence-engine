@@ -116,3 +116,111 @@ test("unreliable AI probes do not claim zero probes while sampleSize > 0", () =>
   assert.ok(!/No grounded AI-visibility probes are available/i.test(ai!.diagnosis));
   assert.equal(ai!.impactType, "unavailable");
 });
+
+test("extraOpportunities pass through quality pipeline and dedupe by id", () => {
+  const shared = {
+    id: "p1:cannibalization:roof",
+    projectId: "p1",
+    category: "serp" as const,
+    title: "Query cannibalization: “roof” split across 2 URLs",
+    diagnosis: "Measured SERP check shows 2 brand URLs.",
+    evidence: [
+      {
+        label: "Brand URLs",
+        source: "rank_snapshots",
+        status: "measured" as const,
+        confidence: 0.8,
+      },
+    ],
+    priority: "medium" as const,
+    impactType: "measured" as const,
+    effort: "medium" as const,
+    recommendedAction: "Consolidate toward the strongest URL and re-check rank snapshot.",
+    verificationPlan: "Re-run rank check; cannibalization_urls should drop to 0 or 1.",
+    limitations: ["SERP snapshot can vary."],
+  };
+  const ops = buildSearchOpsOpportunities({
+    projectId: "p1",
+    aiMentionRate: 0.5,
+    aiSampleSize: 20,
+    aiDataQuality: "measured",
+    extraOpportunities: [shared, { ...shared, title: "Duplicate should be dropped by id" }],
+  });
+  const hits = ops.filter((o) => o.id === shared.id);
+  assert.equal(hits.length, 1);
+  assert.equal(hits[0].title, shared.title);
+});
+
+test("low CTR opportunity labels impact as model_knowledge (expected CTR heuristic)", () => {
+  const ops = buildSearchOpsOpportunities({
+    projectId: "p1",
+    aiMentionRate: 0.5,
+    aiSampleSize: 20,
+    aiDataQuality: "measured",
+    gscConnected: true,
+    gscOpportunities: [
+      {
+        kind: "low_ctr",
+        queryOrUrl: "emergency roof",
+        impressions: 800,
+        clicks: 4,
+        ctr: 0.005,
+        position: 3.2,
+      },
+    ],
+  });
+  const low = ops.find((o) => o.id.includes("lowctr"));
+  assert.ok(low);
+  assert.equal(low!.impactType, "model_knowledge");
+  assert.ok(low!.evidence.some((e) => e.status === "measured"));
+  assert.ok(low!.evidence.some((e) => e.status === "model_knowledge"));
+});
+
+test("schema findings are not duplicated by the built-in technical branch", () => {
+  const ops = buildSearchOpsOpportunities({
+    projectId: "p1",
+    aiMentionRate: 0.5,
+    aiSampleSize: 20,
+    aiDataQuality: "measured",
+    technicalFindings: [
+      {
+        id: "s1",
+        severity: "high",
+        category: "schema",
+        title: "No structured data found",
+        data_quality: "measured",
+      },
+    ],
+    extraOpportunities: [
+      {
+        id: "p1:schema:s1",
+        projectId: "p1",
+        category: "technical",
+        title: "Schema gap: No structured data found",
+        diagnosis: "Measured crawl found no JSON-LD.",
+        evidence: [
+          {
+            label: "Schema absence",
+            source: "technical_findings",
+            status: "measured",
+            confidence: 0.85,
+          },
+          {
+            label: "Recommended schema types",
+            source: "schema guidance",
+            status: "model_knowledge",
+            confidence: 0.5,
+          },
+        ],
+        priority: "high",
+        impactType: "model_knowledge",
+        effort: "medium",
+        recommendedAction: "Add Organization JSON-LD; re-run technical audit.",
+        verificationPlan: "Re-run technical audit; schema finding must resolve.",
+        limitations: ["Schema presence is measured; rankings are not guaranteed."],
+      },
+    ],
+  });
+  assert.ok(!ops.some((o) => o.id === "p1:technical:s1"));
+  assert.ok(ops.some((o) => o.id === "p1:schema:s1"));
+});
