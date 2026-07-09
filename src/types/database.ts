@@ -642,6 +642,26 @@ export interface Report {
   created_at: string;
 }
 
+/** Patch F.1b — structured report quality gate violation telemetry (internal only). */
+export interface ReportQualityViolation {
+  id: string;
+  report_id: string | null;
+  project_id: string | null;
+  org_id: string | null;
+  report_type: string;
+  claim_id: string;
+  section: string;
+  claim_type: string;
+  field: string;
+  reason: string;
+  severity: "info" | "warning" | "error";
+  source_label: string | null;
+  classification: string | null;
+  render_path: string | null;
+  metadata: Record<string, unknown>;
+  created_at: string;
+}
+
 export interface ProjectIntake {
   name: string;
   domain: string;

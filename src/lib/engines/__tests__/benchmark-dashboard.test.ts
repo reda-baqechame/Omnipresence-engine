@@ -30,8 +30,11 @@ function row(overrides: Partial<BenchmarkRunRecord> & { run_at: string }): Bench
   };
 }
 
+/** Fixed UTC anchor so streak math never flakes across real-world midnight boundaries. */
+const STREAK_ANCHOR_UTC = new Date("2026-06-15T12:00:00.000Z");
+
 function daysAgoIso(days: number): string {
-  return new Date(Date.now() - days * 86_400_000).toISOString();
+  return new Date(STREAK_ANCHOR_UTC.getTime() - days * 86_400_000).toISOString();
 }
 
 test("summarizeBenchmarkRuns groups rows by capability + metric independently", () => {
@@ -89,15 +92,15 @@ test("a missing calendar day (cron didn't run) breaks the streak even if both su
 });
 
 test("same-day re-runs collapse to the latest run for that day and count as a single day of streak", () => {
-  const today = new Date();
-  const earlierToday = new Date(today.getTime() - 3600_000).toISOString();
+  const day = "2026-06-15";
   const rows: BenchmarkRunRecord[] = [
-    row({ run_at: earlierToday, passed: false }),
-    row({ run_at: today.toISOString(), passed: true }),
+    row({ run_at: `${day}T08:00:00.000Z`, passed: false }),
+    row({ run_at: `${day}T20:00:00.000Z`, passed: true }),
   ];
   const [group] = summarizeBenchmarkRuns(rows);
   assert.equal(group.totalDaysObserved, 1);
-  assert.equal(group.consecutivePassDays, 1, "the later same-day run must win, not the earlier failing one");
+  assert.equal(group.latest.passed, true, "the later same-day run must win, not the earlier failing one");
+  assert.equal(group.consecutivePassDays, 1);
 });
 
 test(`promotionReady is only true once the streak reaches PROMOTION_STREAK_DAYS (${PROMOTION_STREAK_DAYS})`, () => {
