@@ -63,6 +63,8 @@ test("report-quality-violations: admin allowed with bounded limit", async () => 
   assert.ok(Array.isArray(json.rows));
   assert.equal(json.limit, 200);
   assert.equal(lastLimit, 200);
+  assert.equal(json.flags?.sanitizeEnabled, false);
+  assert.equal(json.flags?.blockCriticalEnabled, false);
 });
 
 test("report-quality-violations: invalid severity rejected", async () => {

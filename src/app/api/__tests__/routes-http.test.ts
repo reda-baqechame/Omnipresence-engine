@@ -14,6 +14,8 @@ const ROUTE_SMOKE: Array<{
 }> = [
   { path: "app/api/health/route.ts", handler: "GET", mustInclude: ["export async function GET", "isHealthAuthorized", "ok: true"] },
   { path: "app/api/admin/benchmark-runs/route.ts", handler: "GET", mustInclude: ["export async function GET", "isPlatformAdminAuthorized", "apiUnauthorized", "auditDataForSeoCategories", "demotionReadinessReport"] },
+  { path: "app/api/admin/benchmark-readiness/route.ts", handler: "GET", mustInclude: ["export async function GET", "isPlatformAdminAuthorized", "apiUnauthorized", "buildBenchmarkReadinessReport"] },
+  { path: "app/api/admin/provider-proof/route.ts", handler: "GET", mustInclude: ["export async function GET", "isPlatformAdminAuthorized", "apiUnauthorized", "loadProviderProofCockpit"] },
   { path: "app/api/capabilities/route.ts", handler: "GET", mustInclude: ["export async function GET", "getUser()", "Unauthorized"] },
   { path: "app/api/coverage/route.ts", handler: "GET", mustInclude: ["export async function GET", "verifyProjectAccess", "apiUnauthorized"] },
   { path: "app/api/cwv/route.ts", handler: "GET", mustInclude: ["export async function GET", "verifyProjectAccess", "apiUnauthorized"] },

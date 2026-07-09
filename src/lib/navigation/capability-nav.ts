@@ -32,6 +32,8 @@ export const PROJECT_HUB_NAV: HubNavCategory[] = [
     label: "Command",
     items: [
       { href: "", label: "Domain Overview", requires: "always" },
+      { href: "/command-center", label: "SearchOps Command", requires: "always" },
+      { href: "/opportunities", label: "Opportunities", requires: "always" },
       { href: "/gate", label: "Presence Gate", requires: "always" },
       { href: "/trust", label: "Data Trust", requires: "always" },
       { href: "/competitors", label: "Competitor Compare", requires: "serp" },
@@ -143,10 +145,10 @@ export function filterProjectHubNav(caps?: Partial<HubNavCapabilities>): HubNavC
 /** Top-level mobile tabs derived from the same capability registry. */
 export const PROJECT_HUB_TABS: HubNavItem[] = [
   { href: "", label: "Overview", requires: "always" },
+  { href: "/command-center", label: "Command", requires: "always" },
   { href: "/ai-visibility", label: "AEO/GEO", requires: "visibility" },
   { href: "/search-performance", label: "Search", requires: "serp" },
-  { href: "/content-site", label: "Content", requires: "content" },
-  { href: "/authority-presence", label: "Authority", requires: "always" },
+  { href: "/opportunities", label: "Opps", requires: "always" },
   { href: "/action-proof", label: "Execution", requires: "always" },
   { href: "/trust", label: "Trust", requires: "always" },
 ];

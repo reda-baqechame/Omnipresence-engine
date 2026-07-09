@@ -72,6 +72,23 @@ export default async function ProjectOverviewPage({
 
       <PresenceGateCard projectId={id} gate={gate} />
 
+      <div className="rounded-xl border border-primary/30 bg-primary/5 p-4 flex flex-wrap items-center justify-between gap-3">
+        <div>
+          <h2 className="font-semibold text-sm">SearchOps Command Center</h2>
+          <p className="text-xs text-muted-foreground">
+            Evidence-backed visibility snapshot, opportunities, and execution status.
+          </p>
+        </div>
+        <div className="flex flex-wrap gap-3 text-sm">
+          <Link href={`/app/projects/${id}/command-center`} className="text-primary hover:underline font-medium">
+            Open command center →
+          </Link>
+          <Link href={`/app/projects/${id}/opportunities`} className="text-primary hover:underline">
+            Opportunities →
+          </Link>
+        </div>
+      </div>
+
       <DataHealthSummaryCard
         projectId={id}
         measuredDimensions={measuredDimensions}
