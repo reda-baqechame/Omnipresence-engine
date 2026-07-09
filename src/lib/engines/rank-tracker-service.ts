@@ -1,5 +1,4 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
-import { checkRankPosition } from "@/lib/providers/dataforseo";
 import { searchGoogleOrganicRouter } from "@/lib/providers/serp-router";
 import { getValidOAuthToken } from "@/lib/oauth/tokens";
 import { buildGscPositionMap, type GscPositionEntry } from "@/lib/engines/gsc-queries";
@@ -147,12 +146,10 @@ export async function runRankCheckForProject(
       ? serp.data.aiOverview.citedDomains.includes(brandHost)
       : false;
   } else {
-    // Fallback: minimal rank-only check (still honest about missing extras).
-    const basic = await checkRankPosition(keyword, domain, location);
-    if (!basic.success || !basic.data) return null;
-    position = basic.data.position;
-    rankingUrl = basic.data.url;
-    serpFeatures = basic.data.serp_features;
+    // No direct DataForSEO rank_tracker bypass — Patch J requires SERP via
+    // searchGoogleOrganicRouter only. Unavailable stays unavailable (null),
+    // never a fabricated position.
+    return null;
   }
 
   // Public SERP is what we measured above. If Search Console first-party data

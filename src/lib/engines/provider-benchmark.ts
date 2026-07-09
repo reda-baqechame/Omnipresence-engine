@@ -14,7 +14,7 @@
 import { crawlContent, fetchBacklinks } from "@/lib/providers/capability-runners";
 import { scrapePageFirecrawl, hasFirecrawlCapability } from "@/lib/providers/firecrawl";
 import { searchGoogleOrganicRouter } from "@/lib/providers/serp-router";
-import { getBacklinks, hasLabsApi } from "@/lib/providers/dataforseo";
+import { getBacklinks, hasLabsApi, searchGoogleOrganic } from "@/lib/providers/dataforseo";
 import { generateContent } from "@/lib/providers/generate-router";
 import { hasOllamaCapability } from "@/lib/providers/ollama";
 import { resolveDomainAuthority } from "@/lib/providers/domain-authority";
@@ -204,10 +204,17 @@ export async function runProviderBenchmark(inputs?: BenchmarkInputs): Promise<Be
     backlinks.push({ input: domain, sovereign: sovMetric, paid, overlap, verdict });
   }
 
-  // ---- SERP: router (sovereign-first; paid only if it's the best adapter) ----
+  // ---- SERP: router (sovereign-first) vs paid Labs side-by-side when configured ----
+  // Paid side is benchmark_only spend — never used to serve customer traffic here.
+  const brandDomain = cfg.domains[0] || "";
   for (const q of cfg.queries) {
-    const sov = await timed(() => searchGoogleOrganicRouter(q, "United States", cfg.domains[0] || "", []));
+    const sov = await timed(() => searchGoogleOrganicRouter(q, "United States", brandDomain, []));
     const results = sov.value?.data?.organicResults || [];
+    const top10 = results.slice(0, 10);
+    const brandHost = brandDomain ? normDomain(brandDomain) : "";
+    const brandPosIdx = brandHost
+      ? top10.findIndex((r) => normDomain(r.url).includes(brandHost) || normDomain(r.url) === brandHost)
+      : -1;
     const sovMetric: SideMetric = {
       ran: true,
       success: Boolean(sov.value?.success),
@@ -215,12 +222,48 @@ export async function runProviderBenchmark(inputs?: BenchmarkInputs): Promise<Be
       provider: sov.value?.provider,
       costPerCallUsd: sov.value?.creditsUsed && sov.value.provider && /serper|dataforseo|firecrawl/.test(sov.value.provider) ? 0.001 : 0,
       count: results.length,
+      signal: {
+        top10Count: top10.length,
+        ...(brandPosIdx >= 0 ? { position: brandPosIdx + 1 } : {}),
+        ...(sov.value?.data?.aiOverview?.present ? { aiOverview: 1 } : { aiOverview: 0 }),
+      },
       error: sov.value?.error,
     };
+
+    let paid: SideMetric | null = null;
+    let overlap: number | undefined;
+    if (hasLabsApi()) {
+      const p = await timed(() => searchGoogleOrganic(q, "United States", brandDomain, []));
+      const paidOrganic = p.value?.data?.organicResults || [];
+      const paidTop10 = paidOrganic.slice(0, 10);
+      const paidBrandIdx = brandHost
+        ? paidTop10.findIndex((r) => normDomain(r.url).includes(brandHost) || normDomain(r.url) === brandHost)
+        : -1;
+      paid = {
+        ran: true,
+        success: Boolean(p.value?.success),
+        ms: p.ms,
+        provider: "dataforseo",
+        costPerCallUsd: 0.002,
+        count: paidOrganic.length,
+        signal: {
+          top10Count: paidTop10.length,
+          ...(paidBrandIdx >= 0 ? { position: paidBrandIdx + 1 } : {}),
+          ...(p.value?.data?.aiOverview?.present ? { aiOverview: 1 } : { aiOverview: 0 }),
+        },
+        error: p.value?.error || p.error,
+      };
+      const sovDomains = top10.map((r) => normDomain(r.url));
+      const paidDomains = paidTop10.map((r) => normDomain(r.url));
+      if (sovDomains.length && paidDomains.length) overlap = overlapOf(sovDomains, paidDomains);
+    }
+
     const verdict = !sovMetric.success
       ? "SERP unavailable (configure SearXNG/OmniData or a paid key)"
-      : `${results.length} organic results via ${sovMetric.provider || "router"} ($${sovMetric.costPerCallUsd}/query)`;
-    serp.push({ input: q, sovereign: sovMetric, paid: null, verdict });
+      : paid && overlap !== undefined
+        ? `${results.length} organic via ${sovMetric.provider || "router"}; top-10 overlap ${(overlap * 100).toFixed(0)}% vs paid`
+        : `${results.length} organic results via ${sovMetric.provider || "router"} ($${sovMetric.costPerCallUsd}/query)`;
+    serp.push({ input: q, sovereign: sovMetric, paid, overlap, verdict });
   }
 
   // ---- Generate: Ollama (sovereign, gated) vs paid LLM upgrade ----

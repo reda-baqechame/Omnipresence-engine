@@ -82,6 +82,7 @@ const steps = [
         "src/lib/providers/__tests__/omnidata-auth.test.ts",
         "src/lib/providers/__tests__/envelope.test.ts",
         "src/lib/providers/__tests__/keyword-cpc-cache.test.ts",
+        "src/lib/providers/__tests__/backlinks-free-sovereign.test.ts",
         "src/lib/providers/__tests__/circuit-breaker.test.ts",
         "src/lib/providers/__tests__/router-failover.smoke.test.ts",
         "src/lib/providers/__tests__/failure-injection.test.ts",

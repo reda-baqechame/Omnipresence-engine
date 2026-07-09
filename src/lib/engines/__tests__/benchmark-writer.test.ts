@@ -122,14 +122,47 @@ test("backlink_referring_domain_overlap: only emitted when both sides ran, appli
   assert.equal(overlapLow!.passed, false, `0.4 < ${BACKLINK_OVERLAP_MIN} must fail`);
 });
 
-test("deriveBenchmarkRows never fabricates rows for metrics this harness has no data for (e.g. SERP has no paid comparison in this engine)", () => {
+test("deriveBenchmarkRows never fabricates SERP comparison rows when paid side did not run", () => {
   const report = baseReport({ serp: [sovereignOnly(true, 0.001)] });
   const rows = deriveBenchmarkRows(report);
   assert.ok(
     !rows.some((r) => r.capability === "serp" && r.metric_name === "cost_per_successful_result"),
-    "no paid SERP metric exists in this engine's output — must not invent a comparison row"
+    "no paid SERP metric when paid side absent — must not invent a comparison row"
+  );
+  assert.ok(
+    !rows.some((r) => r.metric_name === "serp_top10_overlap"),
+    "must not invent serp_top10_overlap without paid overlap"
   );
   assert.ok(rows.some((r) => r.capability === "serp" && r.metric_name === "failure_rate"));
+});
+
+test("serp_top10_overlap: emitted when paid side ran with overlap, applies Section 9 80% threshold", () => {
+  const report = baseReport({
+    serp: [withPaid(true, true, { overlap: 0.85, sovCost: 0, paidCost: 0.002 })],
+  });
+  const rows = deriveBenchmarkRows(report);
+  const overlap = rows.find((r) => r.metric_name === "serp_top10_overlap");
+  assert.ok(overlap);
+  assert.equal(overlap!.passed, true);
+  assert.equal(overlap!.delta, 0.85);
+
+  const reportLow = baseReport({
+    serp: [withPaid(true, true, { overlap: 0.5, sovCost: 0, paidCost: 0.002 })],
+  });
+  const rowsLow = deriveBenchmarkRows(reportLow);
+  assert.equal(rowsLow.find((r) => r.metric_name === "serp_top10_overlap")!.passed, false);
+});
+
+test("serp_position_delta: passed=null below sample floor; evaluates when n is sufficient", () => {
+  const one = withPaid(true, true, { sovCost: 0, paidCost: 0.002 });
+  one.sovereign.signal = { position: 3 };
+  one.paid!.signal = { position: 4 };
+  const report = baseReport({ serp: [one] });
+  const rows = deriveBenchmarkRows(report);
+  const delta = rows.find((r) => r.metric_name === "serp_position_delta");
+  assert.ok(delta);
+  assert.equal(delta!.passed, null, "n=1 below statistical floor");
+  assert.equal(delta!.sovereign_value, 1);
 });
 
 test("persistBenchmarkRun inserts every derived row stamped with the report's finishedAt as run_at, and returns the real count", async () => {

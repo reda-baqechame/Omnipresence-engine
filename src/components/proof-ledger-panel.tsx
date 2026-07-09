@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { PanelError } from "@/components/panel-states";
+import { EvidenceDrawer } from "@/components/evidence-drawer";
 
 interface LedgerEntry {
   id: string;
@@ -162,25 +163,46 @@ export function ProofLedgerPanel({ projectId }: { projectId: string }) {
                       Verified {new Date(e.verified_at).toLocaleString()}
                     </p>
                   )}
-                  <button
-                    className="text-primary text-xs mt-2"
-                    onClick={() => setExpanded(expanded === e.id ? null : e.id)}
-                  >
-                    {expanded === e.id ? "Hide before/after" : "Before / after drill-down"}
-                  </button>
+                  <div className="mt-2 flex flex-wrap items-center gap-3">
+                    <button
+                      className="text-primary text-xs"
+                      onClick={() => setExpanded(expanded === e.id ? null : e.id)}
+                    >
+                      {expanded === e.id ? "Hide before/after" : "Before / after drill-down"}
+                    </button>
+                    <EvidenceDrawer
+                      projectId={projectId}
+                      capability={e.action_surface || e.action_type || "proof"}
+                      target={e.id}
+                      label="View measurement evidence"
+                      className="text-xs"
+                    />
+                  </div>
                   {expanded === e.id && (
-                    <div className="grid sm:grid-cols-2 gap-3 mt-3">
-                      <div>
-                        <div className="text-[11px] uppercase text-muted-foreground mb-1">Before</div>
-                        <pre className="text-[11px] bg-background border border-border rounded p-2 overflow-x-auto">
-                          {JSON.stringify(e.baseline_snapshot || {}, null, 2)}
-                        </pre>
-                      </div>
-                      <div>
-                        <div className="text-[11px] uppercase text-muted-foreground mb-1">After</div>
-                        <pre className="text-[11px] bg-background border border-border rounded p-2 overflow-x-auto">
-                          {JSON.stringify(e.outcome_snapshot || {}, null, 2)}
-                        </pre>
+                    <div className="space-y-3 mt-3">
+                      {e.delta_summary && Object.keys(e.delta_summary).length > 0 && (
+                        <div>
+                          <div className="text-[11px] uppercase text-muted-foreground mb-1">
+                            Verification delta
+                          </div>
+                          <pre className="text-[11px] bg-background border border-border rounded p-2 overflow-x-auto">
+                            {JSON.stringify(e.delta_summary, null, 2)}
+                          </pre>
+                        </div>
+                      )}
+                      <div className="grid sm:grid-cols-2 gap-3">
+                        <div>
+                          <div className="text-[11px] uppercase text-muted-foreground mb-1">Before</div>
+                          <pre className="text-[11px] bg-background border border-border rounded p-2 overflow-x-auto">
+                            {JSON.stringify(e.baseline_snapshot || {}, null, 2)}
+                          </pre>
+                        </div>
+                        <div>
+                          <div className="text-[11px] uppercase text-muted-foreground mb-1">After</div>
+                          <pre className="text-[11px] bg-background border border-border rounded p-2 overflow-x-auto">
+                            {JSON.stringify(e.outcome_snapshot || {}, null, 2)}
+                          </pre>
+                        </div>
                       </div>
                     </div>
                   )}

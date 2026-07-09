@@ -164,10 +164,10 @@ Metrics from PresenceData OS plan Section 9. **Bold** = derived today by `benchm
 
 | Metric | Derived today? | Pass threshold (plan) | `benchmark_runs` metric_name | Notes |
 |--------|---------------|----------------------|------------------------------|-------|
-| SERP top-10 overlap | No | ≥ 80% | — | Requires SERP overlap in `provider-benchmark.ts` |
-| Position delta | No | ≤ 2 avg | — | Not implemented |
-| SERP feature match | No | ≥ 70% | — | Not implemented |
-| AI Overview detection | No | TBD | — | Not implemented |
+| SERP top-10 overlap | **Yes** (when paid Labs runs) | ≥ 80% | `serp_top10_overlap` | Requires `hasLabsApi()` side-by-side |
+| Position delta | **Yes** (when both sides have brand position) | ≤ 2 avg | `serp_position_delta` | `passed=null` below sample floor |
+| SERP feature match | Partial | ≥ 70% | — | Not fully implemented |
+| AI Overview detection | **Yes** (presence agreement) | ≥ 70% | `serp_ai_overview_match` | Presence match, not citation parity |
 | Keyword volume availability | No | ≥ 70% when Ads connected | — | Not implemented |
 | CPC availability | No | ≥ 70% | — | Not implemented |
 | CPC delta | No | median ≤ 25% | — | Not implemented |

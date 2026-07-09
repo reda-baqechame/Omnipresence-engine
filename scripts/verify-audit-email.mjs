@@ -139,11 +139,18 @@ console.log("✓ emailSent: true");
 
 try {
   const health = await probeHealth();
+  // Unauthenticated /api/health returns a shallow { ok, status } payload and
+  // intentionally omits production.checks (admin/bearer only). Treat that as
+  // expected — emailSent above is the real gate.
   const emailCheck = health?.production?.checks?.find?.((c) => c.id === "email");
   if (emailCheck?.status === "ok") {
     console.log("✓ /api/health production email check: ok");
+  } else if (health?.ok === true && !health?.production) {
+    console.log("✓ /api/health public probe ok (production.checks require HEALTH_ADMIN_SECRET)");
   } else {
-    console.warn(`⚠ /api/health email check: ${emailCheck?.status ?? "missing"} — deploy may be pending`);
+    console.warn(
+      `⚠ /api/health email check: ${emailCheck?.status ?? "missing"} — deploy may be pending or probe unauthenticated`
+    );
   }
 } catch (err) {
   console.warn(`⚠ health probe skipped: ${err instanceof Error ? err.message : err}`);
