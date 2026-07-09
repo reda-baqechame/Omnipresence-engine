@@ -9,9 +9,18 @@ import { getDocument } from "pdfjs-dist/legacy/build/pdf.mjs";
 import { fileURLToPath } from "node:url";
 import path from "node:path";
 
+// pdfjs-dist requires a trailing forward slash (not Windows `\`) on factory URLs.
 const standardFontDataUrl =
-  path.join(path.dirname(fileURLToPath(import.meta.url)), "..", "..", "node_modules", "pdfjs-dist", "standard_fonts") +
-  path.sep;
+  path
+    .join(
+      path.dirname(fileURLToPath(import.meta.url)),
+      "..",
+      "..",
+      "node_modules",
+      "pdfjs-dist",
+      "standard_fonts"
+    )
+    .replace(/\\/g, "/") + "/";
 
 /**
  * @param {Buffer | Uint8Array} pdfBytes

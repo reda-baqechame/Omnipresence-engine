@@ -61,17 +61,29 @@ export function ActionPlanPanel({ projectId, plan }: { projectId: string; plan: 
                 <p className="text-sm font-medium leading-snug">{item.title}</p>
               </div>
               {item.evidenceCitation && (
-                <div className="mt-1 flex flex-wrap items-center gap-2">
+                <div className="mt-1 space-y-1">
                   <p className="text-xs text-muted-foreground italic line-clamp-2" title={item.evidenceCitation}>
                     Evidence: {item.evidenceCitation}
                   </p>
-                  <EvidenceDrawer
-                    projectId={projectId}
-                    capability={(item.category || "action_plan").toLowerCase()}
-                    target={item.id}
-                    label="Why this recommendation"
-                    className="text-xs shrink-0"
-                  />
+                  <p className="text-[11px] text-muted-foreground">
+                    How we will verify: re-measure the same surface after the task is done; confirm in Proof Ledger
+                    before claiming impact.
+                  </p>
+                  <div className="flex flex-wrap items-center gap-2">
+                    <EvidenceDrawer
+                      projectId={projectId}
+                      capability={(item.category || "action_plan").toLowerCase()}
+                      target={item.id}
+                      label="Why this recommendation"
+                      className="text-xs shrink-0"
+                    />
+                    <Link
+                      href={`/app/projects/${projectId}/proof-ledger`}
+                      className="text-xs text-primary hover:underline"
+                    >
+                      Proof ledger →
+                    </Link>
+                  </div>
                 </div>
               )}
               {item.description && !item.evidenceCitation && (

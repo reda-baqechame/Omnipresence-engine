@@ -2,6 +2,10 @@ import { NextRequest, NextResponse } from "next/server";
 import { createServiceClient } from "@/lib/supabase/server";
 import { isPlatformAdminAuthorized } from "@/lib/security/admin-auth";
 import { apiUnauthorized } from "@/lib/security/api-response";
+import {
+  isReportQualityBlockCriticalEnabled,
+  isReportQualitySanitizeEnabled,
+} from "@/lib/engines/report-quality-flags";
 
 export const runtime = "nodejs";
 
@@ -56,5 +60,10 @@ export async function GET(request: NextRequest) {
     count: count ?? (data?.length ?? 0),
     limit,
     generatedAt: new Date().toISOString(),
+    flags: {
+      sanitizeEnabled: isReportQualitySanitizeEnabled(),
+      blockCriticalEnabled: isReportQualityBlockCriticalEnabled(),
+      note: "Both flags default OFF. Warnings never block unless critical block is enabled.",
+    },
   });
 }

@@ -38,6 +38,10 @@ const ALLOWLIST = {
     "benchmark_runs carries no tenant/organization column (service-role-only table per verify-rls-coverage.mjs); route gates itself via isPlatformAdminAuthorized (BENCHMARK_SECRET bearer or owner/admin membership), not per-project ownership",
   "api/admin/report-quality-violations/route.ts":
     "report_quality_violations is service-role observability telemetry (no tenant RLS); route gates via isPlatformAdminAuthorized (BENCHMARK_SECRET bearer or owner/admin membership)",
+  "api/admin/benchmark-readiness/route.ts":
+    "benchmark readiness is platform-admin config status (no tenant rows written); gates via isPlatformAdminAuthorized (BENCHMARK_SECRET or owner/admin)",
+  "api/admin/provider-proof/route.ts":
+    "provider proof aggregates benchmark_runs + adapter registry; gates via isPlatformAdminAuthorized (BENCHMARK_SECRET or owner/admin)",
 };
 
 function walk(dir) {
