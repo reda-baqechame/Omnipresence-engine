@@ -121,10 +121,15 @@ export function OpportunitiesPanel({
         );
         return;
       }
+      const persisted = json.persisted as { queryRows?: number; pageRows?: number } | null;
+      const persistNote =
+        persisted && (persisted.queryRows || persisted.pageRows)
+          ? ` Persisted ${persisted.queryRows ?? 0} query / ${persisted.pageRows ?? 0} page snapshot rows for SSR + auto-verify.`
+          : "";
       setGscNote(
         json.liveGsc
-          ? `Loaded ${live.length} measured GSC/SERP opportunities from Search Console.`
-          : `GSC connected; using rank-tracker striking distance (${live.length}). Sync GSC for impression/CTR mining.`
+          ? `Loaded ${live.length} measured GSC/SERP opportunities from Search Console.${persistNote}`
+          : `GSC connected; using rank-tracker striking distance (${live.length}). Sync GSC for impression/CTR mining.${persistNote}`
       );
     } catch {
       setGscNote("GSC refresh failed");
@@ -199,6 +204,18 @@ export function OpportunitiesPanel({
         >
           {gscLoading ? "Loading GSC…" : "Refresh GSC opportunities"}
         </button>
+        <a
+          href={`/api/searchops/export-opportunities?projectId=${encodeURIComponent(projectId)}&format=csv`}
+          className="text-xs border border-border rounded-lg px-2.5 py-1.5 hover:bg-muted"
+        >
+          Export CSV
+        </a>
+        <a
+          href={`/api/searchops/export-opportunities?projectId=${encodeURIComponent(projectId)}&format=json`}
+          className="text-xs border border-border rounded-lg px-2.5 py-1.5 hover:bg-muted"
+        >
+          Export JSON
+        </a>
         <span className="text-xs text-muted-foreground self-center">
           {filtered.length} / {opportunities.length}
         </span>

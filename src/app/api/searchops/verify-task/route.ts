@@ -7,6 +7,7 @@ import {
   markTaskReadyForVerification,
   verifySearchOpsTask,
 } from "@/lib/engines/searchops-task-loop";
+import { resolveAfterMetricFromSnapshots } from "@/lib/engines/searchops-after-metric";
 import type { ExecutionTask } from "@/types/database";
 
 export const runtime = "nodejs";
@@ -14,7 +15,7 @@ export const runtime = "nodejs";
 const BodySchema = z.object({
   projectId: z.string().uuid(),
   taskId: z.string().uuid(),
-  action: z.enum(["ready_for_verification", "verify"]),
+  action: z.enum(["ready_for_verification", "verify", "auto_verify"]),
   afterMetric: z.record(z.string(), z.unknown()).nullable().optional(),
   unavailableReason: z.string().trim().max(2000).nullable().optional(),
 });
@@ -23,6 +24,7 @@ const BodySchema = z.object({
  * SearchOps verification loop on existing execution_tasks + results_ledger.
  * - ready_for_verification → status done (awaiting measured after)
  * - verify → verified only with measured before/after; else verification_unavailable
+ * - auto_verify → resolve after metric from stored snapshots (no live paid calls)
  */
 export async function POST(request: NextRequest) {
   const supabase = await createClient();
@@ -62,9 +64,43 @@ export async function POST(request: NextRequest) {
     return apiError("Task is not linked to a SearchOps opportunity", 400);
   }
 
+  let resolvedAfter = afterMetric ?? null;
+  let autoReason: string | null = null;
+
+  if (action === "auto_verify") {
+    const { data: project } = await supabase
+      .from("projects")
+      .select("name, competitors")
+      .eq("id", projectId)
+      .single();
+    const resolved = await resolveAfterMetricFromSnapshots(supabase, {
+      task: et,
+      brandName: project?.name ?? null,
+      competitors: (project?.competitors as string[] | null) ?? [],
+    });
+    if (!resolved.ok) {
+      const outcome = await verifySearchOpsTask(supabase, {
+        task: et,
+        afterMetric: null,
+        unavailableReason: resolved.reason,
+      });
+      if (!outcome.ok) return apiError(outcome.error, 500);
+      return NextResponse.json({
+        ok: true,
+        status: outcome.status,
+        task: outcome.task,
+        ledgerId: null,
+        reason: outcome.status === "verification_unavailable" ? outcome.reason : resolved.reason,
+        autoResolved: false,
+      });
+    }
+    resolvedAfter = resolved.afterMetric;
+    autoReason = "Resolved from stored snapshots (no live provider call).";
+  }
+
   const outcome = await verifySearchOpsTask(supabase, {
     task: et,
-    afterMetric: afterMetric ?? null,
+    afterMetric: resolvedAfter,
     unavailableReason: unavailableReason ?? null,
   });
 
@@ -75,6 +111,7 @@ export async function POST(request: NextRequest) {
     status: outcome.status,
     task: outcome.task,
     ledgerId: outcome.status === "verified" ? outcome.ledgerId : null,
-    reason: outcome.status === "verification_unavailable" ? outcome.reason : null,
+    reason: outcome.status === "verification_unavailable" ? outcome.reason : autoReason,
+    autoResolved: action === "auto_verify" && outcome.status === "verified",
   });
 }

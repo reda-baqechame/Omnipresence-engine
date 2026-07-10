@@ -31,14 +31,28 @@ const REQUIRED_MIGRATIONS = [
   "0082_keyword_cpc_cache",
   "0083_benchmark_runs",
   "0084_report_quality_violations",
+  "0085_gsc_query_snapshots",
 ];
 
 function checkMigrations() {
   if (!existsSync(combinedPath)) {
-    return { ok: false, missing: ["keyword_cpc_cache", "benchmark_runs", "report_quality_violations"] };
+    return {
+      ok: false,
+      missing: [
+        "keyword_cpc_cache",
+        "benchmark_runs",
+        "report_quality_violations",
+        "gsc_query_snapshots",
+      ],
+    };
   }
   const sql = readFileSync(combinedPath, "utf8");
-  const tables = ["keyword_cpc_cache", "benchmark_runs", "report_quality_violations"];
+  const tables = [
+    "keyword_cpc_cache",
+    "benchmark_runs",
+    "report_quality_violations",
+    "gsc_query_snapshots",
+  ];
   const missing = tables.filter((t) => !sql.includes(t));
   return { ok: missing.length === 0, missing };
 }
@@ -71,10 +85,27 @@ function main() {
   console.log("\nMigration tables (combined.sql):");
   const mig = checkMigrations();
   if (mig.ok) {
-    console.log("  [ok] keyword_cpc_cache, benchmark_runs, report_quality_violations present");
+    console.log(
+      "  [ok] keyword_cpc_cache, benchmark_runs, report_quality_violations, gsc_query_snapshots present"
+    );
   } else {
     console.log(`  [missing] ${mig.missing.join(", ")}`);
     errors++;
+  }
+
+  console.log("\nReport-quality flags (must stay off in production until staging is clean):");
+  const sanitize = process.env.REPORT_QUALITY_SANITIZE === "1";
+  const block = process.env.REPORT_QUALITY_BLOCK_CRITICAL === "1";
+  console.log(`  [${sanitize ? "on" : "off"}] REPORT_QUALITY_SANITIZE`);
+  console.log(`  [${block ? "on" : "off"}] REPORT_QUALITY_BLOCK_CRITICAL`);
+  if (block && !sanitize) {
+    console.log("  [error] BLOCK enabled without SANITIZE — refuse this config (see report-quality-flag-rollout.md)");
+    errors++;
+  } else if (sanitize || block) {
+    console.log("  [warn] Flags enabled in this env — confirm this is staging, not production.");
+    warnings++;
+  } else {
+    console.log("  [ok] Defaults off (no customer-facing gate change). Enable on staging first.");
   }
 
   console.log("\nLive benchmark check:");

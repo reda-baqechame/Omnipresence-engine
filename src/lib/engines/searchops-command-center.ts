@@ -283,6 +283,7 @@ export async function loadSearchOpsCommandCenter(
     { data: backlinkGraphSnaps },
     { data: backlinkSnap },
     { data: gscSnap },
+    { data: gscQueryRows },
     { data: cwvHistory },
     { data: internalLinkRows },
     { data: crawlPages },
@@ -328,6 +329,15 @@ export async function loadSearchOpsCommandCenter(
       .order("captured_on", { ascending: false })
       .limit(1)
       .maybeSingle(),
+    // Latest day's query rows only (SSR-safe; populated by explicit GSC refresh).
+    supabase
+      .from("gsc_query_snapshots")
+      .select("dimension, key, clicks, impressions, ctr, position, captured_on, data_source")
+      .eq("project_id", id)
+      .eq("dimension", "query")
+      .order("captured_on", { ascending: false })
+      .order("impressions", { ascending: false })
+      .limit(80),
     supabase
       .from("cwv_history")
       .select("collected_on, lcp_ms, inp_ms, cls, data_source")
@@ -678,16 +688,36 @@ export async function loadSearchOpsCommandCenter(
   };
 
   const gscConnected = dataSources.find((d) => d.id === "gsc")?.status === "connected";
-  // Rank-tracker striking distance only on SSR. Live GSC query mining belongs
-  // on an explicit sync/API path — never block page render on Google APIs.
+  // Rank-tracker + persisted gsc_query_snapshots on SSR. Live Google calls only
+  // on explicit refresh — never block page render on GSC APIs.
   const rankRows = rankKeywords || [];
   const minedRanks = mineGscOpportunitiesFromRanks(rankRows);
-  const strikeQueries = minedRanks
+  const latestQueryDay = gscQueryRows?.[0]?.captured_on ?? null;
+  const sameDayQueries = (gscQueryRows || []).filter(
+    (r) => r.captured_on === latestQueryDay && r.data_source === "measured"
+  );
+  const fromSnapshots = mineGscOpportunitiesFromQueryRows(
+    sameDayQueries.map((r) => ({
+      query: r.key,
+      impressions: r.impressions,
+      clicks: r.clicks,
+      ctr: r.ctr != null ? Number(r.ctr) : null,
+      position: r.position != null ? Number(r.position) : null,
+    }))
+  );
+  const strikeBase = fromSnapshots.length
+    ? (() => {
+        const gscKeys = new Set(fromSnapshots.map((o) => o.queryOrUrl.toLowerCase()));
+        const rankOnly = minedRanks.filter((o) => !gscKeys.has(o.queryOrUrl.toLowerCase()));
+        return [...fromSnapshots, ...rankOnly].slice(0, 25);
+      })()
+    : minedRanks;
+  const strikeQueries = strikeBase
     .filter((o) => o.kind === "striking_distance")
     .map((o) => o.queryOrUrl);
   const pageClusters = clusterStrikingDistanceByTargetUrl(rankRows, strikeQueries);
   const gscOpportunities: GscOpp[] = enrichStrikingDistanceWithClusters(
-    minedRanks,
+    strikeBase,
     pageClusters,
     rankRows
   );

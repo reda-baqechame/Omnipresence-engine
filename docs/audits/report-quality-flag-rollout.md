@@ -26,3 +26,16 @@ REPORT_QUALITY_BLOCK_CRITICAL=1
 ```
 
 Documented in `.env.example`. Code: `src/lib/engines/report-quality-flags.ts`.
+
+## Staging enablement (Proof & Verification sprint)
+
+Do **not** invent production readiness by flipping prod flags. Sequence:
+
+1. Apply migrations through `0085_gsc_query_snapshots` on the staging Supabase project.
+2. Run `node scripts/check-staging-proof-readiness.mjs` (warnings for missing secrets are expected).
+3. On **staging only**, set `REPORT_QUALITY_SANITIZE=1`. Leave block off.
+4. Generate reports; inspect `report_quality_violations` / admin route.
+5. When false positives are acceptable, set `REPORT_QUALITY_BLOCK_CRITICAL=1` on staging.
+6. Promote to production only after staging evidence — never enable block without sanitize.
+
+`check-staging-proof-readiness.mjs` fails if block is on without sanitize.

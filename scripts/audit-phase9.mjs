@@ -40,8 +40,14 @@ for (const file of REQUIRED_FILES) {
 }
 
 console.log("\n2. Blog pipeline (14 steps)");
+// Steps live in blog-pipeline-steps.ts (pure helpers); blog-pipeline.ts re-exports.
+const pipelineStepsSrc = readFileSync(join(root, "src/lib/engines/blog-pipeline-steps.ts"), "utf8");
 const pipelineSrc = readFileSync(join(root, "src/lib/engines/blog-pipeline.ts"), "utf8");
-if (pipelineSrc.includes("performance_check") && (pipelineSrc.match(/key:/g) || []).length >= 14) {
+const stepsOk =
+  pipelineStepsSrc.includes("performance_check") &&
+  (pipelineStepsSrc.match(/key:/g) || []).length >= 14 &&
+  pipelineSrc.includes("BLOG_PIPELINE_STEPS");
+if (stepsOk) {
   console.log("  ✓ 14 pipeline steps defined");
 } else {
   console.log("  ✗ pipeline steps incomplete");
