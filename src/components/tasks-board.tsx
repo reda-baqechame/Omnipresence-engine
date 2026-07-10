@@ -86,7 +86,7 @@ export function TasksBoard({ projectId }: { projectId: string }) {
 
   async function searchOpsAction(
     taskId: string,
-    action: "ready_for_verification" | "verify",
+    action: "ready_for_verification" | "verify" | "auto_verify",
     afterMetric?: Record<string, unknown> | null
   ) {
     setBusy(true);
@@ -114,7 +114,11 @@ export function TasksBoard({ projectId }: { projectId: string }) {
       if (json.status === "verification_unavailable") {
         setVerifyNote(json.reason || "Verification unavailable — not recorded as success.");
       } else if (json.status === "verified") {
-        setVerifyNote("Verified with before/after metrics and proof ledger entry.");
+        setVerifyNote(
+          json.autoResolved
+            ? "Auto-verified from stored snapshots with proof ledger entry."
+            : "Verified with before/after metrics and proof ledger entry."
+        );
       } else if (json.status === "ready_for_verification") {
         setVerifyNote("Marked ready for verification (status: done). Add measured after metrics to verify.");
       }
@@ -302,6 +306,14 @@ export function TasksBoard({ projectId }: { projectId: string }) {
                             )}
                             {searchOps && t.status === "done" && (
                               <>
+                                <button
+                                  type="button"
+                                  disabled={busy}
+                                  onClick={() => void searchOpsAction(t.id, "auto_verify")}
+                                  className="text-[11px] text-primary hover:underline disabled:opacity-50"
+                                >
+                                  Auto-verify from snapshots
+                                </button>
                                 <button
                                   type="button"
                                   disabled={busy}

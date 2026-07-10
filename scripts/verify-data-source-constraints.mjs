@@ -31,6 +31,7 @@ const TABLES_FIVE_VALUE = [
   "ai_probe_traces",
   "rank_keywords",
   "gsc_snapshots",
+  "gsc_query_snapshots",
   "gbp_snapshots",
   "ai_visibility_snapshots",
   "data_quality_scores",

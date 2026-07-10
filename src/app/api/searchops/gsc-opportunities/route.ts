@@ -14,6 +14,7 @@ import {
   mineCannibalizationOpportunities,
 } from "@/lib/engines/searchops-gsc-miner";
 import { buildSearchOpsOpportunities } from "@/lib/engines/searchops-opportunity-engine";
+import { persistGscInsightsSnapshots } from "@/lib/engines/gsc-query-snapshots";
 
 export const runtime = "nodejs";
 
@@ -80,8 +81,16 @@ export async function GET(request: NextRequest) {
   }
 
   gscConnected = true;
+  let persisted: { queryRows: number; pageRows: number } | null = null;
   try {
     const insights = await buildGscInsights(token, project.domain);
+    try {
+      const written = await persistGscInsightsSnapshots(supabase, projectId, insights);
+      persisted = { queryRows: written.queryRows, pageRows: written.pageRows };
+    } catch {
+      // Persistence failure must not hide live opportunities; SSR mining waits for next success.
+      persisted = null;
+    }
     const fromGsc = mineGscOpportunitiesFromInsights(insights);
     if (fromGsc.length) {
       liveGsc = true;
@@ -105,6 +114,7 @@ export async function GET(request: NextRequest) {
   return NextResponse.json({
     available: true,
     liveGsc,
+    persisted,
     count: opportunities.length,
     opportunities,
   });
