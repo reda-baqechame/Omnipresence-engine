@@ -524,6 +524,7 @@ export type ExecutionTaskSource =
   | "merchant"
   | "source_opportunity"
   | "fastest_path"
+  | "searchops_opportunity"
   | "manual";
 
 export type ExecutionTaskStatus =

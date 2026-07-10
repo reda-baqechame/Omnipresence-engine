@@ -22,6 +22,8 @@ import {
   mineInternalLinkOpportunities,
   mineSchemaGapOpportunities,
 } from "@/lib/engines/searchops-technical-miner";
+import { mineAiVisibilityOpportunities } from "@/lib/engines/searchops-ai-visibility-miner";
+import { mineAuthorityOpportunities } from "@/lib/engines/searchops-authority-miner";
 import {
   isReportQualityBlockCriticalEnabled,
   isReportQualitySanitizeEnabled,
@@ -278,12 +280,13 @@ export async function loadSearchOpsCommandCenter(
     { data: oauthRows },
     { data: rqRows },
     { data: rankKeywords },
-    { data: backlinkGraphSnap },
+    { data: backlinkGraphSnaps },
     { data: backlinkSnap },
     { data: gscSnap },
     { data: cwvHistory },
     { data: internalLinkRows },
     { data: crawlPages },
+    { data: sourceOpportunities },
   ] = await Promise.all([
     supabase.from("scores").select("*").eq("project_id", id).order("created_at", { ascending: true }),
     supabase.from("technical_findings").select("*").eq("project_id", id).order("severity"),
@@ -305,11 +308,12 @@ export async function loadSearchOpsCommandCenter(
       .limit(80),
     supabase
       .from("backlink_graph_snapshots")
-      .select("referring_domains, total_links, data_source, created_at")
+      .select(
+        "referring_domains, total_links, new_count, lost_count, data_source, created_at, intersection"
+      )
       .eq("project_id", id)
       .order("created_at", { ascending: false })
-      .limit(1)
-      .maybeSingle(),
+      .limit(2),
     supabase
       .from("backlink_snapshots")
       .select("total_count, created_at")
@@ -341,7 +345,16 @@ export async function loadSearchOpsCommandCenter(
       .select("url, canonical")
       .eq("project_id", id)
       .limit(200),
+    supabase
+      .from("source_opportunities")
+      .select(
+        "id, source_domain, opportunity_type, competitor_citations, influence_score, recommended_action, tactic, evidence, status, brand_present"
+      )
+      .eq("project_id", id)
+      .order("influence_score", { ascending: false })
+      .limit(40),
   ]);
+  const backlinkGraphSnap = backlinkGraphSnaps?.[0] ?? null;
 
   const latestScore = scores?.[scores.length - 1] ?? null;
   const measuredDims = latestScore
@@ -490,11 +503,16 @@ export async function loadSearchOpsCommandCenter(
     Number(backlinkGraphSnap.referring_domains) >= 0
   ) {
     authDomains = Number(backlinkGraphSnap.referring_domains);
-    authDq = "measured";
+    const ds = String(backlinkGraphSnap.data_source || "measured").toLowerCase();
+    authDq =
+      ds === "estimated" || ds === "model_knowledge" || ds === "simulated"
+        ? (ds as DataQuality)
+        : "measured";
     authFreshness = backlinkGraphSnap.created_at ?? null;
   } else if (backlinkSnap && backlinkSnap.total_count != null && Number(backlinkSnap.total_count) >= 0) {
+    // Legacy count is a proxy — do not label as measured referring domains.
     authDomains = Number(backlinkSnap.total_count);
-    authDq = "measured";
+    authDq = "estimated";
     authSource = "backlink_snapshots";
     authFreshness = backlinkSnap.created_at ?? null;
   } else if (latestScore && isSubScoreAvailable(latestScore, "authority_mentions")) {
@@ -520,13 +538,16 @@ export async function loadSearchOpsCommandCenter(
         `${base}/backlinks`
       )
     );
-  } else if (authDq === "measured" && authDomains != null) {
+  } else if (authDq !== "unavailable" && authDomains != null) {
     metrics.push({
       id: "authority",
-      label: "Referring domains (snapshot)",
+      label:
+        authSource === "backlink_snapshots"
+          ? "Backlink count (legacy snapshot)"
+          : "Referring domains (snapshot)",
       value: authDomains,
       display: String(authDomains),
-      status: "measured",
+      status: authDq === "estimated" ? "estimated" : "measured",
       source: authSource,
       freshness: authFreshness,
       confidence: 0.8,
@@ -672,12 +693,27 @@ export async function loadSearchOpsCommandCenter(
   );
 
   const hasCrawlData = (crawlPages || []).length > 0 || (internalLinkRows || []).length > 0;
+  const aiDeep = mineAiVisibilityOpportunities(
+    id,
+    visibilitySnapshot.scopedResults || visibilitySnapshot.groundedResults || [],
+    project.domain || "",
+    { ratesReliable: visibilitySnapshot.ratesReliable }
+  );
+  const authorityDeep = mineAuthorityOpportunities(id, {
+    graphSnaps: backlinkGraphSnaps || [],
+    legacyTotalCount: backlinkSnap?.total_count ?? null,
+    sourceOpportunities: sourceOpportunities || [],
+    // Engine still emits unavailable when no RD; miner adds stale/velocity/gaps.
+    emitUnavailableCard: false,
+  });
   const extraOpportunities: SearchOpsOpportunity[] = [
     ...mineCannibalizationOpportunities(id, rankRows),
     ...mineCwvOpportunities(id, cwvHistory || []),
     ...mineSchemaGapOpportunities(id, findings || []),
     ...mineInternalLinkOpportunities(id, internalLinkRows || [], hasCrawlData),
     ...mineCanonicalMismatchOpportunities(id, crawlPages || []),
+    ...aiDeep,
+    ...authorityDeep,
   ];
 
   if (gscSnap && gscSnap.impressions != null && Number(gscSnap.impressions) >= 0) {

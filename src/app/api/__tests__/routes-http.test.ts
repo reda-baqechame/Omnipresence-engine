@@ -17,6 +17,8 @@ const ROUTE_SMOKE: Array<{
   { path: "app/api/admin/benchmark-readiness/route.ts", handler: "GET", mustInclude: ["export async function GET", "isPlatformAdminAuthorized", "apiUnauthorized", "buildBenchmarkReadinessReport"] },
   { path: "app/api/admin/provider-proof/route.ts", handler: "GET", mustInclude: ["export async function GET", "isPlatformAdminAuthorized", "apiUnauthorized", "loadProviderProofCockpit"] },
   { path: "app/api/searchops/gsc-opportunities/route.ts", handler: "GET", mustInclude: ["export async function GET", "verifyProjectAccess", "apiUnauthorized", "buildGscInsights"] },
+  { path: "app/api/searchops/tasks-from-opportunity/route.ts", handler: "POST", mustInclude: ["export async function POST", "verifyProjectAccess", "apiUnauthorized", "createTaskFromOpportunity"] },
+  { path: "app/api/searchops/verify-task/route.ts", handler: "POST", mustInclude: ["export async function POST", "verifyProjectAccess", "apiUnauthorized", "verifySearchOpsTask"] },
   { path: "app/api/capabilities/route.ts", handler: "GET", mustInclude: ["export async function GET", "getUser()", "Unauthorized"] },
   { path: "app/api/coverage/route.ts", handler: "GET", mustInclude: ["export async function GET", "verifyProjectAccess", "apiUnauthorized"] },
   { path: "app/api/cwv/route.ts", handler: "GET", mustInclude: ["export async function GET", "verifyProjectAccess", "apiUnauthorized"] },

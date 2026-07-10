@@ -53,6 +53,35 @@ export function OpportunitiesPanel({
   const [statuses, setStatuses] = useState<Record<string, LocalStatus>>(() => loadStatuses(projectId));
   const [gscLoading, setGscLoading] = useState(false);
   const [gscNote, setGscNote] = useState<string | null>(null);
+  const [taskNote, setTaskNote] = useState<string | null>(null);
+  const [creatingId, setCreatingId] = useState<string | null>(null);
+
+  async function createTaskFromOpportunity(op: SearchOpsOpportunity) {
+    setCreatingId(op.id);
+    setTaskNote(null);
+    try {
+      const res = await fetch("/api/searchops/tasks-from-opportunity", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ projectId, opportunity: op }),
+      });
+      const json = await res.json();
+      if (!res.ok) {
+        setTaskNote(json.error || "Failed to create task");
+        return;
+      }
+      setStatus(op.id, "planned");
+      setTaskNote(
+        json.created
+          ? `Task created with evidence snapshot. Open Tasks to work it, then mark ready for verification.`
+          : `Task already exists for this opportunity. Open Tasks to continue.`
+      );
+    } catch {
+      setTaskNote("Failed to create task");
+    } finally {
+      setCreatingId(null);
+    }
+  }
 
   const opportunities = useMemo(() => {
     if (!gscOverlay) return initial;
@@ -175,6 +204,7 @@ export function OpportunitiesPanel({
         </span>
       </div>
       {gscNote && <p className="text-xs text-muted-foreground">{gscNote}</p>}
+      {taskNote && <p className="text-xs text-muted-foreground">{taskNote}</p>}
 
       {filtered.length === 0 ? (
         <div className="text-sm text-muted-foreground border border-border rounded-lg p-6 space-y-2">
@@ -269,17 +299,25 @@ export function OpportunitiesPanel({
                     label="Why this recommendation"
                     className="text-xs"
                   />
+                  <button
+                    type="button"
+                    disabled={creatingId === op.id}
+                    onClick={() => void createTaskFromOpportunity(op)}
+                    className="text-xs text-primary hover:underline disabled:opacity-50"
+                  >
+                    {creatingId === op.id ? "Creating…" : "Create task"}
+                  </button>
                   <Link
                     href={`/app/projects/${projectId}/tasks`}
                     className="text-xs text-primary hover:underline"
                   >
-                    Create task
+                    Open tasks
                   </Link>
                   <Link
                     href={`/app/projects/${projectId}/proof-ledger`}
                     className="text-xs text-primary hover:underline"
                   >
-                    Verify later
+                    Proof ledger
                   </Link>
                   <button
                     type="button"
