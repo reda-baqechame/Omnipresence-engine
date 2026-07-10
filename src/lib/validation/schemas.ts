@@ -229,7 +229,24 @@ export const TasksCreateSchema = z.object({
   projectId: uuid,
   title: nonEmpty.max(300),
   description: z.string().trim().max(5000).optional(),
-  priority: z.enum(["low", "medium", "high"]).optional(),
+  priority: z.enum(["low", "medium", "high", "critical"]).optional(),
+  /** Optional SearchOps / structured task fields (backward compatible). */
+  source_module: z
+    .enum([
+      "manual",
+      "searchops_opportunity",
+      "technical_finding",
+      "keyword_opportunity",
+      "authority",
+      "source_opportunity",
+    ])
+    .optional(),
+  source_id: z.string().trim().max(500).optional(),
+  category: z.string().trim().max(64).optional(),
+  impact: z.number().int().min(0).max(100).optional(),
+  effort: z.number().int().min(0).max(20).optional(),
+  evidence: z.record(z.string(), z.unknown()).optional(),
+  before_metric: z.record(z.string(), z.unknown()).optional(),
 });
 
 export const TasksPatchSchema = z
@@ -473,6 +490,9 @@ export const ExecutionTaskPatchSchema = z
     owner: z.string().uuid().nullable().optional(),
     due_date: z.string().trim().max(64).nullable().optional(),
     description: z.string().trim().max(5000).optional(),
+    after_metric: z.record(z.string(), z.unknown()).nullable().optional(),
+    before_metric: z.record(z.string(), z.unknown()).nullable().optional(),
+    result_metric: z.record(z.string(), z.unknown()).nullable().optional(),
   })
   .refine((b) => Object.values(b).some((v) => v !== undefined), {
     message: "no mutation supplied",

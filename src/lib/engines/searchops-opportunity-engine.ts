@@ -549,20 +549,24 @@ export function buildSearchOpsOpportunities(input: SearchOpsEngineInput): Search
 export function opportunityToTaskDraft(op: SearchOpsOpportunity): {
   title: string;
   description: string;
-  source_module: "manual";
+  source_module: "searchops_opportunity";
+  source_id: string;
   category: string;
   priority: TaskPriority;
   impact: number;
   effort: number;
   evidence: Record<string, unknown>;
+  before_metric: Record<string, unknown>;
 } {
   const impact =
     op.priority === "critical" ? 90 : op.priority === "high" ? 70 : op.priority === "medium" ? 50 : 30;
   const effort = op.effort === "high" ? 8 : op.effort === "medium" ? 3 : 1;
+  const primaryEvidence = op.evidence[0]?.value;
   return {
     title: op.title,
     description: `${op.diagnosis}\n\nAction: ${op.recommendedAction}\n\nVerify: ${op.verificationPlan}`,
-    source_module: "manual",
+    source_module: "searchops_opportunity",
+    source_id: op.id,
     category: op.category,
     priority: op.priority,
     impact,
@@ -573,6 +577,13 @@ export function opportunityToTaskDraft(op: SearchOpsOpportunity): {
       evidence: op.evidence,
       limitations: op.limitations,
       verification_plan: op.verificationPlan,
+      recommended_action: op.recommendedAction,
+    },
+    before_metric: {
+      captured_at: new Date().toISOString(),
+      impact_type: op.impactType,
+      primary_evidence: primaryEvidence ?? null,
+      evidence_statuses: op.evidence.map((e) => e.status),
     },
   };
 }

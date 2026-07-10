@@ -158,6 +158,20 @@ export function ProofLedgerPanel({ projectId }: { projectId: string }) {
                     </div>
                   </div>
                   <p className="text-sm text-muted-foreground mt-1">{e.description}</p>
+                  {typeof e.delta_summary?.searchops_opportunity_id === "string" &&
+                    e.delta_summary.searchops_opportunity_id && (
+                      <p className="text-[11px] text-muted-foreground mt-1">
+                        Opportunity origin:{" "}
+                        <span className="font-mono">{e.delta_summary.searchops_opportunity_id}</span>
+                        {" · "}
+                        <a
+                          href={`/app/projects/${projectId}/opportunities`}
+                          className="text-primary hover:underline"
+                        >
+                          Open opportunities
+                        </a>
+                      </p>
+                    )}
                   {verified && e.verified_at && (
                     <p className="text-[11px] text-green-400 mt-1">
                       Verified {new Date(e.verified_at).toLocaleString()}
