@@ -5,6 +5,12 @@ import {
   mineGscOpportunitiesFromQueryRows,
   mineGscOpportunitiesFromRanks,
 } from "../searchops-command-center.ts";
+import {
+  clusterStrikingDistanceByTargetUrl,
+  enrichStrikingDistanceWithClusters,
+  mineCannibalizationOpportunities,
+} from "../searchops-gsc-miner.ts";
+import { buildSearchOpsOpportunities } from "../searchops-opportunity-engine.ts";
 
 test("mineGscOpportunitiesFromRanks uses position only — never invents impressions", () => {
   const ops = mineGscOpportunitiesFromRanks([
@@ -45,4 +51,49 @@ test("mineGscOpportunitiesFromInsights merges strike/low-ctr/decay without inven
   assert.ok(ops.some((o) => o.kind === "low_ctr"));
   assert.ok(ops.some((o) => o.kind === "decay"));
   assert.ok(ops.every((o) => o.impressions > 0));
+});
+
+test("rank_keywords cannibalization + page clusters flow into SearchOps opportunities", () => {
+  const rankRows = [
+    {
+      keyword: "roof repair",
+      last_position: 8,
+      is_striking_distance: true,
+      target_url: "https://ex.com/roof",
+      cannibalization_urls: [
+        { url: "https://ex.com/roof", position: 8 },
+        { url: "https://ex.com/roof-alt", position: 14 },
+      ],
+    },
+    {
+      keyword: "roofing near me",
+      last_position: 11,
+      is_striking_distance: true,
+      target_url: "https://ex.com/roof",
+      cannibalization_urls: [],
+    },
+  ];
+  const mined = mineGscOpportunitiesFromRanks(rankRows);
+  const clusters = clusterStrikingDistanceByTargetUrl(
+    rankRows,
+    mined.map((o) => o.queryOrUrl)
+  );
+  const gscOpportunities = enrichStrikingDistanceWithClusters(mined, clusters, rankRows);
+  const cannibal = mineCannibalizationOpportunities("p1", rankRows);
+  const ops = buildSearchOpsOpportunities({
+    projectId: "p1",
+    gscConnected: true,
+    gscOpportunities,
+    extraOpportunities: cannibal,
+    aiMentionRate: 0.5,
+    aiSampleSize: 20,
+    aiDataQuality: "measured",
+  });
+
+  assert.ok(ops.some((o) => o.id.includes("cannibalization:roof repair")));
+  const strike = ops.find((o) => o.id.includes("gsc:strike:roof repair"));
+  assert.ok(strike);
+  const related = (strike!.evidence[0]?.value as { relatedQueries?: string[] } | undefined)
+    ?.relatedQueries;
+  assert.ok(related && related.length >= 2);
 });

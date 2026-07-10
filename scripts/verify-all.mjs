@@ -118,6 +118,8 @@ const steps = [
         "src/lib/engines/__tests__/benchmark-readiness.test.ts",
         "src/lib/engines/__tests__/searchops-opportunity-engine.test.ts",
         "src/lib/engines/__tests__/searchops-command-center.test.ts",
+        "src/lib/engines/__tests__/searchops-gsc-miner.test.ts",
+        "src/lib/engines/__tests__/searchops-technical-miner.test.ts",
         "src/lib/engines/__tests__/provider-proof.test.ts",
         "src/lib/engines/__tests__/dataforseo-demotion-gate.test.ts",
         "src/app/api/__tests__/benchmark-readiness-route.test.ts",

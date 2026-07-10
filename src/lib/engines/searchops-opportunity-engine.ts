@@ -64,6 +64,8 @@ export interface SearchOpsEngineInput {
     title: string;
     category?: string | null;
     data_quality?: DataQuality | null;
+    affected_url?: string | null;
+    fix_recommendation?: string | null;
   }>;
   coverageGaps?: Array<{
     id?: string;
@@ -80,12 +82,19 @@ export interface SearchOpsEngineInput {
     clicks?: number;
     ctr?: number;
     position?: number;
+    /** Related striking-distance queries sharing the same target URL (page cluster). */
+    relatedQueries?: string[];
   }>;
   gscConnected?: boolean;
   authorityReferringDomains?: number | null;
   authorityDataQuality?: DataQuality | null;
   reportQualityErrorCount?: number;
   existingTasks?: Pick<ExecutionTask, "title" | "status">[];
+  /**
+   * Pre-built opportunities from deep miners (GSC v2, technical, etc.).
+   * Merged before quality filter / sort / id-dedupe — same pipeline as built-ins.
+   */
+  extraOpportunities?: SearchOpsOpportunity[];
 }
 
 const GENERIC_TITLE =
@@ -249,32 +258,39 @@ export function buildSearchOpsOpportunities(input: SearchOpsEngineInput): Search
   }
 
   // --- Technical ---
+  // Schema findings are owned by searchops-technical-miner (all severities) via
+  // extraOpportunities — skip here to avoid duplicate cards.
   for (const f of input.technicalFindings || []) {
     if (f.severity !== "critical" && f.severity !== "high") continue;
+    if ((f.category || "").toLowerCase() === "schema") continue;
     const status = dqToStatus(f.data_quality ?? "measured");
     if (status === "unavailable" || status === "simulated") continue;
     const title = f.title?.trim() || "Technical finding";
     if (isGenericSeoCopy(title)) continue;
+    const affected = f.affected_url?.trim() || null;
+    const fix = f.fix_recommendation?.trim() || null;
     out.push({
       id: `${pid}:technical:${f.id || title.slice(0, 40)}`,
       projectId: pid,
       category: "technical",
       title: `${f.severity === "critical" ? "Critical" : "High"} technical issue: ${title}`,
-      diagnosis: `Measured technical audit flagged this as ${f.severity}${f.category ? ` (${f.category})` : ""}.`,
+      diagnosis: `Measured technical audit flagged this as ${f.severity}${f.category ? ` (${f.category})` : ""}${affected ? ` on ${affected}` : ""}.`,
       evidence: [
         {
           label: "Technical finding",
           source: "technical_findings",
           status: status === "estimated" ? "estimated" : "measured",
           confidence: status === "measured" ? 0.9 : 0.6,
-          value: { severity: f.severity, category: f.category },
+          value: { severity: f.severity, category: f.category, affected_url: affected },
           evidenceId: f.id ?? null,
         },
       ],
       priority: priorityFromSeverity(f.severity),
       impactType: status === "estimated" ? "estimated" : "measured",
       effort: effortFromSeverity(f.severity),
-      recommendedAction: `Fix “${title}” on the affected URLs, then re-run technical audit.`,
+      recommendedAction: fix
+        ? `${fix}${affected ? ` Affected URL: ${affected}.` : ""} Then re-run technical audit.`
+        : `Fix “${title}”${affected ? ` on ${affected}` : " on the affected URLs"}, then re-run technical audit.`,
       verificationPlan: "Re-scan technical audit; confirm finding severity drops or finding is resolved.",
       limitations: ["Fixing a finding does not guarantee ranking change."],
     });
@@ -312,14 +328,18 @@ export function buildSearchOpsOpportunities(input: SearchOpsEngineInput): Search
     });
   }
 
-  // --- GSC (optional data improvement A) ---
+  // --- GSC / SERP ---
+  // First-party GSC impressions/CTR require OAuth. Rank-tracker striking distance and
+  // cannibalization (extraOpportunities) are measured SERP signals and must still surface
+  // when GSC is disconnected — otherwise professionals only see a partial story.
   if (input.gscConnected === false) {
     out.push({
       id: `${pid}:gsc:disconnected`,
       projectId: pid,
       category: "gsc",
       title: "Google Search Console not connected",
-      diagnosis: "First-party query/page opportunities are unavailable until GSC OAuth is connected.",
+      diagnosis:
+        "First-party query/page impressions, CTR, and decay opportunities are unavailable until GSC OAuth is connected. Rank-tracker SERP opportunities (striking distance, cannibalization) still appear when measured.",
       evidence: [
         {
           label: "GSC connection",
@@ -333,95 +353,116 @@ export function buildSearchOpsOpportunities(input: SearchOpsEngineInput): Search
       impactType: "unavailable",
       effort: "low",
       recommendedAction: "Connect Google Search Console for this project under Search Console settings.",
-      verificationPlan: "After connect + sync, GSC totals and striking-distance lists must show measured rows.",
-      limitations: ["No impressions/CTR opportunities can be invented while disconnected."],
+      verificationPlan:
+        "After connect + sync, GSC totals, low-CTR, and decay lists must show measured rows; rank SERP opportunities remain available either way.",
+      limitations: [
+        "No impressions/CTR/decay opportunities can be invented while disconnected.",
+        "Rank-tracker positions are measured SERP snapshots, not GSC impressions.",
+      ],
     });
-  } else {
-    for (const g of (input.gscOpportunities || []).slice(0, 15)) {
-      if (g.kind === "striking_distance") {
-        const hasImpr = (g.impressions ?? 0) > 0;
-        out.push({
-          id: `${pid}:gsc:strike:${g.queryOrUrl}`,
-          projectId: pid,
-          category: hasImpr ? "gsc" : "serp",
-          title: `Striking distance: “${g.queryOrUrl}” at position ${g.position?.toFixed?.(1) ?? g.position}`,
-          diagnosis: hasImpr
-            ? `Query has ${g.impressions} impressions with position ${g.position} (measured first-party/GSC).`
-            : `Keyword is measured at position ${g.position} (rank tracker) — striking distance 4–20. Impression volume unavailable without GSC sync.`,
-          evidence: [
-            {
-              label: hasImpr ? "GSC / first-party query performance" : "Rank tracker position",
-              source: hasImpr ? "Google Search Console" : "rank_keywords",
-              status: "measured",
-              confidence: hasImpr ? 0.95 : 0.8,
-              value: {
-                impressions: g.impressions || null,
-                clicks: g.clicks ?? null,
-                position: g.position,
-                ctr: g.ctr ?? null,
-              },
+  }
+
+  for (const g of (input.gscOpportunities || []).slice(0, 15)) {
+    if (g.kind === "striking_distance") {
+      const hasImpr = (g.impressions ?? 0) > 0;
+      // Impression volume requires GSC; rank-only strike still surfaces as SERP.
+      if (hasImpr && input.gscConnected === false) continue;
+      out.push({
+        id: `${pid}:gsc:strike:${g.queryOrUrl}`,
+        projectId: pid,
+        category: hasImpr ? "gsc" : "serp",
+        title: `Striking distance: “${g.queryOrUrl}” at position ${g.position?.toFixed?.(1) ?? g.position}`,
+        diagnosis: hasImpr
+          ? `Query has ${g.impressions} impressions with position ${g.position} (measured first-party/GSC).`
+          : `Keyword is measured at position ${g.position} (rank tracker) — striking distance 4–20. Impression volume unavailable without GSC sync.`,
+        evidence: [
+          {
+            label: hasImpr ? "GSC / first-party query performance" : "Rank tracker position",
+            source: hasImpr ? "Google Search Console" : "rank_keywords",
+            status: "measured",
+            confidence: hasImpr ? 0.95 : 0.8,
+            value: {
+              impressions: g.impressions || null,
+              clicks: g.clicks ?? null,
+              position: g.position,
+              ctr: g.ctr ?? null,
+              relatedQueries: g.relatedQueries?.length ? g.relatedQueries : undefined,
             },
-          ],
-          priority: hasImpr && g.impressions >= 200 ? "high" : "medium",
-          impactType: "measured",
-          effort: "medium",
-          recommendedAction: `Improve the ranking URL for “${g.queryOrUrl}” (title/intent match, answer-first intro) without inventing traffic forecasts.`,
-          verificationPlan: hasImpr
-            ? "Compare GSC position and CTR for this query over the next 28-day window after publish."
-            : "Re-check rank_keywords.last_position for this keyword after changes; optionally connect GSC for impression proof.",
-          limitations: [
-            "Position improvement is not guaranteed.",
-            "Impact estimates are not fabricated.",
-            ...(hasImpr ? [] : ["Impressions unavailable — do not invent volume."]),
-          ],
-        });
-      } else if (g.kind === "low_ctr") {
-        out.push({
-          id: `${pid}:gsc:lowctr:${g.queryOrUrl}`,
-          projectId: pid,
-          category: "gsc",
-          title: `Low CTR vs expected: “${g.queryOrUrl}”`,
-          diagnosis: `Measured CTR ${(g.ctr != null ? (g.ctr * 100).toFixed(2) : "?")}% with ${g.impressions} impressions — below expected CTR for position ${g.position}.`,
-          evidence: [
-            {
-              label: "GSC CTR vs position",
-              source: "Google Search Console",
-              status: "measured",
-              confidence: 0.95,
-              value: { impressions: g.impressions, ctr: g.ctr, position: g.position },
-            },
-          ],
-          priority: "medium",
-          impactType: "measured",
-          effort: "low",
-          recommendedAction: `Rewrite title/meta for the ranking URL of “${g.queryOrUrl}” to match query intent; keep claims factual.`,
-          verificationPlan: "Re-check GSC CTR for the same query after 14–28 days; require measured impressions ≥ 50.",
-          limitations: ["CTR benchmarks are heuristics for prioritization, not guarantees."],
-        });
-      } else if (g.kind === "decay") {
-        out.push({
-          id: `${pid}:gsc:decay:${g.queryOrUrl}`,
-          projectId: pid,
-          category: "gsc",
-          title: `Impression decay: ${g.queryOrUrl}`,
-          diagnosis: `Page impressions dropped in the latest 28d vs prior 28d (measured GSC).`,
-          evidence: [
-            {
-              label: "GSC page decay",
-              source: "Google Search Console",
-              status: "measured",
-              confidence: 0.9,
-              value: { impressions: g.impressions, clicks: g.clicks },
-            },
-          ],
-          priority: "medium",
-          impactType: "measured",
-          effort: "medium",
-          recommendedAction: `Refresh the decaying page with updated facts, clearer answer structure, and internal links.`,
-          verificationPlan: "Compare GSC impressions for the URL current vs prior 28d after refresh.",
-          limitations: ["Decay can be seasonal; verify against prior year if available."],
-        });
-      }
+          },
+        ],
+        priority: hasImpr && g.impressions >= 200 ? "high" : "medium",
+        impactType: "measured",
+        effort: "medium",
+        recommendedAction: `Improve the ranking URL for “${g.queryOrUrl}” (title/intent match, answer-first intro) without inventing traffic forecasts.`,
+        verificationPlan: hasImpr
+          ? "Compare GSC position and CTR for this query over the next 28-day window after publish."
+          : "Re-check rank_keywords.last_position for this keyword after changes; optionally connect GSC for impression proof.",
+        limitations: [
+          "Position improvement is not guaranteed.",
+          "Impact estimates are not fabricated.",
+          ...(hasImpr ? [] : ["Impressions unavailable — do not invent volume."]),
+          ...(g.relatedQueries && g.relatedQueries.length > 1
+            ? [`Page/query cluster: ${g.relatedQueries.length} striking-distance queries share this target URL.`]
+            : []),
+        ],
+      });
+    } else if (g.kind === "low_ctr") {
+      // low_CTR requires measured GSC impressions — skip when disconnected.
+      if (input.gscConnected === false || !(g.impressions > 0)) continue;
+      out.push({
+        id: `${pid}:gsc:lowctr:${g.queryOrUrl}`,
+        projectId: pid,
+        category: "gsc",
+        title: `Low CTR vs expected: “${g.queryOrUrl}”`,
+        diagnosis: `Measured CTR ${(g.ctr != null ? (g.ctr * 100).toFixed(2) : "?")}% with ${g.impressions} impressions — below expected CTR for position ${g.position}.`,
+        evidence: [
+          {
+            label: "GSC CTR vs position",
+            source: "Google Search Console",
+            status: "measured",
+            confidence: 0.95,
+            value: { impressions: g.impressions, ctr: g.ctr, position: g.position },
+          },
+          {
+            label: "Expected CTR heuristic",
+            source: "position CTR model",
+            status: "model_knowledge",
+            confidence: 0.5,
+            value: { note: "Expected CTR is a heuristic for prioritization only." },
+          },
+        ],
+        priority: "medium",
+        // Measured CTR/position; expected-CTR gap impact is model_knowledge, not measured lift.
+        impactType: "model_knowledge",
+        effort: "low",
+        recommendedAction: `Rewrite title/meta for the ranking URL of “${g.queryOrUrl}” to match query intent; keep claims factual.`,
+        verificationPlan: "Re-check GSC CTR for the same query after 14–28 days; require measured impressions ≥ 50.",
+        limitations: ["CTR benchmarks are heuristics for prioritization, not guarantees."],
+      });
+    } else if (g.kind === "decay") {
+      if (input.gscConnected === false || !(g.impressions > 0)) continue;
+      out.push({
+        id: `${pid}:gsc:decay:${g.queryOrUrl}`,
+        projectId: pid,
+        category: "gsc",
+        title: `Impression decay: ${g.queryOrUrl}`,
+        diagnosis: `Page impressions dropped in the latest 28d vs prior 28d (measured GSC).`,
+        evidence: [
+          {
+            label: "GSC page decay",
+            source: "Google Search Console",
+            status: "measured",
+            confidence: 0.9,
+            value: { impressions: g.impressions, clicks: g.clicks },
+          },
+        ],
+        priority: "medium",
+        impactType: "measured",
+        effort: "medium",
+        recommendedAction: `Refresh the decaying page with updated facts, clearer answer structure, and internal links.`,
+        verificationPlan: "Compare GSC impressions for the URL current vs prior 28d after refresh.",
+        limitations: ["Decay can be seasonal; verify against prior year if available."],
+      });
     }
   }
 
@@ -477,6 +518,11 @@ export function buildSearchOpsOpportunities(input: SearchOpsEngineInput): Search
     });
   }
 
+  // Deep miners (GSC v2, technical, etc.) — same quality pipeline as built-ins.
+  for (const extra of input.extraOpportunities || []) {
+    out.push(extra);
+  }
+
   // Drop duplicates already open as tasks (title match) and invalid generics.
   const filtered = out.filter((op) => {
     if (openTitles.has(op.title.toLowerCase())) return false;
@@ -484,7 +530,13 @@ export function buildSearchOpsOpportunities(input: SearchOpsEngineInput): Search
     return errs.length === 0;
   });
 
-  return filtered.sort((a, b) => {
+  // Deterministic id dedupe (first wins) — miners + built-ins share one namespace.
+  const byId = new Map<string, SearchOpsOpportunity>();
+  for (const op of filtered) {
+    if (!byId.has(op.id)) byId.set(op.id, op);
+  }
+
+  return [...byId.values()].sort((a, b) => {
     const pd = PRIORITY_ORDER[a.priority] - PRIORITY_ORDER[b.priority];
     if (pd !== 0) return pd;
     const cd = a.category.localeCompare(b.category);
