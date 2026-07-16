@@ -1,5 +1,5 @@
 import type { VisibilityEngine } from "@/types/database";
-import { hasSerpCapability } from "@/lib/config/capabilities";
+import { hasGoogleSerpCapability } from "@/lib/config/capabilities";
 
 /**
  * Canonical engines used across scan-runner, Inngest steps, and visibility
@@ -31,7 +31,10 @@ export function getActiveScanEngines(): VisibilityEngine[] {
   if (hasEnv("GOOGLE_GENERATIVE_AI_API_KEY")) engines.push("gemini");
   if (hasEnv("ANTHROPIC_API_KEY")) engines.push("claude");
   if (captureOn) engines.push("bing_copilot");
-  if (hasSerpCapability()) engines.push("google_organic", "google_ai_overview");
+  // Surface identity: Google engines require a provider that ACTUALLY queries
+  // Google (Serper/OmniData/DataForSEO/Firecrawl). A keyless DuckDuckGo SERP
+  // must never make "google_organic" look configured.
+  if (hasGoogleSerpCapability()) engines.push("google_organic", "google_ai_overview");
   return engines.length ? engines : ["google_organic"];
 }
 
@@ -51,7 +54,7 @@ export function isEngineConfigured(engine: VisibilityEngine): boolean {
       return captureOn;
     case "google_organic":
     case "google_ai_overview":
-      return hasSerpCapability();
+      return hasGoogleSerpCapability();
     default:
       return false;
   }

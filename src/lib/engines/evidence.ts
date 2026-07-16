@@ -38,6 +38,8 @@ export interface EvidenceInput {
   engine: string;
   /** api | ui | search_result | model_knowledge */
   surfaceType?: string;
+  /** Exact probed surface (surface-identity taxonomy, e.g. "chatgpt_ui", "openai_api_grounded"). */
+  surface?: string | null;
   prompt: string;
   measurementMode?: string | null;
   answer: string;
@@ -69,7 +71,11 @@ export async function recordEvidence(
   supabase: SupabaseClient,
   input: EvidenceInput
 ): Promise<EvidenceRecord | null> {
-  const hash = responseHash(input.answer);
+  // Hash exactly what the receipt stores (the DB keeps a bounded answer), so
+  // the public verify page can INDEPENDENTLY recompute sha256(raw_answer) and
+  // match response_hash. The full untruncated answer still ships to storage.
+  const storedAnswer = (input.answer || "").slice(0, 20000);
+  const hash = responseHash(storedAnswer);
   const id = randomUUID();
   const citedUrls = [...new Set((input.citedUrls || []).filter(Boolean))];
   const sourceDomains = [...new Set((input.sourceDomains || []).filter(Boolean))];
@@ -126,10 +132,11 @@ export async function recordEvidence(
     prompt_id: input.promptId || null,
     engine: input.engine,
     surface_type: input.surfaceType || "api",
+    surface: input.surface || null,
     prompt: input.prompt.slice(0, 2000),
     measurement_mode: input.measurementMode || null,
     response_hash: hash,
-    raw_answer: (input.answer || "").slice(0, 20000),
+    raw_answer: storedAnswer,
     cited_urls: citedUrls,
     source_domains: sourceDomains,
     screenshot_path: screenshotPath,
@@ -139,17 +146,34 @@ export async function recordEvidence(
   });
   if (error) return null;
 
+  // Append to the project's receipt hash chain (Phase 0, Master Plan v4).
+  // Best-effort: a chaining hiccup leaves the row honestly "unchained" — it
+  // must never fail the scan that produced the measurement.
+  try {
+    await supabase.rpc("chain_evidence_receipt", { p_id: id });
+  } catch {
+    // unchained receipt — verify page reports it as such
+  }
+
   return { id, responseHash: hash, evidenceUrl };
 }
 
 /**
- * Prune evidence beyond the per-project retention cap (cost control). Best-effort.
+ * Prune evidence beyond the per-project retention cap (cost control) and,
+ * when `maxAgeDays` is finite, beyond the plan's retention window (Master Plan
+ * v4 Phase 0 policy: Free 30d / Solo 12mo / Growth 24mo / Agency configurable).
+ * Pruning removes the OLDEST chain links; verify_evidence_receipt reports a
+ * pruned predecessor as "prev link not found (retention)" — distinct from
+ * tamper. Export-before-deletion is available via the evidence export API.
+ * Best-effort: never throws.
  */
 export async function enforceEvidenceRetention(
   supabase: SupabaseClient,
   projectId: string,
-  max = EVIDENCE_RETENTION_PER_PROJECT
+  max = EVIDENCE_RETENTION_PER_PROJECT,
+  maxAgeDays?: number
 ): Promise<number> {
+  let pruned = 0;
   try {
     const { data } = await supabase
       .from("ai_capture_evidence")
@@ -158,12 +182,32 @@ export async function enforceEvidenceRetention(
       .order("created_at", { ascending: false })
       .range(max, max + 1000);
     const ids = (data || []).map((r: { id: string }) => r.id);
-    if (!ids.length) return 0;
-    await supabase.from("ai_capture_evidence").delete().in("id", ids);
-    return ids.length;
+    if (ids.length) {
+      await supabase.from("ai_capture_evidence").delete().in("id", ids);
+      pruned += ids.length;
+    }
   } catch {
-    return 0;
+    // best-effort
   }
+  if (typeof maxAgeDays === "number" && Number.isFinite(maxAgeDays) && maxAgeDays > 0) {
+    try {
+      const cutoff = new Date(Date.now() - maxAgeDays * 86_400_000).toISOString();
+      const { data } = await supabase
+        .from("ai_capture_evidence")
+        .select("id")
+        .eq("project_id", projectId)
+        .lt("captured_at", cutoff)
+        .limit(1000);
+      const ids = (data || []).map((r: { id: string }) => r.id);
+      if (ids.length) {
+        await supabase.from("ai_capture_evidence").delete().in("id", ids);
+        pruned += ids.length;
+      }
+    } catch {
+      // best-effort
+    }
+  }
+  return pruned;
 }
 
 /**
@@ -295,6 +339,7 @@ export async function attachEvidenceToResults(
       promptId: r.prompt_id,
       engine: r.engine,
       surfaceType,
+      surface: (r.raw_response?.surface as string) || null,
       prompt: r.prompt_text || "",
       measurementMode: r.measurement_mode,
       answer,

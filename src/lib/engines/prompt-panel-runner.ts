@@ -26,18 +26,52 @@ import {
 import { getOrganizationPlan, getPanelCellLimit } from "@/lib/plans/limits";
 import { logProviderError } from "@/lib/observability/log";
 
-/** Minimum measured observations before a headline rate is considered credible. */
-export const MIN_PANEL_SAMPLE = 8;
+/**
+ * Statistics policy (Phase 0, Master Plan v4):
+ *  - >= 30 measured observations before a rate is even DIRECTIONAL;
+ *  - >= 50 before a rate is a client-facing HEADLINE number;
+ *  - >= 30 per engine before engine-level trends are shown;
+ *  - >= 3 identical repeated runs per prompt/engine cell (repeatability is the
+ *    product promise — trimming protects runs, see applyCostCap).
+ */
+export const MIN_PANEL_SAMPLE_DIRECTIONAL = 30;
+export const MIN_PANEL_SAMPLE_HEADLINE = 50;
+export const MIN_ENGINE_SAMPLE = 30;
+export const MIN_RUNS_PER_CELL = 3;
+/** Back-compat gate: "sufficient" now means the directional threshold. */
+export const MIN_PANEL_SAMPLE = MIN_PANEL_SAMPLE_DIRECTIONAL;
+
+/**
+ * Volatility decomposed by source (Phase 0): model randomness across repeated
+ * runs is NOT the same phenomenon as disagreement between engines, prompts,
+ * geographies or personas — reporting them as one number was misleading.
+ */
+export interface VolatilityBreakdown {
+  /** Within-cell dispersion across repeated identical runs (model randomness). */
+  repeatedRun: number | null;
+  /** Dispersion of per-prompt mention rates. */
+  prompt: number | null;
+  /** Dispersion of per-engine mention rates (engine disagreement). */
+  engine: number | null;
+  /** Dispersion of per-geography mention rates. */
+  geo: number | null;
+  /** Dispersion of per-persona mention rates. */
+  persona: number | null;
+}
 
 export interface PanelRunSummary {
   panelRunId: string | null;
   sampleSize: number;
   sufficientSample: boolean;
+  /** headline (>=50) | directional (>=30) | insufficient (<30). */
+  sampleTier: "headline" | "directional" | "insufficient";
   mentionRate: number | null;
   mentionCi: { low: number; high: number } | null;
   citationRate: number | null;
   shareOfVoice: number | null;
+  /** Repeated-run volatility (the honest headline number). */
   volatilityIndex: number | null;
+  volatility: VolatilityBreakdown;
   enginesMeasured: number;
   cellsTotal: number;
   trimmed: boolean;
@@ -55,14 +89,23 @@ interface ProjectRow {
 interface Observation {
   cellKey: string;
   engine: string;
+  promptText: string;
+  geo: string;
+  persona: string | null;
   brandMentioned: boolean;
   brandCited: boolean;
   grounded: boolean;
   competitorMentions: number;
 }
 
+/**
+ * Strict measured classification (Phase 0): only rows the pipeline actually
+ * MEASURED count toward panel statistics. Estimated/model-knowledge/simulated/
+ * unavailable rows are all excluded — "not simulated" was too broad a bar for
+ * receipt-grade numbers.
+ */
 function isMeasured(r: VisibilityScanResult): boolean {
-  return r.data_source !== "simulated" && r.measurement_mode !== "unavailable";
+  return r.data_source === "measured";
 }
 
 function stddev(values: number[]): number {
@@ -72,33 +115,64 @@ function stddev(values: number[]): number {
   return Math.sqrt(variance);
 }
 
+interface CostCapResult {
+  engines: ReturnType<typeof sanitizeEngines>;
+  geos: string[];
+  personas: (string | null)[];
+  runs: number;
+  members: number;
+  trimmed: boolean;
+  /** What was cut, in order — recorded on the run so trimming is never silent. */
+  trimSteps: string[];
+}
+
 /**
- * Trim a panel's matrix knobs so total cells stay within the plan budget.
- * Reduces runs first (cheapest signal to lose), then trims member count.
+ * Trim a panel's matrix so total cells stay within the plan budget.
+ *
+ * Trimming order (Phase 0 statistics policy): personas → geos → engines →
+ * prompts, and only as an absolute last resort repeated runs. Repeatability is
+ * the product promise, so runs are PROTECTED (floor MIN_RUNS_PER_CELL) — the
+ * old behavior of shedding runs first optimized away exactly the signal we
+ * sell. Every cut is recorded in trimSteps so the run is honestly marked.
  */
 function applyCostCap(
   panel: Pick<PromptPanel, "geos" | "personas" | "engines" | "runs_per_prompt">,
   memberCount: number,
   cellLimit: number
-): { runs: number; members: number; trimmed: boolean } {
-  const engines = sanitizeEngines(panel.engines).length;
-  const geos = panel.geos.length || 1;
-  const personas = panel.personas.length || 1;
-  const perRunPerMember = engines * geos * personas;
-
-  let runs = clampRuns(panel.runs_per_prompt);
+): CostCapResult {
+  let engines = sanitizeEngines(panel.engines);
+  let geos = panel.geos.length ? [...panel.geos] : ["United States"];
+  let personas: (string | null)[] = panel.personas.length ? [...panel.personas] : [null];
+  let runs = Math.max(MIN_RUNS_PER_CELL, clampRuns(panel.runs_per_prompt));
   let members = memberCount;
-  let trimmed = false;
+  const trimSteps: string[] = [];
 
-  while (members * perRunPerMember * runs > cellLimit && runs > 1) {
-    runs -= 1;
-    trimmed = true;
+  const total = () => members * engines.length * geos.length * personas.length * runs;
+
+  while (total() > cellLimit && personas.length > 1) {
+    personas = personas.slice(0, -1);
+    trimSteps.push("persona");
   }
-  while (members * perRunPerMember * runs > cellLimit && members > 1) {
+  while (total() > cellLimit && geos.length > 1) {
+    geos = geos.slice(0, -1);
+    trimSteps.push("geo");
+  }
+  while (total() > cellLimit && engines.length > 1) {
+    engines = engines.slice(0, -1);
+    trimSteps.push("engine");
+  }
+  while (total() > cellLimit && members > 1) {
     members -= 1;
-    trimmed = true;
+    trimSteps.push("prompt");
   }
-  return { runs, members, trimmed };
+  // Last resort only: sacrificing repeatability beats refusing to run at all,
+  // but the run is marked trimmed and the runs floor is 1, never 0.
+  while (total() > cellLimit && runs > 1) {
+    runs -= 1;
+    trimSteps.push("runs");
+  }
+
+  return { engines, geos, personas, runs, members, trimmed: trimSteps.length > 0, trimSteps };
 }
 
 /**
@@ -138,9 +212,9 @@ export async function runPromptPanel(
   const cap = applyCostCap(panel, memberRows.length, cellLimit);
   const cappedMembers = memberRows.slice(0, cap.members);
 
-  const engines = sanitizeEngines(panel.engines);
-  const geos = panel.geos.length ? panel.geos : ["United States"];
-  const personas = panel.personas.length ? panel.personas : [null];
+  const engines = cap.engines;
+  const geos = cap.geos;
+  const personas = cap.personas;
   const runId = crypto.randomUUID();
 
   const observations: Observation[] = [];
@@ -178,6 +252,9 @@ export async function runPromptPanel(
           observations.push({
             cellKey,
             engine: r.engine,
+            promptText: r.prompt_text,
+            geo,
+            persona: persona ?? null,
             brandMentioned: Boolean(r.brand_mentioned),
             brandCited: Boolean(r.brand_cited),
             grounded: r.measurement_mode === "grounded",
@@ -193,9 +270,17 @@ export async function runPromptPanel(
   }
 
   const sampleSize = observations.length;
-  const sufficientSample = sampleSize >= MIN_PANEL_SAMPLE;
+  const sampleTier: PanelRunSummary["sampleTier"] =
+    sampleSize >= MIN_PANEL_SAMPLE_HEADLINE
+      ? "headline"
+      : sampleSize >= MIN_PANEL_SAMPLE_DIRECTIONAL
+        ? "directional"
+        : "insufficient";
+  const sufficientSample = sampleSize >= MIN_PANEL_SAMPLE_DIRECTIONAL;
 
   const mentionHits = observations.filter((o) => o.brandMentioned).length;
+  // Citation rate is receipt-grade only over GROUNDED measured observations —
+  // an ungrounded API answer can't prove what was actually cited.
   const groundedObs = observations.filter((o) => o.grounded);
   const citationHits = groundedObs.filter((o) => o.brandCited).length;
   const brandMentionTotal = mentionHits;
@@ -209,9 +294,11 @@ export async function runPromptPanel(
       ? brandMentionTotal / (brandMentionTotal + competitorMentionTotal)
       : null;
 
-  // Volatility = dispersion of per-cell mention rates (0 = perfectly stable).
-  const cellRates = [...cellMentions.values()].filter((c) => c.n > 0).map((c) => c.hits / c.n);
-  const volatilityIndex = cellRates.length >= 2 ? Number(stddev(cellRates).toFixed(4)) : 0;
+  // Volatility separated by source (Phase 0): repeated-run randomness is the
+  // headline; prompt/engine/geo/persona dispersion are different phenomena
+  // and are reported as such, never blended into one number.
+  const volatility = computeVolatilityBreakdown(observations, cellMentions);
+  const volatilityIndex = volatility.repeatedRun;
 
   const enginesMeasured = new Set(observations.map((o) => o.engine)).size;
   const cellsTotal = cellMentions.size;
@@ -219,8 +306,29 @@ export async function runPromptPanel(
   const stats = {
     by_engine: aggregateByEngine(observations),
     grounded_observations: groundedObs.length,
-    min_sample: MIN_PANEL_SAMPLE,
-    cost_cap: { plan, cell_limit: cellLimit, trimmed: cap.trimmed, runs: cap.runs, members: cap.members },
+    sample_tier: sampleTier,
+    min_sample_directional: MIN_PANEL_SAMPLE_DIRECTIONAL,
+    min_sample_headline: MIN_PANEL_SAMPLE_HEADLINE,
+    min_engine_sample: MIN_ENGINE_SAMPLE,
+    min_runs_per_cell: MIN_RUNS_PER_CELL,
+    volatility: {
+      repeated_run: volatility.repeatedRun,
+      prompt: volatility.prompt,
+      engine: volatility.engine,
+      geo: volatility.geo,
+      persona: volatility.persona,
+    },
+    cost_cap: {
+      plan,
+      cell_limit: cellLimit,
+      trimmed: cap.trimmed,
+      trim_steps: cap.trimSteps,
+      runs: cap.runs,
+      members: cap.members,
+      engines: cap.engines.length,
+      geos: cap.geos.length,
+      personas: cap.personas.length,
+    },
   };
 
   let panelRunId: string | null = null;
@@ -262,19 +370,70 @@ export async function runPromptPanel(
     panelRunId,
     sampleSize,
     sufficientSample,
+    sampleTier,
     mentionRate,
     mentionCi,
     citationRate,
     shareOfVoice,
     volatilityIndex,
+    volatility,
     enginesMeasured,
     cellsTotal,
     trimmed: cap.trimmed,
   };
 }
 
-function aggregateByEngine(observations: Observation[]): Record<string, { n: number; mention_rate: number }> {
-  const out: Record<string, { n: number; mention_rate: number }> = {};
+/** Dispersion (stddev) of group mention rates for one grouping dimension. */
+function groupRateDispersion(
+  observations: Observation[],
+  keyOf: (o: Observation) => string
+): number | null {
+  const groups = new Map<string, { hits: number; n: number }>();
+  for (const o of observations) {
+    const key = keyOf(o);
+    const acc = groups.get(key) || { hits: 0, n: 0 };
+    acc.hits += o.brandMentioned ? 1 : 0;
+    acc.n += 1;
+    groups.set(key, acc);
+  }
+  const rates = [...groups.values()].filter((g) => g.n > 0).map((g) => g.hits / g.n);
+  if (rates.length < 2) return null;
+  return Number(stddev(rates).toFixed(4));
+}
+
+/**
+ * Separate volatility by its source. `repeatedRun` is the mean within-cell
+ * stddev across identical repeated runs (pure model randomness); the others
+ * are between-group dispersions of mention rates.
+ */
+function computeVolatilityBreakdown(
+  observations: Observation[],
+  cellMentions: Map<string, { hits: number; n: number }>
+): VolatilityBreakdown {
+  // Within-cell: stddev of a Bernoulli sample per cell (needs >=2 runs).
+  const perCell: number[] = [];
+  for (const cell of cellMentions.values()) {
+    if (cell.n < 2) continue;
+    const p = cell.hits / cell.n;
+    perCell.push(Math.sqrt(p * (1 - p)));
+  }
+  const repeatedRun = perCell.length
+    ? Number((perCell.reduce((a, b) => a + b, 0) / perCell.length).toFixed(4))
+    : null;
+
+  return {
+    repeatedRun,
+    prompt: groupRateDispersion(observations, (o) => o.promptText),
+    engine: groupRateDispersion(observations, (o) => o.engine),
+    geo: groupRateDispersion(observations, (o) => o.geo),
+    persona: groupRateDispersion(observations, (o) => o.persona ?? "__none__"),
+  };
+}
+
+function aggregateByEngine(
+  observations: Observation[]
+): Record<string, { n: number; mention_rate: number; sufficient: boolean }> {
+  const out: Record<string, { n: number; mention_rate: number; sufficient: boolean }> = {};
   const byEngine = new Map<string, { hits: number; n: number }>();
   for (const o of observations) {
     const acc = byEngine.get(o.engine) || { hits: 0, n: 0 };
@@ -283,7 +442,12 @@ function aggregateByEngine(observations: Observation[]): Record<string, { n: num
     byEngine.set(o.engine, acc);
   }
   for (const [engine, acc] of byEngine) {
-    out[engine] = { n: acc.n, mention_rate: acc.n ? Number((acc.hits / acc.n).toFixed(4)) : 0 };
+    out[engine] = {
+      n: acc.n,
+      mention_rate: acc.n ? Number((acc.hits / acc.n).toFixed(4)) : 0,
+      // Engine-level trends need their own credible sample (Phase 0 policy).
+      sufficient: acc.n >= MIN_ENGINE_SAMPLE,
+    };
   }
   return out;
 }

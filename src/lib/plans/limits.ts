@@ -25,15 +25,29 @@ export interface PlanLimits {
   scanPrompts: number;
   /** Max probe cells (prompts × engines × geos × personas × runs) per panel run. */
   panelCells: number;
+  /**
+   * Evidence/receipt retention window in days (Master Plan v4 Phase 0).
+   * Receipts older than this are pruned (export-before-deletion available via
+   * the evidence export endpoint). `Infinity` = keep forever/configurable.
+   */
+  evidenceRetentionDays: number;
 }
 
 const PLAN_LIMITS: Record<SubscriptionPlan, PlanLimits> = {
-  free: { projects: 1, promptGeneration: 50, scanPrompts: 25, panelCells: 60 },
-  audit: { projects: 1, promptGeneration: 150, scanPrompts: 50, panelCells: 120 },
-  tracking: { projects: 3, promptGeneration: 300, scanPrompts: 100, panelCells: 400 },
-  agency: { projects: 25, promptGeneration: 500, scanPrompts: 150, panelCells: 1200 },
-  enterprise: { projects: Infinity, promptGeneration: 1000, scanPrompts: 300, panelCells: 5000 },
+  free: { projects: 1, promptGeneration: 50, scanPrompts: 25, panelCells: 60, evidenceRetentionDays: 30 },
+  audit: { projects: 1, promptGeneration: 150, scanPrompts: 50, panelCells: 120, evidenceRetentionDays: 90 },
+  tracking: { projects: 3, promptGeneration: 300, scanPrompts: 100, panelCells: 400, evidenceRetentionDays: 365 },
+  agency: { projects: 25, promptGeneration: 500, scanPrompts: 150, panelCells: 1200, evidenceRetentionDays: 730 },
+  enterprise: { projects: Infinity, promptGeneration: 1000, scanPrompts: 300, panelCells: 5000, evidenceRetentionDays: Infinity },
 };
+
+/** Receipt retention window (days) for a plan; Infinity = never auto-pruned. */
+export function getEvidenceRetentionDays(plan?: SubscriptionPlan): number {
+  // While FREE_ACCESS_MODE is on, honor the most generous window so no
+  // pre-launch tenant loses receipts before pricing is live.
+  if (FREE_ACCESS_MODE) return PLAN_LIMITS.agency.evidenceRetentionDays;
+  return getPlanLimits(plan).evidenceRetentionDays;
+}
 
 export function getPlanLimits(plan?: SubscriptionPlan): PlanLimits {
   return PLAN_LIMITS[(plan || "free") as SubscriptionPlan] || PLAN_LIMITS.free;

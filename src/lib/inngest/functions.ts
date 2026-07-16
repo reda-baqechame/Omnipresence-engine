@@ -65,6 +65,7 @@ import { fetchFirehoseMentions } from "@/lib/engines/community-mentions";
 import { runProjectSnapshots } from "@/lib/engines/snapshots";
 import { logProviderError, captureException } from "@/lib/observability/log";
 import type { Project } from "@/types/database";
+import { MANUAL_ONLY_MODE } from "@/lib/config/background-jobs";
 
 export const runFullScan = inngest.createFunction(
   {
@@ -1102,6 +1103,40 @@ export const weeklyReportRetention = inngest.createFunction(
   }
 );
 
+/**
+ * Weekly receipt/evidence retention (Phase 0, Master Plan v4): prune each
+ * project's receipts past its plan's retention window (Free 30d → Agency
+ * configurable). Export-before-deletion is served by /api/evidence/export.
+ */
+export const weeklyEvidenceRetention = inngest.createFunction(
+  { id: "weekly-evidence-retention", retries: 0, triggers: [{ cron: "30 4 * * 0" }] },
+  async ({ step }) => {
+    return step.run("prune-evidence", async () => {
+      const supabase = await createServiceClient();
+      const { enforceEvidenceRetention, EVIDENCE_RETENTION_PER_PROJECT } = await import("@/lib/engines/evidence");
+      const { getEvidenceRetentionDays } = await import("@/lib/plans/limits");
+      const { data: projects } = await supabase
+        .from("projects")
+        .select("id, organization_id, organizations(plan)")
+        .limit(2000);
+      let prunedTotal = 0;
+      for (const p of projects || []) {
+        const plan = (p as unknown as { organizations?: { plan?: string } }).organizations?.plan as
+          | import("@/types/database").SubscriptionPlan
+          | undefined;
+        const days = getEvidenceRetentionDays(plan);
+        prunedTotal += await enforceEvidenceRetention(
+          supabase,
+          p.id,
+          EVIDENCE_RETENTION_PER_PROJECT,
+          Number.isFinite(days) ? days : undefined
+        );
+      }
+      return { projects: (projects || []).length, pruned: prunedTotal };
+    });
+  }
+);
+
 // Measured GEO rewrite loop: baseline citation rate -> AutoGEO answer-first
 // rewrite -> deploy artifact -> wait for propagation -> re-probe -> measure
 // real citation/mention lift from ai_probe_traces -> results-ledger/guarantee.
@@ -1719,6 +1754,7 @@ export const functions = [
   monthlyWebgraphReingest,
   dailyRailwaySpendGuard,
   weeklyReportRetention,
+  weeklyEvidenceRetention,
   geoRewriteLoop,
   scheduledContentPublish,
   weeklyIntelligenceSync,
@@ -1736,3 +1772,24 @@ export const functions = [
   deployVerificationSweep,
   deployRescanLoop,
 ];
+
+/** User-initiated event handlers only — no cron schedules or auto follow-ups. */
+export const manualEventFunctions = [
+  runFullScan,
+  runFullScanLegacy,
+  generateReport,
+  syncAttribution,
+  geoRewriteLoop,
+  runOpsItem,
+  runPanelOnRequest,
+];
+
+/**
+ * Functions registered with Inngest serve(). When MANUAL_ONLY_MODE=true, only
+ * button-triggered event handlers are registered so idle crons cannot spend
+ * paid API credits.
+ */
+export function getInngestFunctions() {
+  if (MANUAL_ONLY_MODE) return manualEventFunctions;
+  return functions;
+}

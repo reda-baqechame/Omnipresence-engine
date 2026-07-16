@@ -7,7 +7,7 @@ import {
 } from "@/lib/providers/dataforseo";
 import { hasLLMMentionsCapability } from "@/lib/config/capabilities";
 import { queryPerplexitySonar, hasPerplexityCapability } from "@/lib/providers/perplexity";
-import { searchGoogleOrganicRouter } from "@/lib/providers/serp-router";
+import { searchGoogleOrganicRouter, searchGoogleSerpAuthentic } from "@/lib/providers/serp-router";
 import { hasAiUiCapture, captureAiUiSurface, isCaptureBlocked, type AiUiCaptureSuccess, type AiUiCaptureSurface, type AiUiCaptureOptions } from "@/lib/providers/ai-ui-capture";
 import { captureOptionsFromLocation } from "@/lib/providers/location-geo";
 import { logProviderError } from "@/lib/observability/log";
@@ -303,8 +303,12 @@ async function scanSinglePrompt(
 
   // Preferred (when enabled): grounded UI-surface capture for AI engines —
   // the real surface a user sees, not just the model's parametric knowledge.
-  if (hasAiUiCapture() && (LLM_ENGINES.has(engine) || engine === "perplexity" || engine === "google_ai_overview" || engine === "bing_copilot")) {
-    const surface = engine === "claude" ? "chatgpt" : (engine as "chatgpt" | "gemini" | "perplexity" | "google_ai_overview" | "bing_copilot");
+  // Surface identity is strict: Claude has NO UI-capture surface, so it must
+  // never be probed through the ChatGPT surface (that would attribute a
+  // ChatGPT answer to Claude). Claude is measured via the Anthropic grounded
+  // API path below instead.
+  if (hasAiUiCapture() && ((LLM_ENGINES.has(engine) && engine !== "claude") || engine === "perplexity" || engine === "google_ai_overview" || engine === "bing_copilot")) {
+    const surface = engine as "chatgpt" | "gemini" | "perplexity" | "google_ai_overview" | "bing_copilot";
     const geoOpts = captureOptionsFromLocation(config.location);
     const captured = await captureWithTenantBudget(
       config,
@@ -316,7 +320,7 @@ async function scanSinglePrompt(
       return unavailableRow(base, "capture_blocked", captured.reason);
     }
     if (captured) {
-      return mapCaptureToVisibilityResult(base, captured, config);
+      return mapCaptureToVisibilityResult(base, captured, config, `${surface}_ui`);
     }
   }
 
@@ -338,7 +342,7 @@ async function scanSinglePrompt(
           return unavailableRow(base, "capture_blocked", captured.reason);
         }
         if (captured) {
-          return mapCaptureToVisibilityResult(base, captured, config);
+          return mapCaptureToVisibilityResult(base, captured, config, "perplexity_ui");
         }
       }
       if (hasPerplexityCapability()) {
@@ -368,6 +372,7 @@ async function scanSinglePrompt(
             data_source: "measured",
             data_source_detail: "perplexity",
             measurement_mode: "grounded",
+            surface: "perplexity_sonar_api",
             entity_prominence: computeEntityProminence(answer, [config.brandName, ...config.competitors]),
           },
           data_source: "measured",
@@ -375,7 +380,9 @@ async function scanSinglePrompt(
       }
       }
     } else if (engine === "google_organic" || engine === "google_ai_overview") {
-      const res = await searchGoogleOrganicRouter(
+      // Surface identity: Google claims require a Google-authentic provider.
+      // DuckDuckGo/Brave/SearXNG results must never be presented as Google.
+      const res = await searchGoogleSerpAuthentic(
         prompt.text,
         config.location,
         config.brandDomain,
@@ -448,6 +455,7 @@ async function scanSinglePrompt(
             data_source: "measured",
             data_source_detail: res.provider || "serp",
             measurement_mode: "grounded",
+            surface: engine === "google_ai_overview" ? "google_ai_overview_serp" : "google_organic_serp",
             // Prominence from the ranked answer surface: result titles in rank
             // order + the AI Overview text. Position in this blob mirrors SERP
             // rank, so an entity in the top result outweighs one ranked #9.
@@ -472,7 +480,7 @@ async function scanSinglePrompt(
           return unavailableRow(base, "capture_blocked", captured.reason);
         }
         if (captured) {
-          return mapCaptureToVisibilityResult(base, captured, config);
+          return mapCaptureToVisibilityResult(base, captured, config, "bing_copilot_ui");
         }
       }
       return unavailableRow(base, "copilot_requires_ui_capture_backend");
@@ -523,7 +531,9 @@ function unavailableRow(
 function mapCaptureToVisibilityResult(
   base: Omit<VisibilityScanResult, "data_source"> & { data_source: DataQuality },
   captured: AiUiCaptureSuccess,
-  config: VisibilityScanConfig
+  config: VisibilityScanConfig,
+  /** Exact surface probed (e.g. "chatgpt_ui") — surface-identity provenance. */
+  surface: string
 ): VisibilityScanResult {
   const isAbsence = captured.absence === true || captured.surfacePresent === false;
   const sourceDomains = captured.sourceDomains.length
@@ -554,6 +564,7 @@ function mapCaptureToVisibilityResult(
       data_source: "measured",
       data_source_detail: isAbsence ? "ai_ui_capture_absence" : "ai_ui_capture",
       measurement_mode: "grounded",
+      surface,
       entity_prominence: computeEntityProminence(captured.answer, [config.brandName, ...config.competitors]),
       response_hash: captured.responseHash,
       screenshot_base64: captured.screenshotBase64 ?? undefined,
@@ -598,6 +609,7 @@ function serpAbsenceMeasuredRow(
       data_source: "measured",
       data_source_detail: res.provider || "serp",
       measurement_mode: "grounded",
+      surface: "google_ai_overview_serp",
       geo: config.location,
       entity_prominence: computeEntityProminence(top.map((r) => r.title || "").join("\n"), [config.brandName, ...config.competitors]),
     },
@@ -659,7 +671,8 @@ async function sampleLLMVisibility(
           data_source: "unavailable",
         },
         captured,
-        config
+        config,
+        `${surface}_ui`
       );
     }
   }
@@ -701,6 +714,7 @@ async function sampleLLMVisibility(
           data_source: "measured",
           data_source_detail: "llm_api_direct",
           measurement_mode: "api_direct",
+          surface: `${provider === "openai" ? "openai" : provider === "gemini" ? "gemini" : "anthropic"}_api_direct`,
           grounded: false,
           entity_prominence: computeEntityProminence(mapped.text, [config.brandName, ...config.competitors]),
           geo: config.location,
@@ -773,6 +787,7 @@ async function sampleLLMVisibility(
       data_source: "measured",
       data_source_detail: "llm_grounded",
       measurement_mode: "grounded",
+      surface: `${provider === "openai" ? "openai" : provider === "gemini" ? "gemini" : "anthropic"}_api_grounded`,
       entity_prominence: computeEntityProminence(combinedText, [config.brandName, ...config.competitors]),
       label: "Grounded web search (mandatory)",
       geo: config.location,
@@ -837,6 +852,7 @@ async function scanViaLLMMentions(
       data_source: "measured",
       data_source_detail: "dataforseo",
       measurement_mode: "grounded",
+      surface: `dataforseo_llm_mentions_${platform}`,
       aiSearchVolume: res.data[0]?.aiSearchVolume,
       entity_prominence: computeEntityProminence(answerText, [config.brandName, ...config.competitors]),
     },

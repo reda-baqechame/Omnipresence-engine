@@ -51,3 +51,7 @@ next-env.d.ts
 .env*
 # ...but keep the committed env template
 !.env.example
+
+# client PII / private engagement data must never enter the repo
+# (archived outside the working tree — Phase 0 trust cleanup)
+client-intelligence/

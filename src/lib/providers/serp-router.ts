@@ -7,7 +7,7 @@
 import { isOmniDataActive } from "@/lib/providers/dataforseo";
 import { hasSearxngCapability } from "@/lib/providers/searxng";
 import { hasFirecrawlCapability } from "@/lib/providers/firecrawl";
-import { routeSerp, rankedAdapters } from "@/lib/providers/router";
+import { routeSerp, routeGoogleSerp, rankedAdapters } from "@/lib/providers/router";
 import type { ProviderResult, SERPResult } from "./types";
 
 export type SerpProviderId = "serper" | "brave" | "searxng" | "duckduckgo" | "firecrawl" | "omnidata" | "dataforseo";
@@ -40,6 +40,29 @@ export async function searchGoogleOrganicRouter(
   competitors: string[]
 ): Promise<ProviderResult<SERPResult> & { provider?: SerpProviderId }> {
   const outcome = await routeSerp(keyword, location, brandDomain, competitors);
+  return {
+    success: outcome.success,
+    data: outcome.data,
+    error: outcome.error,
+    creditsUsed: outcome.creditsUsed,
+    provider: outcome.provider as SerpProviderId | undefined,
+  };
+}
+
+/**
+ * Google-authentic SERP (surface-identity gate): only providers that genuinely
+ * query Google (Serper, OmniData, DataForSEO, Firecrawl) are eligible. Use this
+ * for `google_organic` / `google_ai_overview` visibility claims; use
+ * `searchGoogleOrganicRouter` for generic "web SERP" needs where any engine is
+ * acceptable (keyword research, coverage checks, etc.).
+ */
+export async function searchGoogleSerpAuthentic(
+  keyword: string,
+  location = "United States",
+  brandDomain: string,
+  competitors: string[]
+): Promise<ProviderResult<SERPResult> & { provider?: SerpProviderId }> {
+  const outcome = await routeGoogleSerp(keyword, location, brandDomain, competitors);
   return {
     success: outcome.success,
     data: outcome.data,

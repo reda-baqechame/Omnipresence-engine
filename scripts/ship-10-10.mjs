@@ -69,10 +69,8 @@ if (!skipLive) {
   results.push(["email:verify", run("email:verify", "npm", ["run", "email:verify"])]);
 }
 
-const strictCases = args.has("--skip-live")
-  ? true
-  : run("generate-case-studies", "node", ["scripts/generate-case-studies.mjs", "--strict"]);
-results.push(["generate-case-studies", strictCases]);
+// Fabricated case-study generation removed (Phase 0 trust cleanup, Master
+// Plan v4). Case studies now come only from real agency pilots with receipts.
 
 const summary = {
   at: new Date().toISOString(),

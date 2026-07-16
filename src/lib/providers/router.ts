@@ -45,6 +45,12 @@ export interface Adapter<TArgs extends unknown[] = unknown[], TData = unknown> {
   paid: boolean;
   /** Self-hosted / keyless engine — preferred first. */
   selfHosted: boolean;
+  /**
+   * Surface identity (SERP adapters): true only when the adapter genuinely
+   * queries Google. Non-Google web search (DuckDuckGo, Brave, SearXNG) must
+   * never satisfy a `google_organic` / `google_ai_overview` claim.
+   */
+  googleSerp?: boolean;
   /** Confidence in the result quality, 0..1. */
   confidence: number;
   freshness: Freshness;
@@ -100,6 +106,7 @@ const serpAdapters: Adapter<[string, string, string, string[]], SERPResult>[] = 
     freshness: "live",
     costPerCall: 0.001,
     enabled: () => hasEnv("SERPER_API_KEY"),
+    googleSerp: true,
     run: (kw, loc, brand, comp) => searchGoogleOrganicSerper(kw, loc, brand, comp),
   },
   {
@@ -112,6 +119,7 @@ const serpAdapters: Adapter<[string, string, string, string[]], SERPResult>[] = 
     freshness: "live",
     costPerCall: 0.001,
     enabled: () => hasEnv("BRAVE_SEARCH_API_KEY"),
+    googleSerp: false,
     run: (kw, loc, brand, comp) => searchGoogleOrganicBrave(kw, loc, brand, comp),
   },
   {
@@ -124,6 +132,7 @@ const serpAdapters: Adapter<[string, string, string, string[]], SERPResult>[] = 
     freshness: "live",
     costPerCall: 0,
     enabled: () => hasSearxngCapability(),
+    googleSerp: false,
     run: (kw, loc, brand, comp) => searchGoogleOrganicSearxng(kw, loc, brand, comp),
   },
   {
@@ -136,6 +145,7 @@ const serpAdapters: Adapter<[string, string, string, string[]], SERPResult>[] = 
     freshness: "live",
     costPerCall: 0,
     enabled: () => true,
+    googleSerp: false,
     run: (kw, loc, brand, comp) => searchGoogleOrganicDuckDuckGo(kw, loc, brand, comp),
   },
   {
@@ -148,6 +158,7 @@ const serpAdapters: Adapter<[string, string, string, string[]], SERPResult>[] = 
     freshness: "live",
     costPerCall: 0,
     enabled: () => isOmniDataActive(),
+    googleSerp: true,
     run: (kw, loc, brand, comp) => searchGoogleOrganicDataForSEO(kw, loc, brand, comp),
   },
   {
@@ -161,6 +172,7 @@ const serpAdapters: Adapter<[string, string, string, string[]], SERPResult>[] = 
     freshness: "live",
     costPerCall: 0.0006,
     enabled: () => !isOmniDataActive() && hasEnv("DATAFORSEO_LOGIN") && hasEnv("DATAFORSEO_PASSWORD"),
+    googleSerp: true,
     run: (kw, loc, brand, comp) => searchGoogleOrganicDataForSEO(kw, loc, brand, comp),
   },
   {
@@ -173,6 +185,7 @@ const serpAdapters: Adapter<[string, string, string, string[]], SERPResult>[] = 
     freshness: "live",
     costPerCall: 0.002,
     enabled: () => hasFirecrawlCapability(),
+    googleSerp: true,
     run: (kw, loc, brand, comp) => searchGoogleOrganicFirecrawl(kw, loc, brand, comp),
   },
 ];
@@ -279,7 +292,22 @@ export async function route<TArgs extends unknown[], TData>(
   capability: Capability,
   ...args: TArgs
 ): Promise<RouteOutcome<TData>> {
-  const adapters = rankedAdapters(capability).filter((a) => typeof a.run === "function");
+  return routeFiltered<TArgs, TData>(capability, null, ...args);
+}
+
+/**
+ * Like route(), but restricted to adapters passing `adapterFilter`. Used for
+ * surface-identity-sensitive claims (e.g. Google SERP results must come from a
+ * provider that actually queries Google).
+ */
+export async function routeFiltered<TArgs extends unknown[], TData>(
+  capability: Capability,
+  adapterFilter: ((a: Adapter) => boolean) | null,
+  ...args: TArgs
+): Promise<RouteOutcome<TData>> {
+  const adapters = rankedAdapters(capability)
+    .filter((a) => typeof a.run === "function")
+    .filter((a) => (adapterFilter ? adapterFilter(a) : true));
   const trail: Array<{ id: string; ok: boolean; error?: string }> = [];
   let lastError = `No ${capability} provider configured`;
 
@@ -362,6 +390,29 @@ export function routeSerp(
 ): Promise<RouteOutcome<SERPResult>> {
   return route<[string, string, string, string[]], SERPResult>(
     "serp",
+    keyword,
+    location,
+    brandDomain,
+    competitors
+  );
+}
+
+/**
+ * Google-authentic SERP routing (surface-identity gate). Only adapters that
+ * genuinely query Google are eligible — DuckDuckGo/Brave/SearXNG results can
+ * never satisfy a `google_organic` / `google_ai_overview` claim. When no
+ * Google-capable provider is configured this returns an honest failure, which
+ * callers surface as `unavailable` rather than substituting a look-alike SERP.
+ */
+export function routeGoogleSerp(
+  keyword: string,
+  location = "United States",
+  brandDomain: string,
+  competitors: string[]
+): Promise<RouteOutcome<SERPResult>> {
+  return routeFiltered<[string, string, string, string[]], SERPResult>(
+    "serp",
+    (a) => a.googleSerp === true,
     keyword,
     location,
     brandDomain,

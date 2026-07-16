@@ -203,6 +203,22 @@ export function hasSerpCapability(): boolean {
   );
 }
 
+/**
+ * SERP providers that genuinely return GOOGLE results (surface-identity gate).
+ * DuckDuckGo/Brave/SearXNG are real web-search backends but they are NOT
+ * Google — results from them must never satisfy a `google_organic` or
+ * `google_ai_overview` claim. Serper, OmniData and DataForSEO query Google
+ * directly; Firecrawl /v1/search returns live Google organic results.
+ */
+export function hasGoogleSerpCapability(): boolean {
+  return (
+    hasEnv("SERPER_API_KEY") ||
+    (hasEnv("OMNIDATA_BASE_URL") && hasEnv("OMNIDATA_API_KEY")) ||
+    (hasEnv("DATAFORSEO_LOGIN") && hasEnv("DATAFORSEO_PASSWORD")) ||
+    hasEnv("FIRECRAWL_API_KEY")
+  );
+}
+
 /** Keyless/self-hosted SERP only (no paid vendor) — what survives Zero-Paid-Keys mode. */
 export function hasKeylessSerpCapability(): boolean {
   // DuckDuckGo HTML SERP is always available (keyless, best-effort).

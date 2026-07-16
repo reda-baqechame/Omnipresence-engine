@@ -6,7 +6,7 @@
  * verify plumbing; this gate verifies that customer-facing scans cannot regress
  * into demo data, generic roadmaps, or scattered navigation.
  */
-import { readFileSync } from "fs";
+import { readFileSync, existsSync } from "fs";
 import { join, dirname } from "path";
 import { fileURLToPath } from "url";
 
@@ -20,7 +20,6 @@ function assert(condition, message) {
 
 const scanRunner = read("src/lib/engines/scan-runner.ts");
 const scanSteps = read("src/lib/engines/scan-steps.ts");
-const demoData = read("src/lib/demo/scan-data.ts");
 const tabs = read("src/components/project-tabs.tsx");
 const promptGenerator = read("src/lib/engines/prompt-generator.ts");
 const roadmap = read("src/lib/engines/roadmap-generator.ts");
@@ -29,8 +28,10 @@ const visibilityTable = read("src/components/visibility-table.tsx");
 
 assert(!/generateDemo|resolveScanDemoMode/.test(scanRunner), "scan-runner must not import/call demo data generators");
 assert(!/generateDemo|resolveScanDemoMode/.test(scanSteps), "scan-steps must not import/call demo data generators");
-assert(!/Math\.random\(/.test(demoData), "demo scan-data must not generate randomized customer-looking output");
-assert(/return false;/.test(demoData), "demo mode compatibility shim must return false");
+// Phase 0 trust cleanup (Master Plan v4): the demo shim was deleted outright —
+// it must never come back.
+assert(!existsSync(join(root, "src/lib/demo/scan-data.ts")), "src/lib/demo/scan-data.ts must stay deleted (demo shim removed in Phase 0)");
+assert(!existsSync(join(root, "docs/case-studies")), "docs/case-studies must stay deleted (fabricated case studies removed in Phase 0)");
 
 const tabCount = [...tabs.matchAll(/\{\s*href:/g)].length;
 assert(tabCount <= 7, `project navigation must expose <= 7 workflow hubs, found ${tabCount}`);

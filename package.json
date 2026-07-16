@@ -73,7 +73,6 @@
     "ship:full": "node scripts/ship-full.mjs",
     "ship:infra": "node scripts/ship-infra.mjs",
     "ship:pilot": "node scripts/run-golden-pilot.mjs",
-    "ship:case-studies": "node scripts/generate-case-studies.mjs",
     "check:claims-backed": "node scripts/check-claims-backed.mjs",
     "audit:live": "node scripts/audit-live-results.mjs",
     "verify:all": "node scripts/verify-all.mjs",
