@@ -84,6 +84,7 @@ export const PROJECT_HUB_NAV: HubNavCategory[] = [
       { href: "/prompts", label: "Prompt Campaigns", requires: "visibility" },
       { href: "/source-graph", label: "Source Graph", requires: "visibility" },
       { href: "/panels", label: "Prompt Panels", requires: "visibility" },
+      { href: "/gaps", label: "Gap Analysis", requires: "always" },
     ],
   },
   {
@@ -100,6 +101,7 @@ export const PROJECT_HUB_NAV: HubNavCategory[] = [
       { href: "/action-proof", label: "Action Plan & Proof", requires: "always" },
       { href: "/tasks", label: "Tasks", requires: "always" },
       { href: "/proof-ledger", label: "Proof Ledger", requires: "always" },
+      { href: "/receipts", label: "Receipts", requires: "always" },
       { href: "/roadmap", label: "Roadmap", requires: "always" },
     ],
   },

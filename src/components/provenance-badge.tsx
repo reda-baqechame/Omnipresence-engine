@@ -54,8 +54,14 @@ export function ProvenanceBadge({
 
   if (!evidenceUrl) return badge;
 
+  // Receipt references stored as "ai_capture_evidence:{uuid}" resolve to the
+  // public verification page — the shareable, independently checkable receipt.
+  const href = evidenceUrl.startsWith("ai_capture_evidence:")
+    ? `/verify/${evidenceUrl.slice("ai_capture_evidence:".length)}`
+    : evidenceUrl;
+
   return (
-    <a href={evidenceUrl} target="_blank" rel="noreferrer" title={`${titleParts.join(" ")} Open evidence.`}>
+    <a href={href} target="_blank" rel="noreferrer" title={`${titleParts.join(" ")} Open evidence.`}>
       {badge}
     </a>
   );

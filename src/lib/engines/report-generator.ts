@@ -32,6 +32,19 @@ export interface ReportData {
   generatedAt: string;
   /** Pre-rendered Before/After proof section (from proof-report.renderProofHTML). */
   proofHtml?: string;
+  /** Verifiable receipts behind this run's AI numbers (Master Plan v4 Phase 1):
+   * each links to the public /verify/{id} page where the client can
+   * independently recompute the hash chain — no login, no trust required. */
+  receipts?: Array<{
+    id: string;
+    prompt: string;
+    surface: string | null;
+    engine: string;
+    captured_at: string;
+    chained: boolean;
+  }>;
+  /** Absolute origin for /verify links in exported HTML/PDF. */
+  verifyBaseUrl?: string;
   adsEquivalent?: {
     totalOrganicValue: number;
     replacementRatio: number;
@@ -443,6 +456,8 @@ export function generateReportHTML(data: ReportData, whiteLabel?: { name: string
     </div>
     ` : ""}
 
+    ${receiptsSectionHTML(data)}
+
     ${methodologyAppendixHTML(data, { measuredPct, maxSamples, aiProvenance })}
 
     <div class="footer">
@@ -452,6 +467,42 @@ export function generateReportHTML(data: ReportData, whiteLabel?: { name: string
   </div>
 </body>
 </html>`;
+}
+
+/**
+ * Verifiable-receipts appendix: the client-facing proof that the AI numbers in
+ * this report are real measurements, not screenshots or estimates. Each row
+ * links to the public verification page where anyone can recompute the hash
+ * chain independently. Rendered only when receipts exist — never a fake
+ * "verified" stamp on a run that produced no evidence.
+ */
+function receiptsSectionHTML(data: ReportData): string {
+  const receipts = data.receipts || [];
+  if (receipts.length === 0) return "";
+  const base = (data.verifyBaseUrl || "").replace(/\/$/, "");
+
+  return `
+    <div class="section">
+      <h2>Verifiable Receipts</h2>
+      <p class="legend">Every measured AI answer behind this report carries a tamper-evident receipt: prompt, exact surface, capture timestamp, response hash, and its position in a hash chain. Follow any link to verify independently — no login required.</p>
+      <table style="width:100%;border-collapse:collapse;font-size:12px;margin-top:8px;">
+        <thead><tr style="text-align:left;border-bottom:1px solid #e2e2e2;">
+          <th style="padding:6px 4px;">Prompt</th><th style="padding:6px 4px;">Surface</th><th style="padding:6px 4px;">Captured</th><th style="padding:6px 4px;">Receipt</th>
+        </tr></thead>
+        <tbody>
+        ${receipts
+          .map(
+            (r) => `<tr style="border-bottom:1px solid #f1f1f1;vertical-align:top;">
+            <td style="padding:6px 4px;">${e(r.prompt.slice(0, 90))}</td>
+            <td style="padding:6px 4px;white-space:nowrap;">${e((r.surface || r.engine).replace(/_/g, " "))}</td>
+            <td style="padding:6px 4px;white-space:nowrap;">${e(new Date(r.captured_at).toLocaleDateString())}</td>
+            <td style="padding:6px 4px;white-space:nowrap;"><a href="${e(`${base}/verify/${r.id}`)}">${e(r.id.slice(0, 8))}…</a>${r.chained ? "" : ` <span style="color:#94a3b8;">(unchained)</span>`}</td>
+          </tr>`
+          )
+          .join("")}
+        </tbody>
+      </table>
+    </div>`;
 }
 
 /**

@@ -228,6 +228,23 @@ export async function gatherReportData(
   const proof = await buildProofReport(supabase, projectId).catch(() => null);
   const proofHtml = proof ? renderProofHTML(proof, whiteLabel?.color) : undefined;
 
+  // Verifiable-receipts appendix: the latest evidence records behind this
+  // report's AI numbers, each linking to the public /verify/{id} page.
+  const { data: receiptRows } = await supabase
+    .from("ai_capture_evidence")
+    .select("id, prompt, surface, engine, captured_at, receipt_hash")
+    .eq("project_id", projectId)
+    .order("captured_at", { ascending: false })
+    .limit(12);
+  const receipts = (receiptRows || []).map((r) => ({
+    id: r.id as string,
+    prompt: (r.prompt as string) || "",
+    surface: (r.surface as string | null) ?? null,
+    engine: (r.engine as string) || "",
+    captured_at: (r.captured_at as string) || "",
+    chained: Boolean(r.receipt_hash),
+  }));
+
   let realCpc: number | null = null;
   if (attribution) {
     // Keyword inventory for real-CPC lookup: scan-discovered opportunities are
@@ -283,6 +300,8 @@ export async function gatherReportData(
     })),
     generatedAt: new Date().toISOString(),
     proofHtml,
+    receipts,
+    verifyBaseUrl: process.env.NEXT_PUBLIC_APP_URL || "",
     adsEquivalent: adsEquivalent
       ? {
           totalOrganicValue: adsEquivalent.totalOrganicValue,
