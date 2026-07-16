@@ -209,6 +209,7 @@ export async function POST(request: NextRequest) {
     coverageGaps: intelligence.coverageGaps,
     coverageItems: intelligence.coverageItems,
     competitorGaps: intelligence.coverageItems.filter((c) => !c.is_present && c.competitor_present).length,
+    competitorReveal: intelligence.competitorReveal,
     // Report the REAL distinct referring-domain total from the Common Crawl
     // webgraph/authority index when available (e.g. 12,453) — not the capped
     // sample we fetched for display (which would understate it as ~15).

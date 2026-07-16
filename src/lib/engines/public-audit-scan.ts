@@ -6,6 +6,7 @@ import { checkPlatformCoverage } from "@/lib/engines/coverage-checker";
 import { getBacklinksFree } from "@/lib/providers/backlinks-free";
 import { searchGoogleOrganicRouter } from "@/lib/providers/serp-router";
 import { sameRegistrableDomain } from "@/lib/engines/brand-matcher";
+import { calculateShareOfVoice } from "@/lib/engines/share-of-voice";
 import type { VisibilityEngine, VisibilityResult } from "@/types/database";
 
 const PUBLIC_PROJECT_ID = "00000000-0000-0000-0000-000000000001";
@@ -50,6 +51,14 @@ export interface PublicAuditIntelligence {
   /** False when no backlink index/provider is configured — render as "unavailable", not 0. */
   backlinksAvailable: boolean;
   serpPresence: boolean;
+  /** Pre-signup competitor reveal (Trakkr conversion moment): how often AI
+   *  answers named the brand vs each competitor across the SAME measured
+   *  probes. Null when no competitors were provided or nothing was measured. */
+  competitorReveal: {
+    sampleSize: number;
+    brandRank: number | null;
+    leaderboard: Array<{ name: string; isBrand: boolean; appearances: number; shareOfVoice: number }>;
+  } | null;
 }
 
 export async function runPublicAuditIntelligence(input: {
@@ -83,6 +92,7 @@ export async function runPublicAuditIntelligence(input: {
       backlinkCount: 0,
       backlinksAvailable: false,
       serpPresence: false,
+      competitorReveal: null,
     };
   }
 
@@ -184,6 +194,30 @@ export async function runPublicAuditIntelligence(input: {
     .map((c) => c.platform_name)
     .slice(0, 8);
 
+  // Competitor reveal: brand vs competitors across the same measured probes.
+  // Reuses the in-app prominence-weighted SoV methodology so the pre-signup
+  // number and the in-app number can never disagree.
+  let competitorReveal: PublicAuditIntelligence["competitorReveal"] = null;
+  if (competitors.length > 0 && visibilityScan.length > 0) {
+    const sov = calculateShareOfVoice(
+      visibilityScan as unknown as VisibilityResult[],
+      input.brandName,
+      competitors
+    );
+    if (sov.sampleSize > 0 && sov.leaderboard.length > 0) {
+      competitorReveal = {
+        sampleSize: sov.sampleSize,
+        brandRank: sov.brandRank,
+        leaderboard: sov.leaderboard.slice(0, 6).map((e) => ({
+          name: e.name,
+          isBrand: e.isBrand,
+          appearances: e.appearances,
+          shareOfVoice: e.shareOfVoice,
+        })),
+      };
+    }
+  }
+
   return {
     liveData: true,
     dataMode: "measured",
@@ -214,6 +248,7 @@ export async function runPublicAuditIntelligence(input: {
     backlinkCount: backlinks.success ? (backlinks.data?.length ?? 0) : 0,
     backlinksAvailable: backlinks.success,
     serpPresence,
+    competitorReveal,
   };
 }
 
@@ -239,6 +274,7 @@ export function emptyPublicAuditIntelligence(partial?: Partial<PublicAuditIntell
     backlinkCount: 0,
     backlinksAvailable: false,
     serpPresence: false,
+    competitorReveal: null,
     ...partial,
   };
 }

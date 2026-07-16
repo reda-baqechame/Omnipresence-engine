@@ -11,7 +11,7 @@ import { CoverageMap } from "@/components/coverage-map";
 function PublicAuditForm() {
   const searchParams = useSearchParams();
   const orgToken = searchParams.get("ref") || undefined;
-  const [form, setForm] = useState({ domain: "", brandName: "", industry: "", email: "" });
+  const [form, setForm] = useState({ domain: "", brandName: "", industry: "", email: "", competitors: "" });
   const [loading, setLoading] = useState(false);
   const [result, setResult] = useState<{
     score: {
@@ -25,6 +25,11 @@ function PublicAuditForm() {
     topIssues: Array<{ title: string; description: string; severity: string; fix_recommendation?: string }>;
     coverageItems?: Array<{ platform_name: string; is_present: boolean; competitor_present: boolean; surface: string }>;
     competitorGaps?: number;
+    competitorReveal?: {
+      sampleSize: number;
+      brandRank: number | null;
+      leaderboard: Array<{ name: string; isBrand: boolean; appearances: number; shareOfVoice: number }>;
+    } | null;
     authorityOpportunities?: Array<{ target_site: string; pitch_angle: string }>;
     authority?: { rating: number; referringDomains: number; domainAgeYears: number; sources: string[] } | null;
   } | null>(null);
@@ -32,10 +37,22 @@ function PublicAuditForm() {
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     setLoading(true);
+    const competitors = form.competitors
+      .split(",")
+      .map((c) => c.trim())
+      .filter(Boolean)
+      .slice(0, 5);
     const res = await fetch("/api/public/audit", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ ...form, orgToken }),
+      body: JSON.stringify({
+        domain: form.domain,
+        brandName: form.brandName,
+        industry: form.industry,
+        email: form.email,
+        competitors,
+        orgToken,
+      }),
     });
     setResult(await res.json());
     setLoading(false);
@@ -90,6 +107,19 @@ function PublicAuditForm() {
               </div>
             </div>
             <div>
+              <label className="block text-sm font-medium mb-1.5">Competitors (comma-separated)</label>
+              <input
+                value={form.competitors}
+                onChange={(e) => setForm({ ...form, competitors: e.target.value })}
+                placeholder="Competitor A, Competitor B"
+                title="Competitors"
+                className="w-full bg-background border border-input rounded-lg px-3 py-2 text-sm"
+              />
+              <p className="mt-1 text-xs text-muted-foreground">
+                Add competitors to see who AI engines recommend instead of you.
+              </p>
+            </div>
+            <div>
               <label className="block text-sm font-medium mb-1.5">Email *</label>
               <input
                 type="email"
@@ -119,6 +149,36 @@ function PublicAuditForm() {
                 <SubScoreBar label="Technical Readiness" score={result.score.technical_readiness} available={result.score.availability?.technical_readiness ?? true} />
               </div>
             </div>
+
+            {result.competitorReveal && result.competitorReveal.leaderboard.length > 0 && (
+              <div className="bg-card border border-border rounded-xl p-6">
+                <h2 className="font-semibold">Who AI engines recommend</h2>
+                <p className="text-sm text-muted-foreground mt-1 mb-4">
+                  Measured across {result.competitorReveal.sampleSize} real AI answers just now.
+                  {result.competitorReveal.brandRank
+                    ? ` You rank #${result.competitorReveal.brandRank} of ${result.competitorReveal.leaderboard.length}.`
+                    : " Your brand did not appear in any measured answer."}
+                </p>
+                <div className="space-y-2">
+                  {result.competitorReveal.leaderboard.map((entry) => (
+                    <div key={entry.name} className="flex items-center gap-3">
+                      <span className={`w-40 truncate text-sm ${entry.isBrand ? "font-semibold text-primary" : ""}`}>
+                        {entry.name}{entry.isBrand ? " (you)" : ""}
+                      </span>
+                      <div className="flex-1 h-2.5 bg-secondary rounded-full overflow-hidden">
+                        <div
+                          className={`h-full rounded-full ${entry.isBrand ? "bg-primary" : "bg-muted-foreground/50"}`}
+                          style={{ width: `${Math.max(3, Math.round(entry.shareOfVoice * 100))}%` }}
+                        />
+                      </div>
+                      <span className="w-12 text-right text-xs text-muted-foreground">
+                        {Math.round(entry.shareOfVoice * 100)}%
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
 
             {result.authority && (
               <div className="bg-card border border-border rounded-xl p-6">

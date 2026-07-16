@@ -107,19 +107,37 @@ export async function runProjectScan(
   );
 
   const services = (brandProfile.products_services || []).map((s) => s.name);
-  const prompts = await generatePromptUniverse(
-    projectId,
-    p.name,
-    p.industry || "",
-    p.location || "",
-    p.competitors || [],
-    p.target_buyer || "",
-    services,
-    promptCount
-  );
 
-  await supabase.from("prompts").delete().eq("project_id", projectId);
-  if (prompts.length > 0) await supabase.from("prompts").insert(prompts);
+  // Onboarding prompt approval: when the project already has prompts (approved
+  // in the wizard, imported via CSV/GSC, or curated in the campaign panel),
+  // scan exactly those. Regenerating on every scan silently wiped the user's
+  // curation and tracked selections — the approved set is the source of truth.
+  const { data: existingPromptRows } = await supabase
+    .from("prompts")
+    .select("text, priority, is_tracked")
+    .eq("project_id", projectId);
+
+  let prompts: Array<{ text: string; priority: number | null }>;
+  if (existingPromptRows && existingPromptRows.length > 0) {
+    const tracked = existingPromptRows.filter((row) => row.is_tracked !== false);
+    prompts = (tracked.length > 0 ? tracked : existingPromptRows).map((row) => ({
+      text: row.text,
+      priority: row.priority,
+    }));
+  } else {
+    const generated = await generatePromptUniverse(
+      projectId,
+      p.name,
+      p.industry || "",
+      p.location || "",
+      p.competitors || [],
+      p.target_buyer || "",
+      services,
+      promptCount
+    );
+    if (generated.length > 0) await supabase.from("prompts").insert(generated);
+    prompts = generated.map((row) => ({ text: row.text, priority: row.priority ?? null }));
+  }
 
   const { data: run } = await supabase
     .from("visibility_runs")
@@ -154,7 +172,7 @@ export async function runProjectScan(
     brandDomain: p.domain,
     competitors: p.competitors || [],
     location: p.location || "United States",
-    prompts: prompts.map((pr) => ({ text: pr.text, priority: pr.priority })),
+    prompts: prompts.map((pr) => ({ text: pr.text, priority: pr.priority ?? undefined })),
     maxPrompts: maxScanPrompts,
     isCancelled: makeRunCancellationChecker(supabase, run!.id),
     onProbeResult: async (result) => {

@@ -197,6 +197,27 @@ export const ProjectCreateSchema = z.object({
   location: z.string().trim().max(120).optional(),
   target_buyer: z.string().trim().max(200).optional(),
   current_monthly_traffic: z.number().min(0).optional(),
+  /** Onboarding fork: is this the user's own brand or an agency's client? */
+  client_mode: z.enum(["myself", "client"]).optional(),
+  /** Prompts the user approved during onboarding. When present, the first scan
+   * uses exactly these instead of regenerating a prompt universe — the user's
+   * approval is the source of truth (no surprise provider spend on prompts
+   * they never saw). */
+  approved_prompts: z
+    .array(
+      z.object({
+        text: nonEmpty.max(180),
+        category: z.string().trim().max(32).optional(),
+        priority: z.number().min(1).max(100).optional(),
+      })
+    )
+    .max(60)
+    .optional(),
+});
+
+/** POST /api/onboarding/analyze — pre-project domain intelligence. */
+export const OnboardingAnalyzeSchema = z.object({
+  domain: nonEmpty.max(253),
 });
 
 export const V1ScanSchema = z

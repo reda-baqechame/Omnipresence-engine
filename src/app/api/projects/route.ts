@@ -57,6 +57,9 @@ export async function POST(request: NextRequest) {
     monthly_ad_spend: typeof body.monthly_ad_spend === "number" ? body.monthly_ad_spend : undefined,
   };
 
+  const settings: Record<string, unknown> = { business_model: businessModel };
+  if (body.client_mode) settings.client_mode = body.client_mode;
+
   const { data: project, error } = await supabase
     .from("projects")
     .insert({
@@ -71,13 +74,31 @@ export async function POST(request: NextRequest) {
       conversion_goal: body.conversion_goal ? String(body.conversion_goal).slice(0, 120) : null,
       monthly_ad_spend: typeof body.monthly_ad_spend === "number" ? body.monthly_ad_spend : null,
       current_monthly_traffic: typeof body.current_monthly_traffic === "number" ? body.current_monthly_traffic : null,
-      settings: { business_model: businessModel },
+      settings,
       status: "scanning",
     })
     .select()
     .single();
 
   if (error) return apiServerError("project create failed", error);
+
+  // Onboarding prompt approval: persist the user-approved prompts BEFORE the
+  // scan trigger so the scan runner tracks exactly what the user reviewed
+  // instead of regenerating a universe they never saw.
+  if (Array.isArray(body.approved_prompts) && body.approved_prompts.length > 0) {
+    const promptRows = body.approved_prompts.slice(0, 60).map((p) => ({
+      project_id: project.id,
+      text: String(p.text).slice(0, 180),
+      category: p.category ? String(p.category).slice(0, 32) : "solution_aware",
+      priority: typeof p.priority === "number" ? Math.min(100, Math.max(1, p.priority)) : 80,
+      is_tracked: true,
+    }));
+    const { error: promptError } = await supabase.from("prompts").insert(promptRows);
+    if (promptError) {
+      // Non-fatal: the scan runner falls back to generating a universe.
+      console.error("approved prompt insert failed", promptError.message);
+    }
+  }
 
   await triggerProjectScan(project.id, membership.organization_id);
 
