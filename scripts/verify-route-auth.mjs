@@ -30,6 +30,8 @@ const ALLOWLIST = {
   "api/oauth/callback/route.ts": "OAuth flow validated via signed state param",
   "api/auth/setup-org/route.ts": "creates an org for the authenticated session user",
   "api/report/[token]/pdf/route.ts": "access gated by an unguessable report token",
+  "api/public/verify/[receiptId]/route.ts":
+    "public receipt verification (Phase 0, Master Plan v4) — access gated by an unguessable receipt UUID capability, rate limited, exposes only that single receipt's fields",
   "api/public/audit/route.ts": "intentionally public anonymous audit (no tenant data read)",
   "api/traffic-panel/ingest/route.ts": "opt-in pixel ingest gated by TRAFFIC_PANEL_INGEST_SECRET header",
   "api/traffic-panel/beacon/route.ts": "public 1x1 beacon — domain+projectId validated, no PII, best-effort insert",

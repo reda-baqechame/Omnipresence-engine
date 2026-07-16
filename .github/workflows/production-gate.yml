@@ -1,8 +1,8 @@
 name: Production Gate
 
+# Weekly schedule removed for manual-only cost control — still runs on push to main
+# and via workflow_dispatch (which can include verify:stress).
 on:
-  schedule:
-    - cron: "0 7 * * 1"
   workflow_dispatch:
   push:
     branches: [main]

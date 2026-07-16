@@ -1111,29 +1111,34 @@ export const weeklyReportRetention = inngest.createFunction(
 export const weeklyEvidenceRetention = inngest.createFunction(
   { id: "weekly-evidence-retention", retries: 0, triggers: [{ cron: "30 4 * * 0" }] },
   async ({ step }) => {
-    return step.run("prune-evidence", async () => {
+    const projects = await step.run("list-projects", async () => {
       const supabase = await createServiceClient();
-      const { enforceEvidenceRetention, EVIDENCE_RETENTION_PER_PROJECT } = await import("@/lib/engines/evidence");
-      const { getEvidenceRetentionDays } = await import("@/lib/plans/limits");
-      const { data: projects } = await supabase
+      const { data } = await supabase
         .from("projects")
         .select("id, organization_id, organizations(plan)")
         .limit(2000);
-      let prunedTotal = 0;
-      for (const p of projects || []) {
-        const plan = (p as unknown as { organizations?: { plan?: string } }).organizations?.plan as
-          | import("@/types/database").SubscriptionPlan
-          | undefined;
+      return (data || []) as Array<{ id: string; organizations?: { plan?: string } }>;
+    });
+
+    let prunedTotal = 0;
+    for (const project of projects) {
+      // Project-scoped step id: one project's failure/replay never collides
+      // with or blocks another project's retention pass.
+      prunedTotal += await step.run(`prune-evidence-${project.id}`, async () => {
+        const supabase = await createServiceClient();
+        const { enforceEvidenceRetention, EVIDENCE_RETENTION_PER_PROJECT } = await import("@/lib/engines/evidence");
+        const { getEvidenceRetentionDays } = await import("@/lib/plans/limits");
+        const plan = project.organizations?.plan as import("@/types/database").SubscriptionPlan | undefined;
         const days = getEvidenceRetentionDays(plan);
-        prunedTotal += await enforceEvidenceRetention(
+        return enforceEvidenceRetention(
           supabase,
-          p.id,
+          project.id,
           EVIDENCE_RETENTION_PER_PROJECT,
           Number.isFinite(days) ? days : undefined
         );
-      }
-      return { projects: (projects || []).length, pruned: prunedTotal };
-    });
+      });
+    }
+    return { projects: projects.length, pruned: prunedTotal };
   }
 );
 

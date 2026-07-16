@@ -19,6 +19,7 @@ import { getValidOAuthToken } from "@/lib/oauth/tokens";
 import { recordLedgerAction } from "@/lib/engines/results-ledger";
 import { captureException } from "@/lib/observability/log";
 import { inngest } from "@/lib/inngest/client";
+import { MANUAL_ONLY_MODE } from "@/lib/config/background-jobs";
 import { estimateActionImpact } from "@/lib/engines/impact-estimate";
 import { sendEmail } from "@/lib/email/transport";
 import { buildLlmsTxt, buildReviewRequest, buildOutreachEmail } from "@/lib/engines/generators";
@@ -389,19 +390,23 @@ export async function runQueuedOps(supabase: SupabaseClient, opsId: string): Pro
       (typeof payload.keyword === "string" && payload.keyword) ||
       (typeof payload.title === "string" && payload.title) ||
       undefined;
-    await inngest
-      .send({
-        name: "asset/deployed",
-        data: {
-          projectId: item.project_id,
-          organizationId: item.organization_id,
-          url: result.publishedUrl,
-          assetId: typeof payload.assetId === "string" ? payload.assetId : undefined,
-          keyword,
-          taskId: item.task_id ?? undefined,
-        },
-      })
-      .catch(() => undefined);
+    // Manual-only mode skips the delayed deploy reprobe (asset/deployed → sleep →
+    // visibility re-scan). That chain is an automatic follow-up, not a button click.
+    if (!MANUAL_ONLY_MODE) {
+      await inngest
+        .send({
+          name: "asset/deployed",
+          data: {
+            projectId: item.project_id,
+            organizationId: item.organization_id,
+            url: result.publishedUrl,
+            assetId: typeof payload.assetId === "string" ? payload.assetId : undefined,
+            keyword,
+            taskId: item.task_id ?? undefined,
+          },
+        })
+        .catch(() => undefined);
+    }
   }
 
   return result;

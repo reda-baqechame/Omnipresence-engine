@@ -13,6 +13,8 @@ RUN npm ci
 FROM base AS build
 COPY --from=deps /app/node_modules ./node_modules
 COPY . .
+# Next may not create public/; Docker COPY requires the path to exist.
+RUN mkdir -p public
 RUN npm run build
 
 # --- runtime ---
@@ -24,6 +26,9 @@ COPY --from=build --chown=node:node /app/.next ./.next
 COPY --from=build --chown=node:node /app/public ./public
 COPY --from=build --chown=node:node /app/package.json ./package.json
 COPY --from=build --chown=node:node /app/next.config.ts ./next.config.ts
+# Needed for railway.json preDeployCommand (`npm run db:migrate`).
+COPY --from=build --chown=node:node /app/scripts ./scripts
+COPY --from=build --chown=node:node /app/supabase ./supabase
 USER node
 
 EXPOSE 3000

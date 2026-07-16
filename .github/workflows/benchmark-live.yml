@@ -1,8 +1,7 @@
 name: Benchmark Live
 
+# Schedule removed for manual-only cost control — run via workflow_dispatch only.
 on:
-  schedule:
-    - cron: "0 6 * * 1"
   workflow_dispatch:
 
 jobs:

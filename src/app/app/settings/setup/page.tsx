@@ -89,9 +89,10 @@ export default function SetupPage() {
         },
         {
           id: "inngest",
-          title: "Connect Inngest (background scans + crons)",
+          title: "Connect Inngest (manual scans + jobs)",
           done: p.inngest === true && health.checks?.inngest === "ok",
-          action: "INNGEST_EVENT_KEY + INNGEST_SIGNING_KEY. Crons: on-page (daily), internal links (Tue), link building (10th), intelligence (Mon), attribution (Mon/monthly), rank check (Tue), backlinks (Wed), rescan (weekly/monthly), freshness (daily), citation diff (Mon), guarantee verify (daily), content publish (hourly), weekly report (Fri).",
+          action:
+            "INNGEST_EVENT_KEY + INNGEST_SIGNING_KEY. Set MANUAL_ONLY_MODE=true to disable all crons and auto follow-ups — paid APIs only run when you click Rescan, generate a report, run a panel, or approve ops. Keep Inngest keys so those button-triggered jobs still work on serverless.",
         },
         {
           id: "execution",

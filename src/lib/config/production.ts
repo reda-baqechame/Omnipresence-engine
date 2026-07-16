@@ -5,6 +5,7 @@ import {
   hasDirectLLMCapability,
   activeAIEngines,
 } from "@/lib/config/capabilities";
+import { MANUAL_ONLY_MODE } from "@/lib/config/background-jobs";
 import { hasIntelligenceApi } from "@/lib/providers/intelligence-api";
 import { hasIntegrationEncryptionKey } from "@/lib/security/credential-vault";
 import { hasResendCapability, hasSmtpCapability } from "@/lib/email/transport";
@@ -130,7 +131,18 @@ export function getProductionReadiness(): {
     label: "Background jobs (Inngest)",
     status:
       hasEnv("INNGEST_EVENT_KEY") && hasEnv("INNGEST_SIGNING_KEY") ? "ok" : "warning",
-    message: "Scans, crons, guarantee verify, publish scheduler",
+    message: MANUAL_ONLY_MODE
+      ? "Manual-only: event handlers for scans/reports/panels; crons and auto follow-ups disabled"
+      : "Scans, crons, guarantee verify, publish scheduler",
+  });
+
+  checks.push({
+    id: "manual_only_mode",
+    label: "Manual-only API mode",
+    status: MANUAL_ONLY_MODE ? "ok" : "warning",
+    message: MANUAL_ONLY_MODE
+      ? "Background crons disabled; manual actions only"
+      : "MANUAL_ONLY_MODE unset — scheduled Inngest crons will call paid APIs while idle",
   });
 
   const omnidataInsecureKey =
