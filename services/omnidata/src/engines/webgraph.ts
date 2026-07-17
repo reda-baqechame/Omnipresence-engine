@@ -250,21 +250,32 @@ async function streamEdgesFromGzipUrl(conn: DuckDBConnection, url: string): Prom
  * index — building that index over ~90M strings is itself an OOM bomb.
  */
 async function ingestRanksNative(conn: DuckDBConnection, url: string): Promise<number> {
-  console.log("[webgraph] ranks via read_csv (out-of-core)…");
+  console.log("[webgraph] ranks via read_csv -> parquet (out-of-core, WAL-free)…");
   await conn.run("INSTALL httpfs; LOAD httpfs;");
+  // COPY TO parquet instead of CREATE TABLE: a ~90M-row single-transaction
+  // table blows up the WAL and its mid-transaction checkpoint dies ("Failed to
+  // create checkpoint … could not remove .wal"). COPY streams straight to a
+  // parquet file — no WAL, no checkpoint — and ORDER BY rev_host gives
+  // row-group stats that make point lookups prune like an index.
+  const parquetPath = join(dirname(DB_PATH), "webgraph-ranks.parquet");
   await conn.run(
-    `CREATE OR REPLACE TABLE ranks AS
+    `COPY (
        SELECT column0 AS harmonic_pos, column1 AS harmonic_val,
               column2 AS pr_pos, column3 AS pr_val, column4 AS rev_host
        FROM read_csv('${url.replace(/'/g, "''")}',
          delim='\t', header=false, compression='gzip', skip=1, ignore_errors=true,
          columns={'column0':'BIGINT','column1':'DOUBLE','column2':'BIGINT','column3':'DOUBLE','column4':'VARCHAR'})
-       ORDER BY rev_host;`
+       ORDER BY rev_host
+     ) TO '${parquetPath.replace(/'/g, "''").replace(/\\/g, "/")}' (FORMAT PARQUET, COMPRESSION ZSTD);`
   );
-  await conn.run("CHECKPOINT;");
+  await conn.run(
+    `CREATE OR REPLACE VIEW ranks AS SELECT * FROM read_parquet('${parquetPath
+      .replace(/'/g, "''")
+      .replace(/\\/g, "/")}');`
+  );
   const r = await conn.runAndReadAll("SELECT COUNT(*) AS c FROM ranks");
   const count = Number(r.getRowObjects()[0]?.c ?? 0);
-  console.log(`[webgraph] ranks complete (native): ${count.toLocaleString()} rows`);
+  console.log(`[webgraph] ranks complete (native/parquet): ${count.toLocaleString()} rows`);
   return count;
 }
 
