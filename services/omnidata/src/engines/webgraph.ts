@@ -104,7 +104,22 @@ export async function getConnection(): Promise<DuckDBConnection | null> {
   if (!mod) return null;
   try {
     const instance = await mod.DuckDBInstance.create(DB_PATH);
-    cachedConn = await instance.connect();
+    const conn = await instance.connect();
+    // Without an explicit memory_limit DuckDB assumes ~80% of container RAM and
+    // the ingest checkpoint dies with "could not allocate block … (5.9GiB/5.9GiB
+    // used)" on Railway. Cap memory well below the container ceiling and give
+    // DuckDB a temp directory ON THE VOLUME so larger-than-memory operations
+    // (rank index build, checkpoints) spill to disk instead of OOMing.
+    try {
+      const memLimit = process.env.WEBGRAPH_DUCKDB_MEMORY_LIMIT || "2GB";
+      const tmpDir = join(dirname(DB_PATH), "duckdb-tmp");
+      await conn.run(`SET memory_limit='${memLimit}';`);
+      await conn.run(`SET temp_directory='${tmpDir}';`);
+      await conn.run("SET preserve_insertion_order=false;");
+    } catch {
+      /* older DuckDB builds may not support a setting — proceed with defaults */
+    }
+    cachedConn = conn;
     return cachedConn;
   } catch {
     duckUnavailable = true;
