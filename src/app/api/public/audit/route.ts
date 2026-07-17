@@ -13,6 +13,7 @@ import { PublicAuditSchema } from "@/lib/validation/schemas";
 import { runPublicAuditIntelligenceWithBudget } from "@/lib/engines/public-audit-scan";
 import { preferLiveData } from "@/lib/config/capabilities";
 import { resolveOrgFromAuditToken } from "@/lib/security/audit-referral";
+import { analyzeDomainForOnboarding } from "@/lib/engines/onboarding-intelligence";
 
 export const maxDuration = 120;
 
@@ -35,24 +36,58 @@ export async function POST(request: NextRequest) {
     return apiError("Invalid domain");
   }
 
-  const name = brandName ? String(brandName).slice(0, 120) : normalized.split(".")[0];
-  const ind = industry ? String(industry).slice(0, 80) : "business";
+  let name = brandName ? String(brandName).slice(0, 120) : normalized.split(".")[0];
+  let ind = industry ? String(industry).slice(0, 80) : "";
   const loc = location ? String(location).slice(0, 80) : "";
-  const compList = Array.isArray(competitors)
+  let compList = Array.isArray(competitors)
     ? competitors.map((c: string) => String(c).slice(0, 80)).slice(0, 5)
     : [];
+
+  // When the caller gave us only a domain, infer the real business first
+  // (homepage scrape + one LLM call). Without this the grader used to fall
+  // back to the literal industry "business" and probe engines with generic
+  // nonsense prompts — the exact wrong-industry failure competitors ship.
+  // Time-boxed and best-effort: on timeout/failure we keep the raw defaults.
+  const inferenceStart = Date.now();
+  if (!brandName || !industry) {
+    try {
+      const analysis = await Promise.race([
+        analyzeDomainForOnboarding(normalized, { maxCompetitors: 3 }),
+        new Promise<null>((resolve) => setTimeout(() => resolve(null), 20_000)),
+      ]);
+      if (analysis?.inferenceGrounded) {
+        if (!brandName && analysis.brandName) name = analysis.brandName.slice(0, 120);
+        if (!industry && analysis.industry) ind = analysis.industry.slice(0, 80);
+        if (compList.length === 0) {
+          compList = analysis.competitors
+            .filter((c) => c.confidence >= 0.5)
+            .map((c) => c.name.slice(0, 80))
+            .slice(0, 3);
+        }
+      }
+    } catch {
+      // keep defaults
+    }
+  }
+  if (!ind) ind = "business";
+  // Keep the whole request inside the route's 120s budget: whatever the
+  // inference consumed comes out of the intelligence scan's allowance.
+  const intelligenceBudgetMs = Math.max(50_000, 90_000 - (Date.now() - inferenceStart));
 
   // Same keyless authority + retrieval-health signals the authenticated scan
   // feeds into the score, so the public number is computed identically.
   const [technicalFindings, intelligence, authority, pageSpeed] = await Promise.all([
     runTechnicalAudit(normalized),
-    runPublicAuditIntelligenceWithBudget({
-      domain: normalized,
-      brandName: name,
-      industry: ind,
-      location: loc,
-      competitors: compList,
-    }),
+    runPublicAuditIntelligenceWithBudget(
+      {
+        domain: normalized,
+        brandName: name,
+        industry: ind,
+        location: loc,
+        competitors: compList,
+      },
+      intelligenceBudgetMs
+    ),
     getAuthorityRating(normalized).catch(() => null),
     getPageSpeed(normalized, "mobile").catch(() => null),
   ]);
@@ -191,6 +226,11 @@ export async function POST(request: NextRequest) {
 
   return NextResponse.json({
     domain: normalized,
+    // What the audit actually measured against — inferred from the homepage
+    // when not provided, so the caller can see (and correct) the framing.
+    brandName: name,
+    industry: ind,
+    competitors: compList,
     email,
     emailSent,
     ...(showEmailDebug && emailError ? { emailError } : {}),
