@@ -77,8 +77,27 @@ export default function LandingPage() {
         </Link>
       </section>
 
-      <footer className="border-t border-border py-8 text-center text-sm text-muted-foreground space-y-2">
+      <footer className="border-t border-border py-8 text-center text-sm text-muted-foreground space-y-3">
         <p>PresenceOS — The Organic Visibility Engine</p>
+        <p className="flex justify-center gap-4 flex-wrap">
+          <Link href="/pricing" className="hover:text-foreground transition">Pricing</Link>
+          <Link href="/audit" className="hover:text-foreground transition">Free Audit</Link>
+          <Link href="/tools" className="hover:text-foreground transition">Free Tools</Link>
+          <Link href="/customers" className="hover:text-foreground transition">Results</Link>
+          <Link href="/agencies" className="hover:text-foreground transition">For Agencies</Link>
+        </p>
+        <p className="flex justify-center gap-4 flex-wrap">
+          <Link href="/vs/otterly" className="hover:text-foreground transition">vs Otterly</Link>
+          <Link href="/vs/peec" className="hover:text-foreground transition">vs Peec</Link>
+          <Link href="/vs/rankscale" className="hover:text-foreground transition">vs Rankscale</Link>
+          <Link href="/vs/profound" className="hover:text-foreground transition">vs Profound</Link>
+          <Link href="/vs/trakkr" className="hover:text-foreground transition">vs Trakkr</Link>
+        </p>
+        <p className="flex justify-center gap-4 flex-wrap">
+          <Link href="/learn/why-chatgpt-doesnt-recommend-my-brand" className="hover:text-foreground transition">Why ChatGPT skips your brand</Link>
+          <Link href="/learn/how-to-get-cited-by-chatgpt" className="hover:text-foreground transition">Get cited by ChatGPT</Link>
+          <Link href="/learn/ai-visibility-tracker-accuracy" className="hover:text-foreground transition">Tracker accuracy</Link>
+        </p>
         <p className="flex justify-center gap-4">
           <Link href="/privacy" className="hover:text-foreground transition">Privacy</Link>
           <Link href="/terms" className="hover:text-foreground transition">Terms</Link>

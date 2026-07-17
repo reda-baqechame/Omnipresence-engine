@@ -276,9 +276,9 @@ function UpsellCTA() {
   return (
     <div className="bg-primary/10 border border-primary/20 rounded-xl p-6 text-center mt-6">
       <p className="font-semibold mb-2">Want the full OmniPresence Score?</p>
-      <p className="text-sm text-muted-foreground mb-4">AI visibility tracking, competitor analysis, 90-day roadmap, and white-label PDF.</p>
-      <Link href="/signup" className="bg-primary text-primary-foreground px-6 py-2 rounded-lg font-medium inline-block">
-        Start Free Audit
+      <p className="text-sm text-muted-foreground mb-4">AI visibility across every engine, competitor reveal, and verifiable receipts — no signup needed.</p>
+      <Link href="/audit" className="bg-primary text-primary-foreground px-6 py-2 rounded-lg font-medium inline-block">
+        Run Free Audit
       </Link>
     </div>
   );
