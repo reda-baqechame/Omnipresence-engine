@@ -73,11 +73,11 @@ export default function AgenciesPage() {
       <section className="max-w-4xl mx-auto px-6 py-16 text-center border-t border-border">
         <h2 className="text-3xl font-bold mb-4">Professional beta</h2>
         <p className="text-muted-foreground mb-2 max-w-xl mx-auto">
-          All features are unlocked during launch while we harden measurement, security, and billing.
-          Pricing will be announced before commercial launch.
+          Three plans, every feature on all of them, hard-capped at $199/mo. Plans differ only in
+          capacity — brands, prompts, and monthly observations.
         </p>
         <p className="text-sm text-muted-foreground mb-8">
-          Matches in-app billing settings — no charges until we exit beta.
+          <Link href="/pricing" className="text-primary hover:underline">See pricing and the plan calculator →</Link>
         </p>
         <div className="flex items-center justify-center gap-4">
           <Link href="/audit" className="border border-border px-6 py-2 rounded-lg font-medium hover:bg-secondary transition">

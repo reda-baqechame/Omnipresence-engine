@@ -89,7 +89,13 @@ export type OutreachStatus =
   | "accepted"
   | "published"
   | "rejected";
-export type SubscriptionPlan = "free" | "audit" | "tracking" | "agency" | "enterprise";
+/**
+ * Master Plan v4 pricing: three paid plans (Solo $29 / Growth $79 / Agency
+ * $199), every feature on every plan, only capacity changes. `free` is the
+ * funnel tier. Legacy DB values (audit/tracking/enterprise) are remapped by
+ * migration 0089 and normalized defensively in getOrganizationPlan.
+ */
+export type SubscriptionPlan = "free" | "solo" | "growth" | "agency";
 
 export interface AuditLead {
   id: string;

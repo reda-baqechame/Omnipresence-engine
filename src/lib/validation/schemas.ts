@@ -152,7 +152,7 @@ export type KeywordsInput = z.infer<typeof KeywordsSchema>;
 const urlish = z.string().trim().max(2048);
 const boundedText = z.string().trim().max(500);
 
-export const PLAN_KEYS = ["audit", "tracking", "agency"] as const;
+export const PLAN_KEYS = ["solo", "growth", "agency"] as const;
 
 export const BillingCheckoutSchema = z.object({
   plan: z.enum(PLAN_KEYS).optional(),

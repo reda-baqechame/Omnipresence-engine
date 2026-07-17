@@ -3688,3 +3688,14 @@ CREATE POLICY action_sprints_all ON action_sprints FOR ALL
   USING (project_id IN (SELECT id FROM projects WHERE organization_id IN (SELECT get_user_org_ids())));
 
 
+-- ========== 0088_plan_slugs_add.sql ==========
+
+ALTER TYPE subscription_plan ADD VALUE IF NOT EXISTS 'solo';
+ALTER TYPE subscription_plan ADD VALUE IF NOT EXISTS 'growth';
+
+-- ========== 0089_plan_slugs_remap.sql ==========
+
+UPDATE organizations SET plan = 'solo' WHERE plan = 'audit';
+UPDATE organizations SET plan = 'growth' WHERE plan = 'tracking';
+UPDATE organizations SET plan = 'agency' WHERE plan = 'enterprise';
+

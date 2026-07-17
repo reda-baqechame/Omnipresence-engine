@@ -14,17 +14,23 @@ export class PlanLimitExceededError extends Error {
 }
 
 /**
- * Per-plan allowances. Active only when FREE_ACCESS_MODE=false, so flipping the
- * flag turns on real enforcement instantly — no code change needed. Values are
- * intentionally generous; tune to match the published pricing tiers.
- * `Infinity` = unlimited.
+ * Master Plan v4 pricing: every feature on every plan — ONLY capacity changes.
+ * Active only when FREE_ACCESS_MODE=false, so flipping the flag turns on real
+ * enforcement instantly. `Infinity` = unlimited.
  */
 export interface PlanLimits {
+  /** Brands/clients (projects). */
   projects: number;
   promptGeneration: number;
+  /** Tracked prompts, pooled across the org's projects. */
   scanPrompts: number;
   /** Max probe cells (prompts × engines × geos × personas × runs) per panel run. */
   panelCells: number;
+  /**
+   * Monthly observation budget — an observation is one prompt × engine × geo ×
+   * persona × run. The only real COGS driver; enforced via metering.
+   */
+  monthlyObservations: number;
   /**
    * Evidence/receipt retention window in days (Master Plan v4 Phase 0).
    * Receipts older than this are pruned (export-before-deletion available via
@@ -34,12 +40,32 @@ export interface PlanLimits {
 }
 
 const PLAN_LIMITS: Record<SubscriptionPlan, PlanLimits> = {
-  free: { projects: 1, promptGeneration: 50, scanPrompts: 25, panelCells: 60, evidenceRetentionDays: 30 },
-  audit: { projects: 1, promptGeneration: 150, scanPrompts: 50, panelCells: 120, evidenceRetentionDays: 90 },
-  tracking: { projects: 3, promptGeneration: 300, scanPrompts: 100, panelCells: 400, evidenceRetentionDays: 365 },
-  agency: { projects: 25, promptGeneration: 500, scanPrompts: 150, panelCells: 1200, evidenceRetentionDays: 730 },
-  enterprise: { projects: Infinity, promptGeneration: 1000, scanPrompts: 300, panelCells: 5000, evidenceRetentionDays: Infinity },
+  // Funnel tier, not a pricing tier: 1 brand, 5 prompts, 30-day retention.
+  free: { projects: 1, promptGeneration: 50, scanPrompts: 5, panelCells: 60, monthlyObservations: 200, evidenceRetentionDays: 30 },
+  // Solo $29 — 1 brand, 25 prompts, ~1,500 observations/mo, 12mo retention.
+  solo: { projects: 1, promptGeneration: 150, scanPrompts: 25, panelCells: 500, monthlyObservations: 1500, evidenceRetentionDays: 365 },
+  // Growth $79 — 5 brands, 100 prompts pooled, ~5,000 observations/mo, 24mo.
+  growth: { projects: 5, promptGeneration: 300, scanPrompts: 100, panelCells: 1500, monthlyObservations: 5000, evidenceRetentionDays: 730 },
+  // Agency $199 — 15 brands, 300 prompts pooled, ~12,000 observations/mo,
+  // configurable retention + export.
+  agency: { projects: 15, promptGeneration: 600, scanPrompts: 300, panelCells: 3600, monthlyObservations: 12000, evidenceRetentionDays: Infinity },
 };
+
+/**
+ * Legacy DB plan values (pre-v4 enum labels) normalized onto the 3-plan model.
+ * Migration 0089 remaps rows, but a cached/stale read must never crash gating.
+ */
+const LEGACY_PLAN_MAP: Record<string, SubscriptionPlan> = {
+  audit: "solo",
+  tracking: "growth",
+  enterprise: "agency",
+};
+
+export function normalizePlan(plan?: string | null): SubscriptionPlan {
+  if (!plan) return "free";
+  if (plan in PLAN_LIMITS) return plan as SubscriptionPlan;
+  return LEGACY_PLAN_MAP[plan] || "free";
+}
 
 /** Receipt retention window (days) for a plan; Infinity = never auto-pruned. */
 export function getEvidenceRetentionDays(plan?: SubscriptionPlan): number {
@@ -50,12 +76,17 @@ export function getEvidenceRetentionDays(plan?: SubscriptionPlan): number {
 }
 
 export function getPlanLimits(plan?: SubscriptionPlan): PlanLimits {
-  return PLAN_LIMITS[(plan || "free") as SubscriptionPlan] || PLAN_LIMITS.free;
+  return PLAN_LIMITS[normalizePlan(plan)];
 }
 
 /** Max probe cells allowed per panel run for this plan (the cost cap). */
 export function getPanelCellLimit(plan?: SubscriptionPlan): number {
   return getPlanLimits(plan).panelCells;
+}
+
+/** Monthly observation budget (prompt × engine × geo × persona × run). */
+export function getMonthlyObservationBudget(plan?: SubscriptionPlan): number {
+  return getPlanLimits(plan).monthlyObservations;
 }
 
 export async function getOrganizationPlan(
@@ -68,7 +99,7 @@ export async function getOrganizationPlan(
     .eq("id", organizationId)
     .single();
 
-  return (org?.plan as SubscriptionPlan) || "free";
+  return normalizePlan(org?.plan as string | null);
 }
 
 /**
@@ -94,7 +125,7 @@ export async function assertProjectLimit(
 
   if ((count ?? 0) >= limit) {
     throw new PlanLimitExceededError(
-      `Your ${resolvedPlan} plan allows ${limit} project${limit === 1 ? "" : "s"}. Upgrade to add more.`
+      `Your ${resolvedPlan} plan allows ${limit} brand${limit === 1 ? "" : "s"}. Upgrade to add more.`
     );
   }
 }
@@ -120,13 +151,10 @@ export function getEffectiveVisibilityScanPromptLimit(
 }
 
 /**
- * Merchant / Shopping engine is a higher-tier vertical. Honors FREE_ACCESS_MODE
- * (everything unlocked while paywalls are deferred); otherwise it's gated to
- * paid tiers. Wired now so flipping FREE_ACCESS_MODE off enforces it instantly.
+ * Master Plan v4: NO feature gating — every feature (including the merchant /
+ * shopping engine) is available on every plan. Kept as a function so existing
+ * call-sites stay wired; only capacity limits differentiate plans.
  */
-const MERCHANT_PLANS: SubscriptionPlan[] = ["tracking", "agency", "enterprise"];
-
-export function hasMerchantAccess(plan?: SubscriptionPlan): boolean {
-  if (FREE_ACCESS_MODE) return true;
-  return plan ? MERCHANT_PLANS.includes(plan) : false;
+export function hasMerchantAccess(_plan?: SubscriptionPlan): boolean {
+  return true;
 }

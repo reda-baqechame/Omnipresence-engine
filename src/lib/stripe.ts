@@ -16,49 +16,52 @@ export function getStripe(): Stripe {
   return stripeInstance;
 }
 
+/**
+ * Master Plan v4 pricing: three subscriptions, hard-capped at $199. Every
+ * feature on every plan — only capacity (brands, prompts, observations,
+ * retention) differs. See src/lib/plans/limits.ts for the capacity table.
+ */
 export const PLANS = {
-  audit: {
-    name: "One-Time Audit",
-    price: 199,
-    priceId: process.env.STRIPE_PRICE_AUDIT || "price_audit",
-    mode: "payment" as const,
-    features: [
-      "Full OmniPresence Score",
-      "AI & Search Visibility Scan",
-      "Technical Readiness Audit",
-      "Competitor Gap Analysis",
-      "90-Day Execution Roadmap",
-      "White-Label PDF Report",
-    ],
-  },
-  tracking: {
-    name: "Monthly Tracking",
-    price: 299,
-    priceId: process.env.STRIPE_PRICE_TRACKING || "price_tracking",
+  solo: {
+    name: "Solo",
+    price: 29,
+    priceId: process.env.STRIPE_PRICE_SOLO || "price_solo",
     mode: "subscription" as const,
     features: [
-      "Everything in Audit",
-      "Monthly AI Visibility Re-scans",
-      "Competitor Movement Tracking",
-      "Citation & Source Tracking",
-      "Historical Trend Charts",
-      "Automated Weekly Reports",
-      "Up to 150 tracked prompts",
+      "1 brand, 25 tracked prompts",
+      "~1,500 observations / month",
+      "All AI engines + Google surfaces",
+      "Verifiable receipts on every result",
+      "White-label reports, API & MCP",
+      "12-month receipt retention",
+    ],
+  },
+  growth: {
+    name: "Growth",
+    price: 79,
+    priceId: process.env.STRIPE_PRICE_GROWTH || "price_growth",
+    mode: "subscription" as const,
+    features: [
+      "5 brands, 100 prompts pooled",
+      "~5,000 observations / month",
+      "All AI engines + Google surfaces",
+      "Verifiable receipts on every result",
+      "White-label reports, API & MCP",
+      "24-month receipt retention",
     ],
   },
   agency: {
-    name: "Agency White-Label",
-    price: 999,
+    name: "Agency",
+    price: 199,
     priceId: process.env.STRIPE_PRICE_AGENCY || "price_agency",
     mode: "subscription" as const,
     features: [
-      "Everything in Tracking",
-      "White-Label Branding",
-      "Unlimited Client Projects",
-      "Up to 300 prompts per project",
-      "Content Generation Tools",
-      "Authority Outreach CRM",
-      "Priority Support",
+      "15 brands, 300 prompts pooled",
+      "~12,000 observations / month",
+      "All AI engines + Google surfaces",
+      "Client portals + white-label everything",
+      "Full evidence export + configurable retention",
+      "Priority support",
     ],
   },
 } as const;

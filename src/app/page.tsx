@@ -12,6 +12,7 @@ export default function LandingPage() {
           <span className="text-xl font-bold">PresenceOS</span>
         </div>
         <div className="flex items-center gap-4">
+          <Link href="/pricing" className="text-muted-foreground hover:text-foreground transition">Pricing</Link>
           <Link href="/login" className="text-muted-foreground hover:text-foreground transition">Log in</Link>
           <Link href="/signup" className="bg-primary text-primary-foreground px-4 py-2 rounded-lg font-medium hover:opacity-90 transition">
             Start Free Audit

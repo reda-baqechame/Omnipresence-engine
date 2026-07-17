@@ -3,14 +3,14 @@ import { getStripe } from "@/lib/stripe";
 import { createServiceClient } from "@/lib/supabase/server";
 import type { SubscriptionPlan } from "@/types/database";
 
-const ALLOWED_PLANS = new Set<SubscriptionPlan>(["audit", "tracking", "agency", "enterprise"]);
+const ALLOWED_PLANS = new Set<SubscriptionPlan>(["solo", "growth", "agency"]);
 
+// api_credit_limit mirrors the plan's monthly observation budget (limits.ts).
 const PLAN_CREDIT_LIMITS: Record<SubscriptionPlan, number> = {
-  free: 100,
-  audit: 500,
-  tracking: 2000,
-  agency: 10000,
-  enterprise: 100000,
+  free: 200,
+  solo: 1500,
+  growth: 5000,
+  agency: 12000,
 };
 
 export async function POST(request: NextRequest) {

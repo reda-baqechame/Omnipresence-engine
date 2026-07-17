@@ -76,11 +76,16 @@ export default function BillingPage() {
         </p>
       </div>
 
-      <div className="grid gap-4 md:grid-cols-2">
+      <p className="text-sm text-muted-foreground">
+        Every plan includes every feature — engines, white-label reports, client portals, API
+        &amp; MCP, verifiable receipts. Plans differ only in capacity.
+      </p>
+
+      <div className="grid gap-4 md:grid-cols-3">
         {PLAN_TIERS.filter((t) => t.id !== "free").map((tier) => (
           <div key={tier.slug} className="bg-card border border-border rounded-xl p-5 flex flex-col">
             <h2 className="text-lg font-semibold">{tier.name}</h2>
-            {tier.monthlyPrice && (
+            {typeof tier.monthlyPrice === "number" && (
               <p className="text-2xl font-bold mt-2">
                 ${tier.monthlyPrice}
                 <span className="text-sm font-normal text-muted-foreground">/mo</span>
@@ -94,15 +99,11 @@ export default function BillingPage() {
             </ul>
             <button
               type="button"
-              onClick={() => checkout(tier.id === "tracking" ? "tracking" : "agency")}
-              disabled={loading === tier.id || tier.id === "enterprise"}
+              onClick={() => checkout(tier.id)}
+              disabled={loading === tier.id}
               className="mt-4 bg-primary text-primary-foreground px-4 py-2 rounded-lg text-sm disabled:opacity-50"
             >
-              {tier.id === "enterprise"
-                ? "Contact sales"
-                : loading === tier.id
-                  ? "Redirecting…"
-                  : `Subscribe — ${tier.name}`}
+              {loading === tier.id ? "Redirecting…" : `Subscribe — ${tier.name}`}
             </button>
           </div>
         ))}

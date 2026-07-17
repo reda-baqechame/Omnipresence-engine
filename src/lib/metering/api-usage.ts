@@ -1,5 +1,6 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { FREE_ACCESS_MODE, UNLIMITED_API_CREDITS } from "@/lib/config/access";
+import { getMonthlyObservationBudget, getOrganizationPlan } from "@/lib/plans/limits";
 
 export async function trackApiUsage(
   supabase: SupabaseClient,
@@ -104,19 +105,59 @@ export async function assertTenantSurfaceBudget(
   pendingCredits = 1
 ): Promise<void> {
   const cap = Number(process.env.TENANT_DAILY_CREDIT_CAP);
-  if (!Number.isFinite(cap) || cap <= 0) return; // disabled by default
+  if (Number.isFinite(cap) && cap > 0) {
+    try {
+      const dayStart = `${new Date().toISOString().slice(0, 10)}T00:00:00Z`;
+      const { data } = await supabase
+        .from("api_usage")
+        .select("credits_used")
+        .eq("organization_id", organizationId)
+        .gte("created_at", dayStart);
+      const usedToday = (data || []).reduce((a, r) => a + (Number(r.credits_used) || 0), 0);
+      if (usedToday + pendingCredits > cap) {
+        throw new TenantBudgetExceededError(
+          `org ${organizationId} hit daily cap ${cap} (used ~${usedToday})`
+        );
+      }
+    } catch (e) {
+      if (e instanceof TenantBudgetExceededError) throw e;
+      // Fail-open on read errors.
+    }
+  }
+
+  await assertMonthlyObservationBudget(supabase, organizationId, pendingCredits);
+}
+
+/**
+ * Master Plan v4 pricing: plans differ only in capacity, and the capacity unit
+ * is the observation (one prompt × engine × geo × persona × run). When billing
+ * is live (FREE_ACCESS_MODE=false) each org gets its plan's monthly observation
+ * budget; month-to-date usage is summed from the api_usage ledger, so the
+ * budget resets naturally on the 1st (UTC) without a cron. Fail-open on read
+ * errors so a DB blip never wrongly blocks a paying tenant.
+ */
+export async function assertMonthlyObservationBudget(
+  supabase: SupabaseClient,
+  organizationId: string,
+  pendingCredits = 1
+): Promise<void> {
+  if (FREE_ACCESS_MODE) return;
 
   try {
-    const dayStart = `${new Date().toISOString().slice(0, 10)}T00:00:00Z`;
+    const plan = await getOrganizationPlan(supabase, organizationId);
+    const budget = getMonthlyObservationBudget(plan);
+    if (!Number.isFinite(budget)) return;
+
+    const monthStart = `${new Date().toISOString().slice(0, 7)}-01T00:00:00Z`;
     const { data } = await supabase
       .from("api_usage")
       .select("credits_used")
       .eq("organization_id", organizationId)
-      .gte("created_at", dayStart);
-    const usedToday = (data || []).reduce((a, r) => a + (Number(r.credits_used) || 0), 0);
-    if (usedToday + pendingCredits > cap) {
+      .gte("created_at", monthStart);
+    const usedThisMonth = (data || []).reduce((a, r) => a + (Number(r.credits_used) || 0), 0);
+    if (usedThisMonth + pendingCredits > budget) {
       throw new TenantBudgetExceededError(
-        `org ${organizationId} hit daily cap ${cap} (used ~${usedToday})`
+        `org ${organizationId} hit its ${plan} plan's monthly observation budget ${budget} (used ~${usedThisMonth})`
       );
     }
   } catch (e) {

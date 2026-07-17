@@ -167,7 +167,7 @@ Set `INTEGRATION_ENCRYPTION_KEY` (32+ chars) before saving CMS credentials in pr
 ## 3. Stripe
 
 1. Create products/prices for Audit ($199 one-time), Tracking ($299/mo), Agency ($999/mo)
-2. Set `STRIPE_PRICE_AUDIT`, `STRIPE_PRICE_TRACKING`, `STRIPE_PRICE_AGENCY`
+2. Set `STRIPE_PRICE_SOLO` ($29/mo), `STRIPE_PRICE_GROWTH` ($79/mo), `STRIPE_PRICE_AGENCY` ($199/mo)
 3. Add webhook endpoint: `https://your-domain.com/api/webhooks/stripe`
    - Events: `checkout.session.completed`, `customer.subscription.deleted`
 4. Enable **Customer Portal** in Stripe Dashboard → Settings → Billing

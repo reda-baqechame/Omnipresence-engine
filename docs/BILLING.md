@@ -7,7 +7,7 @@ PresenceOS billing is wired but **disabled in production** while `FREE_ACCESS_MO
 - Stripe **test mode** keys in staging env:
   - `STRIPE_SECRET_KEY=sk_test_...`
   - `STRIPE_WEBHOOK_SECRET=whsec_...` (from Stripe CLI or dashboard endpoint)
-  - Price IDs for plans (`STRIPE_PRICE_TRACKING`, `STRIPE_PRICE_AGENCY`, etc.)
+  - Price IDs for plans (`STRIPE_PRICE_SOLO` $29, `STRIPE_PRICE_GROWTH` $79, `STRIPE_PRICE_AGENCY` $199 — all monthly subscriptions)
 - Supabase staging project with migrations applied (organizations `api_credit_limit`, `api_credits_used`, Stripe customer columns).
 - App deployed to staging with `FREE_ACCESS_MODE=false` **only on the staging stack** (keep production `true` until commercialization gate passes).
 
@@ -29,7 +29,7 @@ Create a test checkout from **Settings → Billing** and confirm events:
 
 1. Sign in as org owner on staging.
 2. Open `/app/settings/billing`.
-3. Click **Subscribe — Tracking** (or Agency).
+3. Click **Subscribe — Growth** (or Solo / Agency).
 4. Complete Stripe test card `4242 4242 4242 4242`, any future expiry, any CVC.
 5. Return URL should land back in the app; org row should show non-free plan and matching `api_credit_limit`.
 

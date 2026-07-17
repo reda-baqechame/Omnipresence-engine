@@ -47,7 +47,7 @@ const ROUTE_SMOKE: Array<{
 test("billing checkout rejects invalid plan via Zod", () => {
   const parsed = parseOrError(BillingCheckoutSchema, { plan: "not-a-plan" });
   assert.equal(parsed.ok, false);
-  const valid = parseOrError(BillingCheckoutSchema, { plan: "tracking" });
+  const valid = parseOrError(BillingCheckoutSchema, { plan: "growth" });
   assert.equal(valid.ok, true);
 });
 

@@ -23,9 +23,9 @@ export async function POST(request: NextRequest) {
 
   const parsed = await validateBody(request, BillingCheckoutSchema);
   if (parsed.response) return parsed.response;
-  const planKey = (parsed.data.plan as PlanKey) || "tracking";
+  const planKey = (parsed.data.plan as PlanKey) || "growth";
   if (!(planKey in PLANS)) {
-    return apiError("Invalid plan. Choose audit, tracking, or agency.");
+    return apiError("Invalid plan. Choose solo, growth, or agency.");
   }
 
   const { data: membership } = await supabase

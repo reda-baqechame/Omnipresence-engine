@@ -77,7 +77,7 @@ const sessionClient = {
       return { select: () => ({ eq: () => ({ eq: () => ({ single: async () => ({ data: { role: "member" } }) }) }) }) };
     }
     if (table === "organizations") {
-      return { select: () => ({ eq: () => ({ single: async () => ({ data: { plan: "tracking" } }) }) }) };
+      return { select: () => ({ eq: () => ({ single: async () => ({ data: { plan: "growth" } }) }) }) };
     }
     if (table === "reports") return reportsTable;
     throw new Error(`unexpected table: ${table}`);
