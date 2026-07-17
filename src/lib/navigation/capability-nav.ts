@@ -85,6 +85,8 @@ export const PROJECT_HUB_NAV: HubNavCategory[] = [
       { href: "/source-graph", label: "Source Graph", requires: "visibility" },
       { href: "/panels", label: "Prompt Panels", requires: "visibility" },
       { href: "/gaps", label: "Gap Analysis", requires: "always" },
+      { href: "/claims", label: "Claim Review", requires: "always" },
+      { href: "/ask", label: "Ask", requires: "always" },
     ],
   },
   {

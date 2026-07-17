@@ -225,6 +225,22 @@ export const SprintCreateSchema = z.object({
   projectId: uuid,
 });
 
+/** POST /api/claims — run a false-claim review over a project's receipts. */
+export const ClaimReviewCreateSchema = z.object({
+  projectId: uuid,
+});
+
+/** POST /api/projects/[id]/ask — question over the project's own data. */
+export const AskQuestionSchema = z.object({
+  question: nonEmpty.max(600),
+});
+
+/** POST /api/tools/fanout — free query fan-out micro-tool. */
+export const ToolsFanoutSchema = z.object({
+  prompt: nonEmpty.max(300),
+  domain: z.string().trim().max(253).optional(),
+});
+
 /** POST /api/mcp — JSON-RPC 2.0 envelope for the MCP server. */
 export const CaseStudyCreateSchema = z.object({
   projectId: uuid,

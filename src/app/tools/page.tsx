@@ -4,10 +4,11 @@ import { useState } from "react";
 import Link from "next/link";
 import { Globe, ArrowLeft } from "lucide-react";
 
-type ToolId = "audit" | "robots" | "schema" | "llms" | "canonical" | "sitemap" | "citation" | "roi";
+type ToolId = "audit" | "robots" | "schema" | "llms" | "canonical" | "sitemap" | "citation" | "roi" | "fanout";
 
 const TOOLS: Array<{ id: ToolId; name: string; desc: string }> = [
     { id: "audit", name: "AI Readiness Checker", desc: "Full technical + AI bot access audit" },
+    { id: "fanout", name: "Query Fan-Out Tool", desc: "The sub-queries AI engines run for a prompt — and where you rank" },
     { id: "robots", name: "Robots.txt Checker", desc: "Verify AI crawlers can access your site" },
     { id: "schema", name: "Schema Validator", desc: "Check structured data on your homepage" },
     { id: "llms", name: "llms.txt Generator", desc: "Generate an llms.txt file for AI crawlers" },
@@ -22,6 +23,7 @@ export default function FreeToolsPage() {
   const [domain, setDomain] = useState("");
   const [brand, setBrand] = useState("");
   const [industry, setIndustry] = useState("");
+  const [prompt, setPrompt] = useState("");
   const [adSpend, setAdSpend] = useState("2000");
   const [sessions, setSessions] = useState("500");
   const [loading, setLoading] = useState(false);
@@ -40,10 +42,17 @@ export default function FreeToolsPage() {
       sitemap: "/api/tools/sitemap",
       citation: "/api/tools/citation-planner",
       roi: "/api/tools/roi",
+      fanout: "/api/tools/fanout",
     };
 
     let body: Record<string, unknown> = { domain };
-    if (activeTool === "citation") {
+    if (activeTool === "fanout") {
+      if (!prompt) {
+        setLoading(false);
+        return;
+      }
+      body = { prompt, domain: domain || undefined };
+    } else if (activeTool === "citation") {
       if (!brand || !industry) {
         setLoading(false);
         return;
@@ -78,7 +87,9 @@ export default function FreeToolsPage() {
       ? Boolean(brand && industry)
       : activeTool === "roi"
         ? Boolean(sessions || adSpend)
-        : Boolean(domain);
+        : activeTool === "fanout"
+          ? Boolean(prompt)
+          : Boolean(domain);
 
   return (
     <div className="min-h-screen">
@@ -120,7 +131,12 @@ export default function FreeToolsPage() {
         </div>
 
         <div className="bg-card border border-border rounded-xl p-6 mb-8 space-y-3">
-          {activeTool === "citation" ? (
+          {activeTool === "fanout" ? (
+            <div className="grid md:grid-cols-2 gap-3">
+              <input value={prompt} onChange={(e) => setPrompt(e.target.value)} placeholder='Prompt, e.g. "best CRM for small agencies"' className="bg-background border border-input rounded-lg px-3 py-2 text-sm" maxLength={300} />
+              <input value={domain} onChange={(e) => setDomain(e.target.value)} placeholder="Your domain (optional — adds rank check)" className="bg-background border border-input rounded-lg px-3 py-2 text-sm" />
+            </div>
+          ) : activeTool === "citation" ? (
             <div className="grid md:grid-cols-3 gap-3">
               <input value={brand} onChange={(e) => setBrand(e.target.value)} placeholder="Brand name" className="bg-background border border-input rounded-lg px-3 py-2 text-sm" />
               <input value={industry} onChange={(e) => setIndustry(e.target.value)} placeholder="Industry" className="bg-background border border-input rounded-lg px-3 py-2 text-sm" />
@@ -254,6 +270,35 @@ function ToolResult({ tool, data }: { tool: ToolId; data: Record<string, unknown
         <ul className="list-disc pl-5 text-sm space-y-1">
           {(d.prompts as string[]).map((p) => <li key={p}>{p}</li>)}
         </ul>
+        <UpsellCTA />
+      </div>
+    );
+  }
+
+  if (tool === "fanout" && Array.isArray(d.subqueries)) {
+    const subs = d.subqueries as Array<{ subquery: string; position: number | null; retrievable: boolean | null }>;
+    const hasRanks = subs.some((s) => s.retrievable !== null);
+    return (
+      <div className="space-y-3">
+        <h2 className="text-lg font-semibold">AI engines would fan this out into:</h2>
+        <div className="space-y-2">
+          {subs.map((s) => (
+            <div key={s.subquery} className="flex items-center justify-between bg-secondary rounded-lg px-4 py-2.5 text-sm gap-3">
+              <span>{s.subquery}</span>
+              {hasRanks && (
+                <span className={`text-xs shrink-0 ${s.retrievable ? "text-green-400" : "text-muted-foreground"}`}>
+                  {s.position ? `#${s.position}${s.retrievable ? " — retrievable" : ""}` : "not in top results"}
+                </span>
+              )}
+            </div>
+          ))}
+        </div>
+        {hasRanks && typeof d.coverage === "number" && (
+          <p className="text-sm">
+            Retrieval coverage: <strong>{Math.round((d.coverage as number) * 100)}%</strong> of sub-queries rank your domain in the top 10 — that&apos;s where AI engines pull sources from.
+          </p>
+        )}
+        <p className="text-xs text-muted-foreground">{String(d.methodology || "")}</p>
         <UpsellCTA />
       </div>
     );

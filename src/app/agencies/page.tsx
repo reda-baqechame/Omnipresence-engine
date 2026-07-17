@@ -92,6 +92,45 @@ export default function AgenciesPage() {
         </div>
       </section>
 
+      <section className="max-w-4xl mx-auto px-6 py-16 border-t border-border">
+        <h2 className="text-3xl font-bold text-center mb-3">The Proof Audit — your client entry offer</h2>
+        <p className="text-muted-foreground text-center max-w-2xl mx-auto mb-8">
+          A productized, resellable audit: multi-run baseline panel across every engine, competitor
+          share of voice, claim review, source/citation gaps, and a prioritized action plan — every
+          number with a verifiable receipt. Sell it to prospects, keep your margin.
+        </p>
+        <div className="grid md:grid-cols-2 gap-4 max-w-3xl mx-auto">
+          <div className="bg-card border border-border rounded-xl p-6">
+            <div className="text-sm text-muted-foreground mb-1">Automated Proof Audit</div>
+            <div className="text-3xl font-bold mb-3">$990</div>
+            <p className="text-sm text-muted-foreground mb-4">
+              Runs through the product: baseline panel, receipts portal, gap analysis, white-label
+              PDF. Agencies typically resell at $2,000–3,500.
+            </p>
+            <a
+              href="mailto:hello@presenceos.app?subject=Proof%20Audit%20($990)"
+              className="inline-block border border-border px-5 py-2 rounded-lg text-sm font-medium hover:bg-secondary transition"
+            >
+              Order a Proof Audit
+            </a>
+          </div>
+          <div className="bg-card border border-primary/30 rounded-xl p-6">
+            <div className="text-sm text-muted-foreground mb-1">Human-reviewed Proof Audit</div>
+            <div className="text-3xl font-bold mb-3">$1,500–3,000</div>
+            <p className="text-sm text-muted-foreground mb-4">
+              Everything in the automated audit plus analyst review: buyer-prompt research, false-claim
+              validation, and an executive readout you can present directly to the client.
+            </p>
+            <a
+              href="mailto:hello@presenceos.app?subject=Human-reviewed%20Proof%20Audit"
+              className="inline-block bg-primary text-primary-foreground px-5 py-2 rounded-lg text-sm font-medium"
+            >
+              Request a scope
+            </a>
+          </div>
+        </div>
+      </section>
+
       <section className="max-w-4xl mx-auto px-6 py-16 text-center border-t border-border">
         <h2 className="text-3xl font-bold mb-4">Professional beta</h2>
         <p className="text-muted-foreground mb-2 max-w-xl mx-auto">

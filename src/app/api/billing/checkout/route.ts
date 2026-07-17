@@ -67,9 +67,18 @@ export async function POST(request: NextRequest) {
     client_reference_id: org.id,
     ...(plan.mode === "subscription"
       ? {
+          // 14-day full-capacity trial WITHOUT card (Otterly pattern, Master
+          // Plan v4): payment method is only collected if the sub survives the
+          // trial; if none is on file by then, the sub cancels — never a
+          // surprise charge (the market's #1 billing-trust complaint).
           subscription_data: {
             metadata: { organization_id: org.id, plan: planKey },
+            trial_period_days: 14,
+            trial_settings: {
+              end_behavior: { missing_payment_method: "cancel" },
+            },
           },
+          payment_method_collection: "if_required" as const,
         }
       : {}),
   });

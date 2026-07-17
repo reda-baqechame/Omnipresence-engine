@@ -146,6 +146,10 @@ export default function PricingPage() {
           An observation = one prompt × one engine × one run. That&apos;s the only meter — no
           credits, no per-engine add-ons, no seat fees.
         </p>
+        <p className="text-center text-sm mt-2">
+          <span className="text-primary font-medium">Every paid plan starts with a 14-day full-capacity trial — no card required.</span>{" "}
+          <span className="text-muted-foreground">If you don&apos;t add one, it simply ends. No surprise charges, ever.</span>
+        </p>
       </section>
 
       <section className="max-w-5xl mx-auto px-6 pb-16">

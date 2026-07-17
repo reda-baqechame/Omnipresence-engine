@@ -1,5 +1,5 @@
--- PresenceOS combined migration (87 files)
--- Generated 2026-07-16T23:22:45.028Z
+-- PresenceOS combined migration (91 files)
+-- Generated 2026-07-17T12:21:12.147Z
 
 -- ========== 0001_init.sql ==========
 
@@ -3690,14 +3690,25 @@ CREATE POLICY action_sprints_all ON action_sprints FOR ALL
 
 -- ========== 0088_plan_slugs_add.sql ==========
 
+-- Master Plan v4 Phase 3 — new plan slugs (Solo $29 / Growth $79 / Agency $199).
+-- Step 1 of 2: add the enum values. Rows are remapped in 0089 (a new enum value
+-- cannot be used in the same transaction that adds it).
+
 ALTER TYPE subscription_plan ADD VALUE IF NOT EXISTS 'solo';
 ALTER TYPE subscription_plan ADD VALUE IF NOT EXISTS 'growth';
 
+
 -- ========== 0089_plan_slugs_remap.sql ==========
+
+-- Master Plan v4 Phase 3 — remap legacy plan values onto the 3-plan model.
+-- audit ($199 one-time) -> solo; tracking ($299) -> growth; enterprise -> agency.
+-- Legacy enum labels stay in the type (dropping enum values is unsupported);
+-- application code only ever writes free/solo/growth/agency from now on.
 
 UPDATE organizations SET plan = 'solo' WHERE plan = 'audit';
 UPDATE organizations SET plan = 'growth' WHERE plan = 'tracking';
 UPDATE organizations SET plan = 'agency' WHERE plan = 'enterprise';
+
 
 -- ========== 0090_case_studies.sql ==========
 
@@ -3742,4 +3753,35 @@ CREATE POLICY case_studies_org ON case_studies FOR ALL
 DROP POLICY IF EXISTS case_studies_public_read ON case_studies;
 CREATE POLICY case_studies_public_read ON case_studies FOR SELECT
   USING (published = TRUE AND consent_confirmed = TRUE);
+
+
+-- ========== 0091_claim_reviews.sql ==========
+
+-- Claim review (Master Plan v4 feature 7): flag wrong statements AI engines
+-- make about the brand, each tied to the receipt of the answer it came from.
+-- Athena gates this at enterprise; we include it on every plan.
+
+CREATE TABLE IF NOT EXISTS claim_reviews (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  project_id UUID NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+  organization_id UUID NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
+  status TEXT NOT NULL DEFAULT 'completed'
+    CHECK (status IN ('completed', 'no_answers', 'failed')),
+  -- Array of reviewed claims:
+  -- { claim, engine, surface, verdict, explanation, quote, receipt_id, prompt }
+  claims JSONB NOT NULL DEFAULT '[]'::jsonb,
+  answers_reviewed INT NOT NULL DEFAULT 0,
+  flagged_count INT NOT NULL DEFAULT 0,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE INDEX IF NOT EXISTS idx_claim_reviews_project
+  ON claim_reviews (project_id, created_at DESC);
+
+ALTER TABLE claim_reviews ENABLE ROW LEVEL SECURITY;
+
+DROP POLICY IF EXISTS claim_reviews_org ON claim_reviews;
+CREATE POLICY claim_reviews_org ON claim_reviews FOR ALL
+  USING (organization_id IN (SELECT get_user_org_ids()));
+
 
