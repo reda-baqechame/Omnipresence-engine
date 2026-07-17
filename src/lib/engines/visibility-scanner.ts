@@ -178,6 +178,10 @@ async function runVisibilityScanImpl(
       result = buildUnavailableProbe(config, prompt, engine, "probe_error");
     }
     if (!result) {
+      logProviderError("visibility.probe_timeout", new Error("probe exceeded its timeout"), {
+        engine,
+        prompt: prompt.text.slice(0, 80),
+      });
       result = buildUnavailableProbe(config, prompt, engine, "probe_timeout");
     }
     if (config.persona || config.location) {
@@ -777,6 +781,15 @@ async function sampleLLMVisibility(
       config.competitors,
       { grounded: false, persona: config.persona }
     );
+    if (!apiRes.success) {
+      // The probe is about to read "unavailable" — record WHY, or production
+      // failures (budget guard, auth, model errors) are undiagnosable.
+      logProviderError(
+        "visibility.llm_probe_unavailable",
+        new Error(apiRes.error || lastError || "grounded and direct API both failed"),
+        { engine, prompt: prompt.text.slice(0, 80) }
+      );
+    }
     if (apiRes.success && apiRes.data) {
       const mapped = { ...mapAIResult(apiRes.data), text: apiRes.data.rawResponse || "" };
       return {
