@@ -56,6 +56,12 @@ export function AttributionPanel({
   const current = metrics[0];
   const previous = metrics[1];
 
+  const breakdown = current?.source_breakdown;
+  const aiSources = Array.isArray(breakdown?.ai_sources) ? breakdown.ai_sources : [];
+  const aiLeads = typeof breakdown?.ai_leads === "number" ? breakdown.ai_leads : null;
+  const aiRevenue = typeof breakdown?.ai_revenue === "number" ? breakdown.ai_revenue : null;
+  const hasGa4AiSegment = aiLeads !== null || aiRevenue !== null || aiSources.length > 0;
+
   useEffect(() => {
     fetch(`/api/attribution/referrals?projectId=${projectId}`)
       .then((r) => r.json())
@@ -185,6 +191,27 @@ export function AttributionPanel({
         </div>
       )}
 
+      {!hasGa4Connection && (
+        <div className="bg-gradient-to-r from-primary/10 to-transparent border border-primary/20 rounded-xl p-5">
+          <h3 className="font-semibold mb-1">2-minute GA4 setup: see AI-referred revenue</h3>
+          <p className="text-sm text-muted-foreground mb-3">
+            Connect Google Analytics and we break out sessions, conversions, and revenue from
+            ChatGPT, Perplexity, Gemini, and Copilot referrals — measured, per source.
+          </p>
+          <ol className="text-sm text-muted-foreground space-y-1 mb-4 list-decimal list-inside">
+            <li>Connect your Google account (read-only Analytics scope)</li>
+            <li>Pick your GA4 property — we suggest the match for {domain}</li>
+            <li>Sync — the AI Referral Impact panel fills with measured data</li>
+          </ol>
+          <a
+            href={`/api/oauth?provider=google_analytics&projectId=${projectId}`}
+            className="bg-primary text-primary-foreground px-5 py-2 rounded-lg text-sm font-medium inline-block"
+          >
+            Connect Google Analytics
+          </a>
+        </div>
+      )}
+
       {hasGa4Connection && <Ga4PropertyPicker projectId={projectId} currentPropertyId={ga4PropertyId} />}
 
       <AdsEquivalentPanel
@@ -252,6 +279,60 @@ export function AttributionPanel({
               </div>
             ))}
           </div>
+
+          {hasGa4AiSegment && (
+            <div className="bg-card border border-border rounded-xl p-6">
+              <h3 className="text-lg font-semibold mb-1">AI Referral Impact</h3>
+              <p className="text-sm text-muted-foreground mb-4">
+                Sessions, conversions, and revenue from AI-referred traffic — measured in GA4 by
+                session source (chatgpt.com, perplexity.ai, gemini, copilot), last 30 days.
+              </p>
+              <div className="grid md:grid-cols-3 gap-4 mb-4">
+                <div className="bg-background border border-border rounded-lg p-4">
+                  <div className="text-sm text-muted-foreground">AI Sessions</div>
+                  <div className="text-2xl font-bold text-primary mt-1">
+                    {current.ai_referral_traffic.toLocaleString()}
+                  </div>
+                </div>
+                <div className="bg-background border border-border rounded-lg p-4">
+                  <div className="text-sm text-muted-foreground">AI Conversions</div>
+                  <div className="text-2xl font-bold text-primary mt-1">
+                    {aiLeads !== null ? aiLeads.toLocaleString() : "—"}
+                  </div>
+                </div>
+                <div className="bg-background border border-border rounded-lg p-4">
+                  <div className="text-sm text-muted-foreground">AI Revenue</div>
+                  <div className="text-2xl font-bold text-primary mt-1">
+                    {aiRevenue !== null ? formatCurrency(aiRevenue) : "—"}
+                  </div>
+                </div>
+              </div>
+              {aiSources.length > 0 && (
+                <div className="overflow-x-auto">
+                  <table className="w-full text-sm">
+                    <thead>
+                      <tr className="text-left text-muted-foreground border-b border-border">
+                        <th className="py-2 pr-4 font-medium">AI Source</th>
+                        <th className="py-2 pr-4 font-medium text-right">Sessions</th>
+                        <th className="py-2 pr-4 font-medium text-right">Conversions</th>
+                        <th className="py-2 font-medium text-right">Revenue</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {aiSources.map((s) => (
+                        <tr key={s.source} className="border-b border-border/50">
+                          <td className="py-2 pr-4 font-medium">{s.source}</td>
+                          <td className="py-2 pr-4 text-right">{s.sessions.toLocaleString()}</td>
+                          <td className="py-2 pr-4 text-right">{s.conversions.toLocaleString()}</td>
+                          <td className="py-2 text-right">{formatCurrency(s.revenue)}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </div>
+          )}
         </>
       ) : (
         <div className="bg-card border border-border rounded-xl p-12 text-center">

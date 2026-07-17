@@ -1,5 +1,12 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
-import { calculateAttribution, syncGoogleSearchConsole, syncBingWebmaster, syncGoogleAnalytics, syncPlausible } from "@/lib/engines/attribution";
+import {
+  calculateAttribution,
+  syncGoogleSearchConsole,
+  syncBingWebmaster,
+  syncGoogleAnalytics,
+  syncPlausible,
+  type Ga4AiSourceRow,
+} from "@/lib/engines/attribution";
 import { fetchBingAIPerformance } from "@/lib/providers/bing-webmaster";
 import { getValidOAuthToken } from "@/lib/oauth/tokens";
 import { syncPostHog, hasPostHogCapability } from "@/lib/providers/posthog";
@@ -42,6 +49,12 @@ export async function syncProjectAttribution(
   // Track which real sources actually returned data so a failed sync is shown
   // as Unavailable rather than a confident zero.
   const sourceAvailability: Record<string, boolean> = {};
+
+  // GA4-measured AI segment (Trakkr pattern): sessions, conversions, and
+  // revenue from AI-referred sources, plus the per-source rows for the panel.
+  let aiLeads = 0;
+  let aiRevenue = 0;
+  let aiSources: Ga4AiSourceRow[] = [];
 
   // Edge-detected AI referrals from beacon
   const { count: beaconAiHits } = await supabase
@@ -91,6 +104,9 @@ export async function syncProjectAttribution(
       aiReferralTraffic += ga4Data.aiReferrals;
       leads += ga4Data.leads;
       revenue += ga4Data.revenue;
+      aiLeads = ga4Data.aiLeads;
+      aiRevenue = ga4Data.aiRevenue;
+      aiSources = ga4Data.aiSources;
       sourceAvailability.google_analytics = ga4Data.available;
     } else {
       // Token exists (user completed OAuth) but no GA4 property has been
@@ -332,6 +348,13 @@ export async function syncProjectAttribution(
 
   await supabase.from("attribution_metrics").insert({
     ...metric,
+    source_breakdown: {
+      ...metric.source_breakdown,
+      // GA4-measured AI segment (only present when GA4 actually returned data).
+      ...(sourceAvailability.google_analytics === true
+        ? { ai_leads: aiLeads, ai_revenue: aiRevenue, ai_sources: aiSources }
+        : {}),
+    },
     source_availability: { ...sourceAvailability, revenue: revenueAvailable },
     data_source: anyConnectedAvailable ? "measured" : "unavailable",
     is_estimated: anyConnectedFailed || connectedSources.length === 0,

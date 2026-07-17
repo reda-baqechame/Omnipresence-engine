@@ -572,6 +572,14 @@ export interface Roadmap {
   created_at: string;
 }
 
+/** One GA4-measured AI referral source (chatgpt.com, perplexity.ai, ...). */
+export interface AttributionAiSourceRow {
+  source: string;
+  sessions: number;
+  conversions: number;
+  revenue: number;
+}
+
 export interface AttributionMetric {
   id: string;
   project_id: string;
@@ -588,7 +596,15 @@ export interface AttributionMetric {
   purchases: number;
   revenue: number;
   paid_ads_equivalent: number;
-  source_breakdown?: Record<string, number>;
+  /**
+   * Channel totals plus derived money math. Number-valued except `ai_sources`,
+   * the GA4-measured per-AI-source rows ({source, sessions, conversions,
+   * revenue}[]) powering the AI Referral Impact panel.
+   */
+  source_breakdown?: {
+    [key: string]: number | AttributionAiSourceRow[] | undefined;
+    ai_sources?: AttributionAiSourceRow[];
+  };
   data_source?: DataQuality;
   confidence?: number;
   last_checked_at?: string;

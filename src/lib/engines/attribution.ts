@@ -373,12 +373,31 @@ export async function discoverGa4Property(
   }
 }
 
+export interface Ga4AiSourceRow {
+  source: string;
+  sessions: number;
+  conversions: number;
+  revenue: number;
+}
+
 export async function syncGoogleAnalytics(
   accessToken: string,
   propertyId: string,
   startDate: string,
   endDate: string
-): Promise<{ sessions: number; aiReferrals: number; leads: number; revenue: number; available: boolean }> {
+): Promise<{
+  sessions: number;
+  aiReferrals: number;
+  leads: number;
+  revenue: number;
+  /** Conversions attributed to AI-referred sessions (GA4 sessionSource). */
+  aiLeads: number;
+  /** Revenue attributed to AI-referred sessions (GA4 sessionSource). */
+  aiRevenue: number;
+  /** Per-AI-source rows (chatgpt.com, perplexity.ai, ...) sorted by sessions. */
+  aiSources: Ga4AiSourceRow[];
+  available: boolean;
+}> {
   try {
     const response = await fetchWithTimeout(
       `https://analyticsdata.googleapis.com/v1beta/${propertyId}:runReport`,
@@ -413,6 +432,9 @@ export async function syncGoogleAnalytics(
     let aiReferrals = 0;
     let leads = 0;
     let revenue = 0;
+    let aiLeads = 0;
+    let aiRevenue = 0;
+    const aiSources: Ga4AiSourceRow[] = [];
 
     for (const row of data.rows || []) {
       const source = row.dimensionValues[0]?.value?.toLowerCase() || "";
@@ -426,14 +448,41 @@ export async function syncGoogleAnalytics(
 
       if (isAiReferralSource(source)) {
         aiReferrals += rowSessions;
+        aiLeads += rowConversions;
+        aiRevenue += rowRevenue;
+        aiSources.push({
+          source,
+          sessions: rowSessions,
+          conversions: rowConversions,
+          revenue: Math.round(rowRevenue * 100) / 100,
+        });
       }
     }
 
-    return { sessions, aiReferrals, leads, revenue, available: true };
+    aiSources.sort((a, b) => b.sessions - a.sessions);
+    return {
+      sessions,
+      aiReferrals,
+      leads,
+      revenue,
+      aiLeads,
+      aiRevenue: Math.round(aiRevenue * 100) / 100,
+      aiSources,
+      available: true,
+    };
   } catch (error) {
     // Refund-safety: a failed GA4 call must NOT read as a confident $0 revenue.
     logProviderError("attribution.ga4", error, { propertyId });
-    return { sessions: 0, aiReferrals: 0, leads: 0, revenue: 0, available: false };
+    return {
+      sessions: 0,
+      aiReferrals: 0,
+      leads: 0,
+      revenue: 0,
+      aiLeads: 0,
+      aiRevenue: 0,
+      aiSources: [],
+      available: false,
+    };
   }
 }
 
