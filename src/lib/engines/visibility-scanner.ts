@@ -49,6 +49,16 @@ export interface VisibilityScanConfig {
    */
   concurrency?: number;
   /**
+   * Skip the browser UI-capture path and use direct API providers only.
+   * UI capture (Playwright on Railway) takes 30-120s per surface — right for
+   * tenant evidence panels, fatal for the time-boxed public grader where it
+   * turns every probe into a timeout. Results stay honestly labeled with
+   * their API surface (e.g. openai_grounded_api, not chatgpt_ui).
+   */
+  skipUiCapture?: boolean;
+  /** Grounded-attempt cap per LLM probe (default env VISIBILITY_GROUNDED_RETRIES or 3). */
+  maxGroundedRetries?: number;
+  /**
    * Optional persona conditioning (Wave O3). When set, AI probes answer from
    * this persona's perspective and the persona+geo are recorded on the probe
    * trace. The stored prompt_text stays the original (clean) prompt.
@@ -378,7 +388,7 @@ async function scanSinglePrompt(
   // never be probed through the ChatGPT surface (that would attribute a
   // ChatGPT answer to Claude). Claude is measured via the Anthropic grounded
   // API path below instead.
-  if (hasAiUiCapture() && ((LLM_ENGINES.has(engine) && engine !== "claude") || engine === "perplexity" || engine === "google_ai_overview" || engine === "bing_copilot")) {
+  if (!config.skipUiCapture && hasAiUiCapture() && ((LLM_ENGINES.has(engine) && engine !== "claude") || engine === "perplexity" || engine === "google_ai_overview" || engine === "bing_copilot")) {
     const surface = engine as "chatgpt" | "gemini" | "perplexity" | "google_ai_overview" | "bing_copilot";
     const geoOpts = captureOptionsFromLocation(config.location);
     const captured = await captureWithTenantBudget(
@@ -401,7 +411,7 @@ async function scanSinglePrompt(
       const sampled = await sampleLLMVisibility(config, prompt, engine, domainLower, brandToken);
       if (sampled) return sampled;
     } else if (engine === "perplexity") {
-      if (hasAiUiCapture()) {
+      if (!config.skipUiCapture && hasAiUiCapture()) {
         const geoOpts = captureOptionsFromLocation(config.location);
         const captured = await captureWithTenantBudget(
           config,
@@ -539,7 +549,7 @@ async function scanSinglePrompt(
         };
       }
     } else if (engine === "bing_copilot") {
-      if (hasAiUiCapture()) {
+      if (!config.skipUiCapture && hasAiUiCapture()) {
         const geoOpts = captureOptionsFromLocation(config.location);
         const captured = await captureWithTenantBudget(
           config,
@@ -696,7 +706,16 @@ async function sampleLLMVisibility(
   _brandToken: string
 ): Promise<VisibilityScanResult | null> {
   const provider: "openai" | "gemini" | "claude" = engine === "chatgpt" ? "openai" : engine === "gemini" ? "gemini" : "claude";
-  const GROUNDED_RETRIES = Math.max(1, Math.min(5, Number(process.env.VISIBILITY_GROUNDED_RETRIES) || 3));
+  const GROUNDED_RETRIES = Math.max(
+    1,
+    Math.min(
+      5,
+      // Time-boxed callers (public grader: 25s/probe) can't afford 3 grounded
+      // attempts before the direct-API fallback — they'd hit the probe timeout
+      // and read "unavailable" despite a healthy provider.
+      config.maxGroundedRetries ?? (Number(process.env.VISIBILITY_GROUNDED_RETRIES) || 3)
+    )
+  );
   let lastError: string | undefined;
   let groundedData: ReturnType<typeof mapAIResult> & { text: string } | null = null;
 
@@ -716,7 +735,7 @@ async function sampleLLMVisibility(
     if (res.error) lastError = res.error;
   }
 
-  if (!groundedData && hasAiUiCapture() && (engine === "chatgpt" || engine === "gemini")) {
+  if (!groundedData && !config.skipUiCapture && hasAiUiCapture() && (engine === "chatgpt" || engine === "gemini")) {
     const surface = engine as "chatgpt" | "gemini";
     const geoOpts = captureOptionsFromLocation(config.location);
     const captured = await captureWithTenantBudget(

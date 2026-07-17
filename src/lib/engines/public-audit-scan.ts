@@ -111,7 +111,12 @@ export async function runPublicAuditIntelligence(input: {
   // local-service templates. Falls back to the improved templates if the LLM
   // call fails or returns nothing.
   let candidatePrompts: Array<{ text: string; category?: string; priority?: number }> = [];
-  if (process.env.OPENAI_API_KEY || process.env.ANTHROPIC_API_KEY || process.env.GOOGLE_GENERATIVE_AI_API_KEY) {
+  // A generic/fallback industry ("business") means domain inference failed —
+  // keyword expansion would produce junk like "best business casual". Brand-
+  // anchored template prompts ({brand} reviews / is {brand} legit / {brand}
+  // alternatives) still measure real visibility for ANY brand.
+  const industryIsGeneric = !input.industry || input.industry.trim().toLowerCase() === "business";
+  if (!industryIsGeneric && (process.env.OPENAI_API_KEY || process.env.ANTHROPIC_API_KEY || process.env.GOOGLE_GENERATIVE_AI_API_KEY)) {
     try {
       candidatePrompts = await generatePromptUniverse(
         PUBLIC_PROJECT_ID,
@@ -136,6 +141,13 @@ export async function runPublicAuditIntelligence(input: {
       competitors,
       [input.industry]
     );
+    if (industryIsGeneric) {
+      // Without a real industry, only brand-anchored prompts measure anything
+      // real ("Acme reviews", "is Acme legit") — "best business" is noise.
+      const brandLower = input.brandName.toLowerCase();
+      const brandAnchored = candidatePrompts.filter((p) => p.text.toLowerCase().includes(brandLower));
+      if (brandAnchored.length >= 3) candidatePrompts = brandAnchored;
+    }
   }
   const templatePrompts = candidatePrompts
     .sort((a, b) => (b.priority ?? 0) - (a.priority ?? 0))
@@ -163,6 +175,13 @@ export async function runPublicAuditIntelligence(input: {
     concurrency: 6,
     probeTimeoutMs: 25_000,
     scanBudgetMs: 45_000,
+    // Browser UI capture takes 30-120s per surface — every probe would blow
+    // the 25s timeout and the whole grader would read "unavailable". Direct
+    // API surfaces measure the same engines inside the budget.
+    skipUiCapture: true,
+    // One grounded attempt, then the direct-API fallback — three grounded
+    // retries would eat the 25s probe timeout on their own.
+    maxGroundedRetries: 1,
   });
 
   const buyerPrompts = templatePrompts.map((p) => p.text);
