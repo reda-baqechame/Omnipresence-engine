@@ -144,6 +144,15 @@ export async function runPublicAuditIntelligence(input: {
     prompts: templatePrompts.map((p) => ({ text: p.text, priority: p.priority })),
     engines,
     maxPrompts: MAX_PUBLIC_PROMPTS,
+    // The no-signup grader runs inside a serverless request with a hard time
+    // budget. Sequentially probing 5 prompts × up to 6 engines cannot finish in
+    // time (it used to blow the budget and return ZERO measured AI results —
+    // the flagship funnel showed "Not measured" for every real brand). A small
+    // parallel pool with tight per-probe timeouts measures the same cells well
+    // inside the budget; anything still slow is honestly marked unavailable.
+    concurrency: 6,
+    probeTimeoutMs: 25_000,
+    scanBudgetMs: 45_000,
   });
 
   const buyerPrompts = templatePrompts.map((p) => p.text);
@@ -279,7 +288,9 @@ export function emptyPublicAuditIntelligence(partial?: Partial<PublicAuditIntell
   };
 }
 
-const PUBLIC_INTELLIGENCE_BUDGET_MS = 50_000;
+// Must leave headroom under the route's maxDuration (120s) for the technical
+// audit, scoring, lead persistence, and email that run around this call.
+const PUBLIC_INTELLIGENCE_BUDGET_MS = 90_000;
 
 export async function runPublicAuditIntelligenceWithBudget(
   input: Parameters<typeof runPublicAuditIntelligence>[0],

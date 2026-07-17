@@ -32,6 +32,23 @@ export interface VisibilityScanConfig {
   engines?: VisibilityEngine[];
   maxPrompts?: number;
   /**
+   * Per-probe timeout override. Time-budgeted callers (e.g. the public
+   * no-signup grader) pass a tighter value than the env default so one slow
+   * provider can't eat the whole wall-clock budget.
+   */
+  probeTimeoutMs?: number;
+  /**
+   * Wall-clock budget override for the whole scan. When exhausted the scan
+   * stops and returns the partial-but-honest results measured so far.
+   */
+  scanBudgetMs?: number;
+  /**
+   * Number of prompt×engine probes to run in parallel (default 1 = sequential,
+   * the safe choice for tenant scans that meter per-provider rate limits).
+   * The public grader uses a small pool so it finishes inside its budget.
+   */
+  concurrency?: number;
+  /**
    * Optional persona conditioning (Wave O3). When set, AI probes answer from
    * this persona's perspective and the persona+geo are recorded on the probe
    * trace. The stored prompt_text stays the original (clean) prompt.
@@ -124,61 +141,115 @@ async function runVisibilityScanImpl(
   // the host's function limit and get hard-killed (which would lose ALL results
   // and leave the run wedged). When the budget is exhausted we stop probing and
   // return what we measured so far — a partial-but-honest result beats a kill.
-  const VISIBILITY_SCAN_BUDGET_MS = Math.max(
-    120000,
-    Number(process.env.VISIBILITY_SCAN_BUDGET_MS) || 600000
-  );
+  const VISIBILITY_SCAN_BUDGET_MS =
+    config.scanBudgetMs ??
+    Math.max(120000, Number(process.env.VISIBILITY_SCAN_BUDGET_MS) || 600000);
   const deadline = Date.now() + VISIBILITY_SCAN_BUDGET_MS;
 
   let budgetExhausted = false;
   let cancelled = false;
-  const probeTimeoutMs = Math.max(
-    15_000,
-    Number(process.env.VISIBILITY_PROBE_TIMEOUT_MS) || 90_000
-  );
+  const probeTimeoutMs =
+    config.probeTimeoutMs ??
+    Math.max(15_000, Number(process.env.VISIBILITY_PROBE_TIMEOUT_MS) || 90_000);
+  const concurrency = Math.max(1, Math.min(config.concurrency ?? 1, 8));
 
-  for (const prompt of promptsToScan) {
-    if (budgetExhausted || cancelled) break;
-    if (config.isCancelled && (await config.isCancelled())) {
-      cancelled = true;
-      break;
+  const probeCell = async (
+    prompt: (typeof promptsToScan)[number],
+    engine: VisibilityEngine
+  ): Promise<VisibilityScanResult> => {
+    let result: VisibilityScanResult | null = null;
+    try {
+      result = await probeWithTimeout(config, prompt, engine, probeTimeoutMs);
+    } catch (error) {
+      logProviderError("visibility.probe_failed", error, {
+        engine,
+        prompt: prompt.text.slice(0, 80),
+      });
+      result = buildUnavailableProbe(config, prompt, engine, "probe_error");
     }
-    for (const engine of engines) {
-      if (Date.now() >= deadline) {
-        budgetExhausted = true;
-        logProviderError("visibility.scan_budget_exhausted", new Error("scan budget exhausted"), {
-          measured: results.length,
-          prompt: prompt.text.slice(0, 80),
-        });
-        break;
-      }
+    if (!result) {
+      result = buildUnavailableProbe(config, prompt, engine, "probe_timeout");
+    }
+    if (config.persona || config.location) {
+      result.raw_response = {
+        ...(result.raw_response || {}),
+        ...(config.persona ? { persona: config.persona } : {}),
+        geo: config.location,
+      };
+    }
+    return result;
+  };
+
+  if (concurrency <= 1) {
+    // Sequential path — the default for tenant scans. Cancellation is polled
+    // once per prompt (even with zero engines) and between every probe; this
+    // exact contract is pinned by scan-cancellation.test.ts.
+    for (const prompt of promptsToScan) {
+      if (budgetExhausted || cancelled) break;
       if (config.isCancelled && (await config.isCancelled())) {
         cancelled = true;
         break;
       }
-      let result: VisibilityScanResult | null = null;
-      try {
-        result = await probeWithTimeout(config, prompt, engine, probeTimeoutMs);
-      } catch (error) {
-        logProviderError("visibility.probe_failed", error, {
-          engine,
+      for (const engine of engines) {
+        if (Date.now() >= deadline) {
+          budgetExhausted = true;
+          logProviderError("visibility.scan_budget_exhausted", new Error("scan budget exhausted"), {
+            measured: results.length,
+            prompt: prompt.text.slice(0, 80),
+          });
+          break;
+        }
+        if (config.isCancelled && (await config.isCancelled())) {
+          cancelled = true;
+          break;
+        }
+        const result = await probeCell(prompt, engine);
+        results.push(result);
+        await config.onProbeResult?.(result);
+      }
+    }
+    return { results, scanPartial: budgetExhausted || cancelled, cancelled };
+  }
+
+  // Parallel path — used by time-budgeted callers (the public no-signup
+  // grader). A small worker pool drains the flattened prompt×engine cells so
+  // one slow provider can't serialize the whole scan past its wall budget.
+  const cells: Array<{ prompt: (typeof promptsToScan)[number]; engine: VisibilityEngine }> = [];
+  for (const prompt of promptsToScan) {
+    for (const engine of engines) {
+      cells.push({ prompt, engine });
+    }
+  }
+  const slots: Array<VisibilityScanResult | null> = new Array(cells.length).fill(null);
+  let next = 0;
+
+  const worker = async () => {
+    while (true) {
+      const index = next++;
+      if (index >= cells.length || budgetExhausted || cancelled) return;
+      const { prompt, engine } = cells[index];
+      if (Date.now() >= deadline) {
+        budgetExhausted = true;
+        logProviderError("visibility.scan_budget_exhausted", new Error("scan budget exhausted"), {
+          measured: slots.filter(Boolean).length,
           prompt: prompt.text.slice(0, 80),
         });
-        result = buildUnavailableProbe(config, prompt, engine, "probe_error");
+        return;
       }
-      if (!result) {
-        result = buildUnavailableProbe(config, prompt, engine, "probe_timeout");
+      if (config.isCancelled && (await config.isCancelled())) {
+        cancelled = true;
+        return;
       }
-      if (config.persona || config.location) {
-        result.raw_response = {
-          ...(result.raw_response || {}),
-          ...(config.persona ? { persona: config.persona } : {}),
-          geo: config.location,
-        };
-      }
-      results.push(result);
+      const result = await probeCell(prompt, engine);
+      slots[index] = result;
       await config.onProbeResult?.(result);
     }
+  };
+
+  await Promise.all(Array.from({ length: Math.min(concurrency, cells.length) }, worker));
+
+  for (const r of slots) {
+    if (r) results.push(r);
   }
 
   return { results, scanPartial: budgetExhausted || cancelled, cancelled };

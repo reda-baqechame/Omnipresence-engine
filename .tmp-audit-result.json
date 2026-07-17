@@ -1,0 +1,76 @@
+﻿{
+    "domain":  "stripe.com",
+    "email":  "e2e-check@presenceos-check.com",
+    "emailSent":  true,
+    "score":  {
+                  "omnipresence":  14.36,
+                  "ai_visibility":  0,
+                  "search_visibility":  0,
+                  "technical_readiness":  8,
+                  "critical_issues":  2,
+                  "data_mode":  "measured",
+                  "measured_rate":  0,
+                  "availability":  {
+                                       "ai_visibility":  false,
+                                       "search_visibility":  false,
+                                       "technical_readiness":  true
+                                   }
+              },
+    "criticalIssues":  2,
+    "topIssues":  [
+                      {
+                          "category":  "sitemap",
+                          "severity":  "high",
+                          "title":  "No sitemap found",
+                          "description":  "No sitemap.xml or sitemap_index.xml detected.",
+                          "impact":  "Search engines may miss pages during crawling.",
+                          "fix_recommendation":  "Create and submit a sitemap.xml with all important URLs.",
+                          "affected_url":  "https://stripe.com/sitemap.xml"
+                      },
+                      {
+                          "category":  "crawlability",
+                          "severity":  "critical",
+                          "title":  "Website unreachable",
+                          "description":  "Could not access https://stripe.com. The site may be down or blocking crawlers.",
+                          "impact":  "Search engines and AI bots cannot index your content.",
+                          "fix_recommendation":  "Ensure your website is publicly accessible and returns HTTP 200.",
+                          "affected_url":  "https://stripe.com"
+                      }
+                  ],
+    "visibility":  {
+                       "mentionRate":  0,
+                       "citationRate":  0,
+                       "measuredRate":  0,
+                       "sample":  [
+
+                                  ]
+                   },
+    "authorityOpportunities":  [
+
+                               ],
+    "coverageGaps":  [
+
+                     ],
+    "coverageItems":  [
+
+                      ],
+    "competitorGaps":  0,
+    "competitorReveal":  null,
+    "backlinkCount":  8,
+    "backlinksAvailable":  true,
+    "serpPresence":  false,
+    "authority":  {
+                      "rating":  62,
+                      "referringDomains":  8,
+                      "domainAgeYears":  30.8,
+                      "sources":  [
+                                      "rank.to",
+                                      "common_crawl",
+                                      "domain_age"
+                                  ]
+                  },
+    "liveData":  true,
+    "dataMode":  "measured",
+    "providersConfigured":  15,
+    "message":  "Live technical + authority audit. AI visibility wasn\u0027t measurable this run â sign up to connect engines and track ChatGPT/Perplexity/Google citations."
+}

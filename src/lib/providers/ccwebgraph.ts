@@ -25,6 +25,20 @@ export interface CcWebGraphResult {
 const cache = new Map<string, { at: number; data: CcWebGraphResult | null }>();
 const TTL_MS = 6 * 60 * 60 * 1000;
 
+// When the API host itself is unreachable (DNS failure / connection refused),
+// don't retry it once per domain — that just burns latency and floods the logs
+// with one warning per cited domain on every public audit. Negative-cache the
+// whole endpoint and let callers fall through to the sovereign Railway
+// webgraph / other authority sources.
+let endpointDeadUntil = 0;
+const ENDPOINT_DEAD_TTL_MS = 6 * 60 * 60 * 1000;
+
+function isEndpointUnreachable(error: unknown): boolean {
+  const cause = (error as { cause?: { code?: string } })?.cause;
+  const code = cause?.code || (error as { code?: string })?.code;
+  return code === "ENOTFOUND" || code === "ECONNREFUSED" || code === "EAI_AGAIN";
+}
+
 function cleanDomain(domain: string): string {
   return domain.replace(/^https?:\/\//, "").replace(/^www\./, "").split("/")[0].toLowerCase().trim();
 }
@@ -39,6 +53,7 @@ export async function getCcWebGraphAuthority(domain: string): Promise<CcWebGraph
 
   const cached = cache.get(d);
   if (cached && Date.now() - cached.at < TTL_MS) return cached.data;
+  if (Date.now() < endpointDeadUntil) return null;
 
   try {
     const res = await fetchWithTimeout(CCWG_API, {
@@ -73,7 +88,14 @@ export async function getCcWebGraphAuthority(domain: string): Promise<CcWebGraph
     cache.set(d, { at: Date.now(), data: result });
     return result;
   } catch (error) {
-    logProviderError("ccwebgraph", error, { domain: d });
+    if (isEndpointUnreachable(error)) {
+      endpointDeadUntil = Date.now() + ENDPOINT_DEAD_TTL_MS;
+      logProviderError("ccwebgraph", new Error("endpoint unreachable — negative-caching for 6h"), {
+        domain: d,
+      });
+    } else {
+      logProviderError("ccwebgraph", error, { domain: d });
+    }
     cache.set(d, { at: Date.now(), data: null });
     return null;
   }
