@@ -1,5 +1,13 @@
 # Manual-only mode — operator checklist
 
+> **Status 2026-07-17: automation RE-ENABLED.** `MANUAL_ONLY_MODE=false` is set
+> on Vercel (production + preview), Inngest re-synced with the full function set
+> (crons included), and the weekly Production Gate + nightly benchmark schedules
+> are restored. Idle spend is bounded by the LLM cost guard ($5/day, $50/mo),
+> the paid external-API guard ($10/day, $150/mo), per-tenant observation caps,
+> the shared probe cache, and UI-capture sampling. The checklist below is kept
+> for when someone needs to flip manual-only back ON.
+
 After deploying code with `MANUAL_ONLY_MODE=true`, complete these steps so idle API spend stays near zero.
 
 ## Already done in this change
