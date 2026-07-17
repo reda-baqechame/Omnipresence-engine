@@ -1,8 +1,10 @@
 name: Benchmark Live
 
-# Schedule removed for manual-only cost control — run via workflow_dispatch only.
+# Nightly provider benchmark (automation re-enabled with MANUAL_ONLY_MODE=false).
 on:
   workflow_dispatch:
+  schedule:
+    - cron: "0 2 * * *"
 
 jobs:
   benchmark-live:

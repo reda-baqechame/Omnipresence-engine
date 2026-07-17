@@ -241,6 +241,33 @@ async function streamEdgesFromGzipUrl(conn: DuckDBConnection, url: string): Prom
   return lines;
 }
 
+/**
+ * Preferred ranks ingest: DuckDB-native read_csv over httpfs. DuckDB streams
+ * the gzip file itself and builds the table out-of-core (spilling to
+ * temp_directory), which the row-by-row INSERT path cannot do — that path has
+ * OOM-killed every ingest on Railway's memory budget. Rows are clustered by
+ * rev_host (ORDER BY) so point lookups prune via zonemaps WITHOUT an ART
+ * index — building that index over ~90M strings is itself an OOM bomb.
+ */
+async function ingestRanksNative(conn: DuckDBConnection, url: string): Promise<number> {
+  console.log("[webgraph] ranks via read_csv (out-of-core)…");
+  await conn.run("INSTALL httpfs; LOAD httpfs;");
+  await conn.run(
+    `CREATE OR REPLACE TABLE ranks AS
+       SELECT column0 AS harmonic_pos, column1 AS harmonic_val,
+              column2 AS pr_pos, column3 AS pr_val, column4 AS rev_host
+       FROM read_csv('${url.replace(/'/g, "''")}',
+         delim='\t', header=false, compression='gzip', skip=1, ignore_errors=true,
+         columns={'column0':'BIGINT','column1':'DOUBLE','column2':'BIGINT','column3':'DOUBLE','column4':'VARCHAR'})
+       ORDER BY rev_host;`
+  );
+  await conn.run("CHECKPOINT;");
+  const r = await conn.runAndReadAll("SELECT COUNT(*) AS c FROM ranks");
+  const count = Number(r.getRowObjects()[0]?.c ?? 0);
+  console.log(`[webgraph] ranks complete (native): ${count.toLocaleString()} rows`);
+  return count;
+}
+
 /** Stream ranks (best-effort authority index). */
 async function streamRanksFromGzipUrl(conn: DuckDBConnection, url: string): Promise<number> {
   console.log("[webgraph] streaming ranks…");
@@ -281,10 +308,20 @@ export async function ingestWebgraph(release: string): Promise<{ ok: boolean; me
   try {
     if (mode === "ranks-only") {
       console.log("[webgraph] ranks-only mode (fits 5GB Railway volume — authority index, no backlink edges)");
-      await streamRanksFromGzipUrl(conn, `${base}-ranks.txt.gz`);
-      await conn.run("CREATE INDEX IF NOT EXISTS idx_ranks_host ON ranks(rev_host);");
-      const r = await conn.runAndReadAll("SELECT COUNT(*) AS c FROM ranks");
-      const rankCount = Number(r.getRowObjects()[0]?.c ?? 0);
+      let rankCount = 0;
+      try {
+        rankCount = await ingestRanksNative(conn, `${base}-ranks.txt.gz`);
+      } catch (e) {
+        console.warn(
+          `[webgraph] native ranks ingest failed (${e instanceof Error ? e.message : "unknown"}) — falling back to row streaming`
+        );
+        await streamRanksFromGzipUrl(conn, `${base}-ranks.txt.gz`);
+        const r0 = await conn.runAndReadAll("SELECT COUNT(*) AS c FROM ranks");
+        rankCount = Number(r0.getRowObjects()[0]?.c ?? 0);
+      }
+      // NOTE: no ART index here — building one over ~90M VARCHARs OOMs the
+      // container. The table is ORDER BY rev_host, so zonemap pruning makes
+      // point lookups fast enough for per-domain authority reads.
       if (rankCount === 0) {
         return { ok: false, message: `Ranks ingest empty for release "${rel}"` };
       }
