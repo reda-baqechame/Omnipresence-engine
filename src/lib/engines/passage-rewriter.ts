@@ -12,11 +12,13 @@ import { autoGeoInstructions } from "@/lib/engines/autogeo";
  *  - extractable FAQ pairs for FAQPage schema
  */
 
+// .nullable(), NOT .optional(): OpenAI strict structured outputs require every
+// property in `required` — optional fields fail the whole call at the API.
 const RewriteSchema = z.object({
-  title: z.string().optional(),
+  title: z.string().nullable(),
   definition: z
     .object({ term: z.string(), text: z.string() })
-    .optional(),
+    .nullable(),
   rewrites: z.array(
     z.object({
       heading: z.string(),
@@ -26,10 +28,10 @@ const RewriteSchema = z.object({
   ),
   steps: z
     .object({ name: z.string(), items: z.array(z.string()) })
-    .optional(),
+    .nullable(),
   comparison: z
     .object({ headers: z.array(z.string()), rows: z.array(z.array(z.string())) })
-    .optional(),
+    .nullable(),
   suggestedFaqs: z.array(
     z.object({
       question: z.string(),
@@ -106,14 +108,14 @@ Return 3-6 rewrites (one per key question) plus 3-5 FAQs, and (when relevant) st
     const d = result.data;
     const structured = assembleStructuredDoc({
       title: d.title || `${brandName} — Answer-Ready Guide`,
-      definition: d.definition,
+      definition: d.definition ?? undefined,
       sections: d.rewrites.map((r) => ({
         heading: r.heading,
         answerFirst: r.answerFirst,
         supporting: r.supporting,
       })),
-      steps: d.steps,
-      comparison: d.comparison,
+      steps: d.steps ?? undefined,
+      comparison: d.comparison ?? undefined,
       faqs: d.suggestedFaqs,
     });
     return {

@@ -3,10 +3,12 @@ import { z } from "zod";
 import type { ContentAssetType, ContentStatus, BrandProfile } from "@/types/database";
 import { analyzeStructure, buildHowToJsonLd, buildFaqJsonLd, extractSteps, extractFaqs } from "@/lib/engines/structural-aeo";
 
+// metadata is .nullable(), NOT .optional() — OpenAI strict structured outputs
+// reject schemas with properties missing from `required`.
 const ContentSchema = z.object({
   title: z.string(),
   content: z.string(),
-  metadata: z.record(z.string(), z.unknown()).optional(),
+  metadata: z.record(z.string(), z.unknown()).nullable(),
 });
 
 export async function generateContent(

@@ -174,9 +174,11 @@ export function auditProduct(p: Product): ProductAudit {
 const OptimizeSchema = z.object({
   optimizedTitle: z.string(),
   optimizedDescription: z.string(),
+  // .nullable(), NOT .optional() — OpenAI strict structured outputs reject
+  // schemas with properties missing from `required`.
   suggestedAttributes: z
     .array(z.object({ name: z.string(), value: z.string() }))
-    .optional(),
+    .nullable(),
 });
 
 export interface ProductOptimization {

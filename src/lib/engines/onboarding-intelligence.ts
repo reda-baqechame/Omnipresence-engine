@@ -27,7 +27,10 @@ const DomainInferenceSchema = z.object({
   products_services: z.array(z.string()).max(8),
   buyer_categories: z.array(z.string()).max(6),
   likely_competitors: z.array(z.string()).max(8),
-  location_hint: z.string().optional(),
+  // .nullable(), NOT .optional(): OpenAI strict structured outputs require
+  // every property in `required` — optional fields make the whole call fail
+  // with "Invalid schema for response_format". Null means "no hint".
+  location_hint: z.string().nullable(),
 });
 
 export interface OnboardingSuggestedPrompt {
@@ -85,7 +88,18 @@ function brandNameFromDomain(domain: string): string {
 
 export async function analyzeDomainForOnboarding(
   domain: string,
-  options?: { maxCompetitors?: number; maxPrompts?: number }
+  options?: {
+    maxCompetitors?: number;
+    maxPrompts?: number;
+    /**
+     * Skip the per-competitor SERP domain resolution (one search each,
+     * sequential — the slowest part of this pipeline). Callers that only need
+     * competitor NAMES (e.g. the time-boxed public grader, which matches
+     * names inside measured answers) set this false; the onboarding wizard
+     * keeps the default true because it shows domains for user confirmation.
+     */
+    resolveCompetitors?: boolean;
+  }
 ): Promise<OnboardingAnalysis> {
   const maxCompetitors = options?.maxCompetitors ?? 5;
   const maxPrompts = options?.maxPrompts ?? 20;
@@ -115,13 +129,24 @@ Infer: exact brand name, specific industry (e.g. "AI consulting for enterprises"
   const competitorNames = (inference?.likely_competitors || [])
     .map((c) => c.trim())
     .filter((c) => c && c.toLowerCase() !== brandName.toLowerCase());
-  const competitors = competitorNames.length
-    ? await resolveCompetitorList(competitorNames, industry || services[0] || "", maxCompetitors)
+  const resolveCompetitors = options?.resolveCompetitors !== false;
+  const competitors: ResolvedCompetitor[] = competitorNames.length
+    ? resolveCompetitors
+      ? await resolveCompetitorList(competitorNames, industry || services[0] || "", maxCompetitors)
+      : competitorNames.slice(0, maxCompetitors).map((name) => ({
+          name,
+          domain: null,
+          source: "unresolved" as const,
+          // LLM-only inference grounded in the homepage: name is usable,
+          // domain unknown. High enough to survive a >=0.5 filter, honest
+          // about not being SERP-verified.
+          confidence: 0.5,
+        }))
     : [];
 
-  const confirmedCompetitorNames = competitors
-    .filter((c) => c.domain && c.confidence >= 0.5)
-    .map((c) => c.name);
+  const confirmedCompetitorNames = resolveCompetitors
+    ? competitors.filter((c) => c.domain && c.confidence >= 0.5).map((c) => c.name)
+    : competitors.map((c) => c.name);
 
   const suggestedPrompts = generateTemplatePrompts(
     "00000000-0000-0000-0000-000000000000",

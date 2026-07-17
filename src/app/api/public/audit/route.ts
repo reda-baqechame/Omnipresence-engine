@@ -52,7 +52,9 @@ export async function POST(request: NextRequest) {
   if (!brandName || !industry) {
     try {
       const analysis = await Promise.race([
-        analyzeDomainForOnboarding(normalized, { maxCompetitors: 3 }),
+        // resolveCompetitors:false — we only need competitor NAMES for
+        // answer-matching here; per-name SERP resolution would eat the budget.
+        analyzeDomainForOnboarding(normalized, { maxCompetitors: 3, resolveCompetitors: false }),
         new Promise<null>((resolve) => setTimeout(() => resolve(null), 20_000)),
       ]);
       if (analysis?.inferenceGrounded) {
