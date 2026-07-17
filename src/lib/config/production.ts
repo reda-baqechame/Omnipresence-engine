@@ -136,13 +136,20 @@ export function getProductionReadiness(): {
       : "Scans, crons, guarantee verify, publish scheduler",
   });
 
+  // Automated crons with the cost guards active is the intended production
+  // posture (the product loop — weekly panels, sprints, monitoring — depends
+  // on them). It only warrants a warning when the LLM cost guard is OFF, i.e.
+  // idle cron spend would be unbounded.
+  const costGuardOn = process.env.LLM_BUDGET_DISABLED !== "true";
   checks.push({
     id: "manual_only_mode",
-    label: "Manual-only API mode",
-    status: MANUAL_ONLY_MODE ? "ok" : "warning",
+    label: "Background automation",
+    status: MANUAL_ONLY_MODE ? "ok" : costGuardOn ? "ok" : "warning",
     message: MANUAL_ONLY_MODE
-      ? "Background crons disabled; manual actions only"
-      : "MANUAL_ONLY_MODE unset — scheduled Inngest crons will call paid APIs while idle",
+      ? "Manual-only: background crons disabled; manual actions only"
+      : costGuardOn
+        ? "Automated crons enabled; idle spend bounded by the LLM cost guard"
+        : "Crons enabled with LLM_BUDGET_DISABLED=true — idle paid-API spend is UNBOUNDED",
   });
 
   const omnidataInsecureKey =
