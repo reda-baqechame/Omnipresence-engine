@@ -30,6 +30,7 @@
     "verify:prod": "node scripts/verify-production.mjs",
     "verify:prod:live": "node scripts/verify-production-with-env.mjs",
     "prod:bootstrap-health": "node scripts/bootstrap-health-secret.mjs",
+    "stripe:bootstrap": "node scripts/bootstrap-stripe.mjs",
     "test:professional": "node scripts/professional-tester-suite.mjs",
     "test:panels": "node scripts/professional-panel-qa.mjs",
     "test:browser": "node scripts/professional-browser-qa.mjs",
