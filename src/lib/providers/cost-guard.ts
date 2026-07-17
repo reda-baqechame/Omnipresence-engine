@@ -133,6 +133,13 @@ async function serviceClient() {
   return createClient(process.env.NEXT_PUBLIC_SUPABASE_URL, process.env.SUPABASE_SERVICE_ROLE_KEY);
 }
 
+// This guard's budget covers LLM providers ONLY. The `api_spend_daily` ledger
+// is shared with external-api-guard.ts (dataforseo/firecrawl rows), which has
+// its own, separately-sized budget. The read MUST filter to LLM providers —
+// summing the whole table once let $10 of DataForSEO spend exhaust the $5 LLM
+// budget and silently block every LLM probe platform-wide.
+const LLM_PROVIDERS: GuardProvider[] = ["openai", "anthropic", "gemini", "perplexity", "other"];
+
 async function refreshCache(): Promise<void> {
   const day = todayKey();
   if (cache && cache.day === day && Date.now() - cache.fetchedAt < CACHE_TTL_MS) return;
@@ -145,6 +152,7 @@ async function refreshCache(): Promise<void> {
     const { data } = await sb
       .from("api_spend_daily")
       .select("day, est_cost_usd")
+      .in("provider", LLM_PROVIDERS)
       .gte("day", monthStart());
     let dayCost = 0;
     let monthCost = 0;
