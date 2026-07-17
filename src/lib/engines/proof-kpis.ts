@@ -198,6 +198,7 @@ export async function buildProjectProof(
     webgraph = {
       available: false,
       ready: false,
+      edgesReady: false,
       ingestInProgress: false,
       release: null,
       ingestedAt: null,

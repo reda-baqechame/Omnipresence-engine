@@ -10,7 +10,10 @@ import { omniDataGet, labsApiPost, isOmniDataActive } from "@/lib/providers/data
 
 export interface WebgraphStatus {
   available: boolean;
+  /** Authority index (Common Crawl harmonic-centrality ranks) is queryable. */
   ready: boolean;
+  /** Full backlink edge graph is queryable (needs the 20GB+ volume ingest). */
+  edgesReady: boolean;
   ingestInProgress: boolean;
   release: string | null;
   ingestedAt: string | null;
@@ -29,6 +32,7 @@ export async function getWebgraphStatus(): Promise<WebgraphStatus> {
     return {
       available: false,
       ready: false,
+      edgesReady: false,
       ingestInProgress: false,
       release: null,
       ingestedAt: null,
@@ -38,6 +42,7 @@ export async function getWebgraphStatus(): Promise<WebgraphStatus> {
   }
   const env = await omniDataGet<DfsEnvelope<{
     webgraph_ready?: boolean;
+    edges_ready?: boolean;
     ingest_in_progress?: boolean;
     release?: string | null;
     ingested_at?: string | null;
@@ -48,14 +53,15 @@ export async function getWebgraphStatus(): Promise<WebgraphStatus> {
   const vertexCount = Number(r?.vertex_count ?? 0);
   const edgeCount = Number(r?.edge_count ?? 0);
   const ingestInProgress = Boolean(r?.ingest_in_progress);
-  const ready =
-    Boolean(r?.webgraph_ready) &&
-    !ingestInProgress &&
-    vertexCount > 0 &&
-    edgeCount > 0;
+  // Ranks-only ingest (fits a 5GB volume) serves the authority index with
+  // vertex_count > 0 and edge_count === 0 — that IS ready for authority
+  // lookups. Edge-dependent features gate on edgesReady instead.
+  const ready = Boolean(r?.webgraph_ready) && !ingestInProgress && vertexCount > 0;
+  const edgesReady = ready && Boolean(r?.edges_ready) && edgeCount > 0;
   return {
     available: true,
     ready,
+    edgesReady,
     ingestInProgress,
     release: r?.release ?? null,
     ingestedAt: r?.ingested_at ?? null,
