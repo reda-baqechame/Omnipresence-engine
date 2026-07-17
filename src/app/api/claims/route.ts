@@ -6,6 +6,10 @@ import { ClaimReviewCreateSchema } from "@/lib/validation/schemas";
 import { runClaimReview, saveClaimReview } from "@/lib/engines/claim-review";
 import { guardOrgEndpoint } from "@/lib/security/api-v1-guard";
 
+// Reviews up to 12 receipts with parallel LLM calls + a homepage fetch — needs
+// more than the default function budget.
+export const maxDuration = 120;
+
 /** GET /api/claims?projectId= — review history, newest first. */
 export async function GET(req: NextRequest) {
   const projectId = req.nextUrl.searchParams.get("projectId");

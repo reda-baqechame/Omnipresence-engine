@@ -6,6 +6,9 @@ import { AskQuestionSchema } from "@/lib/validation/schemas";
 import { askProjectAgent } from "@/lib/engines/ask-agent";
 import { guardOrgEndpoint } from "@/lib/security/api-v1-guard";
 
+// Quality-mode generation over the sovereign-first router can take ~20s+.
+export const maxDuration = 60;
+
 /** POST /api/projects/[id]/ask — grounded Q&A over the project's own data. */
 export async function POST(req: NextRequest, ctx: { params: Promise<{ id: string }> }) {
   const { id } = await ctx.params;

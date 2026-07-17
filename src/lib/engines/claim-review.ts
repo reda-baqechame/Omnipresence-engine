@@ -110,18 +110,20 @@ export async function runClaimReview(
   }
 
   const referenceFacts = await fetchReferenceFacts(project.domain);
+  const systemPrompt = `You are a fact-checker for the brand "${project.brand_name}" (${project.domain}). You review what an AI engine said about this brand and flag factual claims. Reference facts from the brand's own site:\n${referenceFacts || "(homepage unavailable — mark specific factual claims as unsupported rather than contradicted)"}\n\nRules: only extract SPECIFIC factual claims about ${project.brand_name} (pricing, features, locations, leadership, dates, integrations, certifications). Ignore opinions, rankings, and claims about other companies. If the answer makes no specific factual claims about the brand, return an empty list. Never invent claims.`;
 
-  const claims: ReviewedClaim[] = [];
-  for (const r of candidates) {
-    const res = await generateStructured(
-      `You are a fact-checker for the brand "${project.brand_name}" (${project.domain}). You review what an AI engine said about this brand and flag factual claims. Reference facts from the brand's own site:\n${referenceFacts || "(homepage unavailable — mark specific factual claims as unsupported rather than contradicted)"}\n\nRules: only extract SPECIFIC factual claims about ${project.brand_name} (pricing, features, locations, leadership, dates, integrations, certifications). Ignore opinions, rankings, and claims about other companies. If the answer makes no specific factual claims about the brand, return an empty list. Never invent claims.`,
-      `AI engine answer (from ${r.engine}) to the prompt "${(r.prompt || "").slice(0, 300)}":\n\n${r.raw_answer.slice(0, 6000)}`,
-      ClaimExtractionSchema
-    ).catch(() => null);
-
-    if (!res?.success || !res.data) continue;
-    for (const c of res.data.claims) {
-      claims.push({
+  // Review answers in parallel — a serverless request can't afford 12
+  // sequential LLM round-trips. Order of the output stays deterministic
+  // (candidates order) because we collect per-candidate then flatten.
+  const perAnswer = await Promise.all(
+    candidates.map(async (r) => {
+      const res = await generateStructured(
+        systemPrompt,
+        `AI engine answer (from ${r.engine}) to the prompt "${(r.prompt || "").slice(0, 300)}":\n\n${r.raw_answer.slice(0, 6000)}`,
+        ClaimExtractionSchema
+      ).catch(() => null);
+      if (!res?.success || !res.data) return [] as ReviewedClaim[];
+      return res.data.claims.map((c) => ({
         claim: c.claim.slice(0, 500),
         quote: c.quote.slice(0, 500),
         engine: r.engine,
@@ -130,9 +132,10 @@ export async function runClaimReview(
         verdict: c.verdict,
         explanation: c.explanation.slice(0, 500),
         receipt_id: r.id,
-      });
-    }
-  }
+      }));
+    })
+  );
+  const claims: ReviewedClaim[] = perAnswer.flat();
 
   const flagged = claims.filter((c) => c.verdict !== "supported");
   return {

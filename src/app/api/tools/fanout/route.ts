@@ -6,6 +6,9 @@ import { deriveFanoutSubqueries, runFanoutInterception } from "@/lib/engines/fan
 import { hasSerpCapability } from "@/lib/config/capabilities";
 import { assertPublicDomain, DomainValidationError } from "@/lib/security/domain";
 
+// LLM sub-query derivation + up to 8 live SERP rank checks.
+export const maxDuration = 90;
+
 /**
  * Free query fan-out micro-tool (Master Plan v4 feature 10 — LLMrefs lists
  * this tool but theirs 404s; ours works). Given a prompt, show the Google
