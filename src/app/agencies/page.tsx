@@ -70,6 +70,28 @@ export default function AgenciesPage() {
         </div>
       </section>
 
+      <section className="max-w-4xl mx-auto px-6 py-16 border-t border-border">
+        <div className="bg-card border border-primary/30 rounded-2xl p-8 text-center">
+          <div className="inline-block bg-primary/10 text-primary px-4 py-1.5 rounded-full text-sm font-medium mb-4">
+            Founding pilot program — 5 agencies
+          </div>
+          <h2 className="text-3xl font-bold mb-3">Free Agency plan for a named case study</h2>
+          <p className="text-muted-foreground max-w-2xl mx-auto mb-2">
+            Run one real client through the full loop — baseline panel, weekly action sprints,
+            remeasured outcome — and get the Agency plan free for 6 months. In exchange, we publish
+            the measured before/after as a named case study, every number backed by verifiable
+            receipts.
+          </p>
+          <p className="text-sm text-muted-foreground mb-6">
+            If the numbers don&apos;t move, we publish nothing and you keep the free months. We only
+            publish honest wins — see <Link href="/customers" className="text-primary hover:underline">results with receipts</Link>.
+          </p>
+          <Link href="/signup?pilot=agency" className="inline-block bg-primary text-primary-foreground px-8 py-3 rounded-lg font-semibold">
+            Apply — create your account
+          </Link>
+        </div>
+      </section>
+
       <section className="max-w-4xl mx-auto px-6 py-16 text-center border-t border-border">
         <h2 className="text-3xl font-bold mb-4">Professional beta</h2>
         <p className="text-muted-foreground mb-2 max-w-xl mx-auto">

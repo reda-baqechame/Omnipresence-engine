@@ -226,6 +226,22 @@ export const SprintCreateSchema = z.object({
 });
 
 /** POST /api/mcp — JSON-RPC 2.0 envelope for the MCP server. */
+export const CaseStudyCreateSchema = z.object({
+  projectId: uuid,
+  brandName: nonEmpty.max(120),
+  agencyName: z.string().trim().max(120).optional(),
+});
+
+export const CaseStudyPatchSchema = z
+  .object({
+    action: z.enum(["publish", "unpublish"]),
+    /** Publishing requires explicitly re-affirming named consent. */
+    consentConfirmed: z.boolean().optional(),
+  })
+  .refine((b) => b.action !== "publish" || b.consentConfirmed === true, {
+    message: "Publishing requires consentConfirmed: true (named consent)",
+  });
+
 export const McpRequestSchema = z.object({
   jsonrpc: z.literal("2.0"),
   id: z.union([z.string(), z.number()]).optional(),
