@@ -164,6 +164,9 @@ function stubSupabase() {
           return singleChain(table, null);
         case "community_mentions":
           return arrayChain(table, []);
+        case "ai_capture_evidence":
+          // Receipts appendix (Master Plan v4 Phase 1) reads latest receipts.
+          return arrayChain(table, []);
         default:
           throw new Error(`unexpected table in fan-out cancellation test stub: ${table}`);
       }

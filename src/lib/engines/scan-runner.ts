@@ -19,6 +19,7 @@ import {
 } from "@/lib/plans/limits";
 import { resolveAndPersistCompetitors } from "@/lib/engines/competitor-resolver";
 import { syncExecutionTasks, verifyTaskResolution } from "@/lib/engines/execution-tasks";
+import { finalizeMeasuringSprints } from "@/lib/engines/action-sprint";
 import { syncFastestPathTasks } from "@/lib/engines/fastest-path-service";
 import {
   assessVisibilityRunQuality,
@@ -325,6 +326,10 @@ export async function runProjectScan(
     await syncExecutionTasks(supabase, projectId, p.organization_id).catch(() => null);
     await syncFastestPathTasks(supabase, projectId, p.organization_id).catch(() => null);
   }
+
+  // Close the sprint loop: any sprint waiting in "measuring" gets its outcome
+  // snapshot from this scan's fresh visibility rows and an honest verdict.
+  await finalizeMeasuringSprints(supabase, projectId).catch(() => null);
 
   await supabase.from("projects").update({
     status: "active",

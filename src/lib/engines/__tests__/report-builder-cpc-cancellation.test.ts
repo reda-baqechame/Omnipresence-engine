@@ -153,6 +153,9 @@ function stubSupabase(opts: { hasAttribution: boolean; keywordRows: string[] }) 
           return arrayChain(opts.keywordRows.map((keyword) => ({ keyword, last_position: 8, target_url: null })));
         case "keyword_opportunities":
           return arrayChain(opts.keywordRows.map((keyword) => ({ keyword })));
+        case "ai_capture_evidence":
+          // Receipts appendix (Master Plan v4 Phase 1) reads latest receipts.
+          return arrayChain([]);
         default:
           throw new Error(`unexpected table in report-builder CPC test stub: ${table}`);
       }

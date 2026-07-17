@@ -1142,6 +1142,42 @@ export const weeklyEvidenceRetention = inngest.createFunction(
   }
 );
 
+/**
+ * Weekly Action Sprints (Phase 2, Master Plan v4 — Trakkr pattern): every
+ * Monday 07:00 UTC (after weekly-intelligence-sync at 04:00 refreshes gap
+ * data, before the 08:00 panel run remeasures), close out last week's active
+ * sprints with an honest verdict and propose this week's sprint from each
+ * project's measured gaps. Proposals cost nothing until a user starts them.
+ */
+export const weeklyActionSprints = inngest.createFunction(
+  { id: "weekly-action-sprints", retries: 0, triggers: [{ cron: "0 7 * * 1" }] },
+  async ({ step }) => {
+    const projects = await step.run("list-active-projects", async () => {
+      const supabase = await createServiceClient();
+      const { data } = await supabase
+        .from("projects")
+        .select("id, organization_id, domain")
+        .eq("status", "active")
+        .limit(2000);
+      return (data || []) as Array<{ id: string; organization_id: string; domain: string }>;
+    });
+
+    let closed = 0;
+    let proposed = 0;
+    for (const project of projects) {
+      // Project-scoped step id: one project's replay never blocks another's.
+      const result = await step.run(`sprint-upkeep-${project.id}`, async () => {
+        const supabase = await createServiceClient();
+        const { runWeeklySprintUpkeep } = await import("@/lib/engines/action-sprint");
+        return runWeeklySprintUpkeep(supabase, project);
+      });
+      closed += result.closed;
+      if (result.proposed) proposed++;
+    }
+    return { projects: projects.length, closed, proposed };
+  }
+);
+
 // Measured GEO rewrite loop: baseline citation rate -> AutoGEO answer-first
 // rewrite -> deploy artifact -> wait for propagation -> re-probe -> measure
 // real citation/mention lift from ai_probe_traces -> results-ledger/guarantee.
@@ -1760,6 +1796,7 @@ export const functions = [
   dailyRailwaySpendGuard,
   weeklyReportRetention,
   weeklyEvidenceRetention,
+  weeklyActionSprints,
   geoRewriteLoop,
   scheduledContentPublish,
   weeklyIntelligenceSync,

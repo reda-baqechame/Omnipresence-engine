@@ -99,6 +99,7 @@ export const PROJECT_HUB_NAV: HubNavCategory[] = [
     label: "Execution & Ops",
     items: [
       { href: "/action-proof", label: "Action Plan & Proof", requires: "always" },
+      { href: "/sprints", label: "Action Sprints", requires: "always" },
       { href: "/tasks", label: "Tasks", requires: "always" },
       { href: "/proof-ledger", label: "Proof Ledger", requires: "always" },
       { href: "/receipts", label: "Receipts", requires: "always" },

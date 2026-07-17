@@ -220,6 +220,30 @@ export const OnboardingAnalyzeSchema = z.object({
   domain: nonEmpty.max(253),
 });
 
+/** POST /api/sprints — propose this week's action sprint for a project. */
+export const SprintCreateSchema = z.object({
+  projectId: uuid,
+});
+
+/** POST /api/mcp — JSON-RPC 2.0 envelope for the MCP server. */
+export const McpRequestSchema = z.object({
+  jsonrpc: z.literal("2.0"),
+  id: z.union([z.string(), z.number()]).optional(),
+  method: nonEmpty,
+  params: z.unknown().optional(),
+});
+
+/** PATCH /api/sprints/[id] — sprint lifecycle + item completion. */
+export const SprintPatchSchema = z
+  .object({
+    action: z.enum(["start", "complete", "skip"]).optional(),
+    /** Toggle a sprint item's done flag by its index. */
+    toggleItemIndex: z.number().int().min(0).max(19).optional(),
+  })
+  .refine((b) => b.action !== undefined || b.toggleItemIndex !== undefined, {
+    message: "action or toggleItemIndex required",
+  });
+
 export const V1ScanSchema = z
   .object({
     all: z.boolean().optional(),
