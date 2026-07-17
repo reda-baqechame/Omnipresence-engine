@@ -59,6 +59,13 @@ export interface VisibilityScanConfig {
   /** Grounded-attempt cap per LLM probe (default env VISIBILITY_GROUNDED_RETRIES or 3). */
   maxGroundedRetries?: number;
   /**
+   * "reuse" (default): identical recent prompt×engine probes are served from
+   * the shared cross-tenant cache (the cost-dedupe guardrail). "record":
+   * always hit the provider — panels measuring repeated-run variance MUST use
+   * this or the variance they report would be fake zeros.
+   */
+  probeCacheMode?: "reuse" | "record";
+  /**
    * Optional persona conditioning (Wave O3). When set, AI probes answer from
    * this persona's perspective and the persona+geo are recorded on the probe
    * trace. The stored prompt_text stays the original (clean) prompt.
@@ -355,6 +362,23 @@ async function captureWithTenantBudget(
   return captured;
 }
 
+/**
+ * Cost guardrail: browser UI captures cost ~5x an API-grounded probe (Playwright
+ * session + proxy + screenshot + storage), so only 1 in N cells goes through the
+ * UI surface; the rest use API-grounded providers, honestly labeled with their
+ * API surface. Deterministic per run+prompt+engine — the same cell makes the
+ * same choice on retry, and across a week every cell gets UI-captured in
+ * rotation. UI_CAPTURE_SAMPLE_RATE=1 restores capture-everything.
+ */
+function uiCaptureSampled(config: VisibilityScanConfig, promptText: string, engine: string): boolean {
+  const n = Math.max(1, Math.floor(Number(process.env.UI_CAPTURE_SAMPLE_RATE) || 3));
+  if (n <= 1) return true;
+  const s = `${config.runId}|${promptText}|${engine}`;
+  let h = 0;
+  for (let i = 0; i < s.length; i++) h = (h * 31 + s.charCodeAt(i)) >>> 0;
+  return h % n === 0;
+}
+
 async function scanSinglePrompt(
   config: VisibilityScanConfig,
   prompt: { id?: string; text: string },
@@ -392,7 +416,15 @@ async function scanSinglePrompt(
   // never be probed through the ChatGPT surface (that would attribute a
   // ChatGPT answer to Claude). Claude is measured via the Anthropic grounded
   // API path below instead.
-  if (!config.skipUiCapture && hasAiUiCapture() && ((LLM_ENGINES.has(engine) && engine !== "claude") || engine === "perplexity" || engine === "google_ai_overview" || engine === "bing_copilot")) {
+  // Sampling applies only to surfaces with an API-grounded fallback below;
+  // bing_copilot has no API path, so it always captures (else it would read
+  // "unavailable" for sampled-out cells — a fake gap, not a saving).
+  if (
+    !config.skipUiCapture &&
+    hasAiUiCapture() &&
+    ((LLM_ENGINES.has(engine) && engine !== "claude") || engine === "perplexity" || engine === "google_ai_overview" || engine === "bing_copilot") &&
+    (engine === "bing_copilot" || uiCaptureSampled(config, prompt.text, engine))
+  ) {
     const surface = engine as "chatgpt" | "gemini" | "perplexity" | "google_ai_overview" | "bing_copilot";
     const geoOpts = captureOptionsFromLocation(config.location);
     const captured = await captureWithTenantBudget(
@@ -415,7 +447,7 @@ async function scanSinglePrompt(
       const sampled = await sampleLLMVisibility(config, prompt, engine, domainLower, brandToken);
       if (sampled) return sampled;
     } else if (engine === "perplexity") {
-      if (!config.skipUiCapture && hasAiUiCapture()) {
+      if (!config.skipUiCapture && hasAiUiCapture() && uiCaptureSampled(config, prompt.text, engine)) {
         const geoOpts = captureOptionsFromLocation(config.location);
         const captured = await captureWithTenantBudget(
           config,
@@ -730,7 +762,7 @@ async function sampleLLMVisibility(
       config.brandName,
       config.brandDomain,
       config.competitors,
-      { grounded: true, persona: config.persona }
+      { grounded: true, persona: config.persona, cacheMode: config.probeCacheMode ?? "reuse" }
     );
     if (res.success && res.data?.grounded) {
       groundedData = { ...mapAIResult(res.data), text: res.data.rawResponse || "" };
@@ -739,7 +771,13 @@ async function sampleLLMVisibility(
     if (res.error) lastError = res.error;
   }
 
-  if (!groundedData && !config.skipUiCapture && hasAiUiCapture() && (engine === "chatgpt" || engine === "gemini")) {
+  if (
+    !groundedData &&
+    !config.skipUiCapture &&
+    hasAiUiCapture() &&
+    (engine === "chatgpt" || engine === "gemini") &&
+    uiCaptureSampled(config, prompt.text, engine)
+  ) {
     const surface = engine as "chatgpt" | "gemini";
     const geoOpts = captureOptionsFromLocation(config.location);
     const captured = await captureWithTenantBudget(
@@ -1062,6 +1100,7 @@ function mapAIResult(data: {
   citedUrls: string[];
   rawResponse: string;
   grounded?: boolean;
+  cached?: boolean;
 }) {
   return {
     brand_mentioned: data.brandMentioned,
@@ -1075,6 +1114,9 @@ function mapAIResult(data: {
       text: data.rawResponse,
       data_source: data.grounded ? "measured" : "model_knowledge",
       data_source_detail: data.grounded ? "llm_grounded" : "llm_direct",
+      // Honest recency: true when this answer was reused from the shared probe
+      // cache (measured recently, not at this row's timestamp).
+      ...(data.cached ? { cached: true } : {}),
     },
   };
 }

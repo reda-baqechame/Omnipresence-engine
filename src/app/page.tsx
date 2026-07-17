@@ -84,6 +84,7 @@ export default function LandingPage() {
           <Link href="/audit" className="hover:text-foreground transition">Free Audit</Link>
           <Link href="/tools" className="hover:text-foreground transition">Free Tools</Link>
           <Link href="/customers" className="hover:text-foreground transition">Results</Link>
+          <Link href="/methodology" className="hover:text-foreground transition">Methodology</Link>
           <Link href="/agencies" className="hover:text-foreground transition">For Agencies</Link>
         </p>
         <p className="flex justify-center gap-4 flex-wrap">
@@ -97,6 +98,7 @@ export default function LandingPage() {
           <Link href="/learn/why-chatgpt-doesnt-recommend-my-brand" className="hover:text-foreground transition">Why ChatGPT skips your brand</Link>
           <Link href="/learn/how-to-get-cited-by-chatgpt" className="hover:text-foreground transition">Get cited by ChatGPT</Link>
           <Link href="/learn/ai-visibility-tracker-accuracy" className="hover:text-foreground transition">Tracker accuracy</Link>
+          <Link href="/learn/ai-overviews-killed-my-traffic" className="hover:text-foreground transition">AI Overviews took your traffic</Link>
         </p>
         <p className="flex justify-center gap-4">
           <Link href="/privacy" className="hover:text-foreground transition">Privacy</Link>

@@ -21,6 +21,12 @@ export interface AIVisibilityResult {
    * the measurement_mode honestly (grounded vs model_knowledge).
    */
   grounded?: boolean;
+  /**
+   * True when the answer was served from the shared probe cache (identical
+   * prompt+engine measured recently) rather than a fresh provider call.
+   * Recorded on the result so evidence stays honest about capture recency.
+   */
+  cached?: boolean;
 }
 
 export interface SERPResult {

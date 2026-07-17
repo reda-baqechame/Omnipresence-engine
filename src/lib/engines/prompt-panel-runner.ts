@@ -238,6 +238,10 @@ export async function runPromptPanel(
             engines,
             prompts: cappedMembers.map((m) => ({ id: m.prompt_id ?? undefined, text: m.prompt_text })),
             maxPrompts: cappedMembers.length,
+            // Panels measure repeated-run variance — every run must be a fresh
+            // provider call. Served-from-cache repeats would report fake zero
+            // volatility (the exact dishonesty this product exists to kill).
+            probeCacheMode: "record",
           });
           results = scan.results;
         } catch (err) {

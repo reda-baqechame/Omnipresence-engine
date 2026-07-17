@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { triggerProjectScan } from "@/lib/engines/trigger-scan";
 import { verifyProjectAccess } from "@/lib/security/project-access";
-import { ApiCreditExceededError } from "@/lib/metering/api-usage";
+import { ApiCreditExceededError, TenantBudgetExceededError } from "@/lib/metering/api-usage";
 import { apiError, apiForbidden, apiNotFound, apiServerError, apiUnauthorized, validateBody } from "@/lib/security/api-response";
 import { RescanSchema } from "@/lib/validation/schemas";
 
@@ -43,8 +43,13 @@ export async function POST(
       idempotencyKey: parsed.data.idempotency_key,
     });
   } catch (error) {
-    if (error instanceof ApiCreditExceededError) {
-      return apiError("API credit limit exceeded. Upgrade your plan.", 402);
+    if (error instanceof ApiCreditExceededError || error instanceof TenantBudgetExceededError) {
+      // This endpoint is hit by a plain HTML form — a JSON 402 would render as
+      // raw text. Release the scan claim and land the user on the project page
+      // with an upgrade banner instead.
+      await supabase.from("projects").update({ status: "active" }).eq("id", id);
+      const appUrl = process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000";
+      return NextResponse.redirect(`${appUrl}/app/projects/${id}?limit=budget`);
     }
     return apiServerError("rescan failed", error);
   }

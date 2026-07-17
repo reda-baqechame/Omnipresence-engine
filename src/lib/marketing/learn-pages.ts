@@ -161,6 +161,37 @@ export const LEARN_PAGES: LearnPage[] = [
     ],
     cta: "Baseline your brand with a free measured panel now — so when you do the work, you'll have a defensible before-picture with receipts.",
   },
+  {
+    slug: "ai-overviews-killed-my-traffic",
+    title: "AI Overviews killed my traffic — now what?",
+    description:
+      "Google AI Overviews answer buyers before they ever click. What to measure first, which pages to fix, and how to win citations inside the answer instead of losing the click.",
+    intro:
+      "If your organic clicks dropped while impressions held steady, AI Overviews are the usual suspect: Google now answers the query above your listing. You can't opt out of the answer box — but you can become the source it cites. Here's the playbook, in the order that actually works.",
+    sections: [
+      {
+        heading: "Step 1: Confirm it's actually AI Overviews",
+        body: "Before rebuilding anything, verify the diagnosis. In Search Console, look for queries where impressions are flat but CTR collapsed — that's the signature of an answer box absorbing the click. Then check those exact queries live: does an AI Overview appear, and who does it cite? Roughly half of commercial queries now trigger one, but the pattern is query-specific — some of your money terms may be untouched.",
+      },
+      {
+        heading: "Step 2: Losing the click isn't losing the buyer — unless you're absent from the answer",
+        body: "When an AI Overview cites your page, you keep brand presence at the decisive moment even without the click — and cited links still convert visits at meaningful rates because the click that does happen is high-intent. The catastrophic case is the answer citing your competitors while you rank #4 underneath it. Measure which of your traffic-losing queries cite you versus rivals; that list is your work order.",
+      },
+      {
+        heading: "Step 3: Make your pages quotable, not just rankable",
+        body: "AI Overviews assemble answers from extractable passages. Pages that win citations lead each section with a direct 40-80 word answer, use concrete figures and comparisons, and mirror the question phrasing buyers actually use. Classic ranking signals still matter — Overviews cite pages Google already trusts — but structure decides whether your content gets quoted or skipped.",
+      },
+      {
+        heading: "Step 4: Chase the sources the answer already trusts",
+        body: "For commercial queries, Overviews repeatedly cite a small set of third-party surfaces — review platforms, category roundups, Reddit. If those pages don't mention you, earn placement there; it's often faster than outranking them. The same placements also feed ChatGPT and Perplexity answers, so one earned mention compounds across engines.",
+      },
+      {
+        heading: "Step 5: Track the answer surface like you used to track rankings",
+        body: "Rank tracking tells you where your link sits; it says nothing about the answer above it. The metric that now predicts revenue is citation share inside AI answers — measured repeatedly (answers vary run to run), per engine, with evidence. Baseline it, fix, remeasure. Treat 'cited in the Overview' as the new position one.",
+      },
+    ],
+    cta: "Run the free grader to see which of your buyer queries trigger AI answers, whether they cite you or your competitors, and exactly which sources to win — with receipts.",
+  },
 ];
 
 export function getLearnPage(slug: string): LearnPage | undefined {

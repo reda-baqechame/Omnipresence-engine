@@ -51,6 +51,12 @@ export interface VisibilityQueryOptions {
   grounded?: boolean;
   /** Persona conditioning (Wave O3): answer from this persona's perspective. */
   persona?: string;
+  /**
+   * "reuse" (default): serve identical recent probes from the shared cache.
+   * "record": always call the provider — required for multi-run panels where
+   * repeated-run variance is the product.
+   */
+  cacheMode?: "reuse" | "record";
 }
 
 function buildSystemPrompt(persona?: string): string {
@@ -67,13 +73,72 @@ function groundingDefaultOn(): boolean {
 
 // --- Grounded-probe response cache (cost firewall) --------------------------
 // Web-search probes are the most expensive calls we make. Cache the grounded
-// answer + sources by (provider, prompt) for a window so repeated probes of the
-// same prompt the same day (panel re-runs, multi-engine fan-out) don't re-bill.
+// answer + sources by (provider, systemPrompt, prompt) for a window so repeated
+// probes of the same cell (multi-engine fan-out, retries, identical prompts
+// across tenants) don't re-bill. Two layers: in-memory (per warm instance) and
+// a shared Supabase table (cross-instance AND cross-tenant — the Master Plan
+// economics guardrail). Panel runs pass cacheMode="record" to bypass reads so
+// repeated-run volatility stays a real measurement.
 const GROUNDED_CACHE_TTL_MS = Math.max(0, Number(process.env.AI_PROBE_CACHE_TTL_MS) || 6 * 60 * 60 * 1000);
 const groundedCache = new Map<string, { at: number; text: string; sources: string[] }>();
 
-function groundedCacheKey(provider: string, prompt: string): string {
-  return `${provider}::${prompt.trim().toLowerCase().slice(0, 400)}`;
+function groundedCacheKey(provider: string, systemPrompt: string, prompt: string): string {
+  // System prompt participates (persona-conditioned answers must never be
+  // served for unconditioned probes or vice versa); hash it to keep keys short.
+  let h = 0;
+  for (let i = 0; i < systemPrompt.length; i++) h = (h * 31 + systemPrompt.charCodeAt(i)) >>> 0;
+  return `${provider}::${h.toString(36)}::${prompt.trim().toLowerCase().slice(0, 400)}`;
+}
+
+async function probeCacheDb() {
+  if (!process.env.NEXT_PUBLIC_SUPABASE_URL || !process.env.SUPABASE_SERVICE_ROLE_KEY) return null;
+  const { createClient } = await import("@supabase/supabase-js");
+  return createClient(process.env.NEXT_PUBLIC_SUPABASE_URL, process.env.SUPABASE_SERVICE_ROLE_KEY);
+}
+
+async function readProbeCacheDb(
+  cacheKey: string
+): Promise<{ text: string; sources: string[] } | null> {
+  try {
+    const sb = await probeCacheDb();
+    if (!sb) return null;
+    const { data } = await sb
+      .from("probe_cache")
+      .select("answer, sources, created_at")
+      .eq("cache_key", cacheKey)
+      .maybeSingle();
+    if (!data) return null;
+    if (Date.now() - new Date(data.created_at).getTime() > GROUNDED_CACHE_TTL_MS) return null;
+    return {
+      text: String(data.answer),
+      sources: Array.isArray(data.sources) ? (data.sources as string[]) : [],
+    };
+  } catch {
+    return null; // Cache is an optimization — never fail a probe over it.
+  }
+}
+
+async function writeProbeCacheDb(
+  cacheKey: string,
+  provider: string,
+  text: string,
+  sources: string[],
+  modelId?: string
+): Promise<void> {
+  try {
+    const sb = await probeCacheDb();
+    if (!sb) return;
+    await sb.from("probe_cache").upsert({
+      cache_key: cacheKey,
+      provider,
+      answer: text.slice(0, 20000),
+      sources: sources.slice(0, 40),
+      model_id: modelId || null,
+      created_at: new Date().toISOString(),
+    });
+  } catch {
+    // Best-effort.
+  }
 }
 
 function hostnameOf(url: string): string {
@@ -180,12 +245,20 @@ async function generateGroundedWithProvider(
 async function runGroundedSearch(
   provider: "openai" | "gemini" | "claude",
   systemPrompt: string,
-  prompt: string
-): Promise<{ text: string; sources: string[] } | null> {
-  const cacheKey = groundedCacheKey(provider, prompt);
-  const cached = groundedCache.get(cacheKey);
-  if (cached && Date.now() - cached.at < GROUNDED_CACHE_TTL_MS) {
-    return { text: cached.text, sources: cached.sources };
+  prompt: string,
+  cacheMode: "reuse" | "record" = "reuse"
+): Promise<{ text: string; sources: string[]; cached: boolean } | null> {
+  const cacheKey = groundedCacheKey(provider, systemPrompt, prompt);
+  if (cacheMode === "reuse") {
+    const cached = groundedCache.get(cacheKey);
+    if (cached && Date.now() - cached.at < GROUNDED_CACHE_TTL_MS) {
+      return { text: cached.text, sources: cached.sources, cached: true };
+    }
+    const persisted = await readProbeCacheDb(cacheKey);
+    if (persisted) {
+      groundedCache.set(cacheKey, { at: Date.now(), ...persisted });
+      return { ...persisted, cached: true };
+    }
   }
 
   const guardProvider: GuardProvider =
@@ -195,7 +268,10 @@ async function runGroundedSearch(
   try {
     const result = await generateGroundedWithProvider(provider, systemPrompt, prompt);
     groundedCache.set(cacheKey, { at: Date.now(), text: result.text, sources: result.sources });
-    return { text: result.text, sources: result.sources };
+    // Fresh answers always refresh the shared cache — even "record" runs feed
+    // future reuse reads.
+    await writeProbeCacheDb(cacheKey, provider, result.text, result.sources, result.modelId);
+    return { text: result.text, sources: result.sources, cached: false };
   } catch {
     return null;
   }
@@ -218,7 +294,7 @@ export async function queryLLMForVisibility(
     // --- Grounded path: real web search with real cited URLs ----------------
     if (provider !== "ollama" && (opts.grounded ?? groundingDefaultOn())) {
       try {
-        const grounded = await runGroundedSearch(provider, systemPrompt, prompt);
+        const grounded = await runGroundedSearch(provider, systemPrompt, prompt, opts.cacheMode ?? "reuse");
         if (grounded) {
           const sourceDomains = [...new Set(grounded.sources.map(hostnameOf).filter(Boolean))];
           const brandMentioned = brandMatcher.mentionedIn(grounded.text) || brandMatcher.citedInUrls(grounded.sources) || brandMatcher.citedInDomains(sourceDomains);
@@ -241,8 +317,9 @@ export async function queryLLMForVisibility(
               citedUrls: grounded.sources,
               rawResponse: grounded.text,
               grounded: true,
+              cached: grounded.cached,
             },
-            creditsUsed: 2,
+            creditsUsed: grounded.cached ? 0 : 2,
           };
         }
       } catch {

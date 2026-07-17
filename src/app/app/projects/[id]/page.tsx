@@ -16,15 +16,19 @@ import { PresenceGateCard } from "@/components/presence-gate-card";
 import { isSubScoreAvailable, SCORE_DIMENSION_KEYS } from "@/lib/scoring/subscore-availability";
 import { ProofEvidenceLinks } from "@/components/proof-evidence-links";
 import { DataHealthSummaryCard } from "@/components/data-health-summary-card";
+import { PlanLimitBanner } from "@/components/plan-limit-banner";
 import { describeProviders } from "@/lib/providers/router";
 import Link from "next/link";
 
 export default async function ProjectOverviewPage({
   params,
+  searchParams,
 }: {
   params: Promise<{ id: string }>;
+  searchParams: Promise<{ limit?: string }>;
 }) {
   const { id } = await params;
+  const { limit: limitKind } = await searchParams;
   const project = await getProject(id);
   if (!project) notFound();
 
@@ -69,6 +73,8 @@ export default async function ProjectOverviewPage({
   return (
     <div className="space-y-8">
       <ScanPoller projectId={id} initialStatus={project.status} />
+
+      {limitKind && <PlanLimitBanner kind={limitKind} />}
 
       <PresenceGateCard projectId={id} gate={gate} />
 

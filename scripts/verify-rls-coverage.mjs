@@ -18,6 +18,9 @@ const POLICY_ALLOWLIST = new Set([
   "keyword_cpc_cache",
   "benchmark_runs",
   "report_quality_violations",
+  // Global cross-tenant grounded-probe cache (0092): rows are engine answers
+  // to prompts, no tenant data; only the server-side scanner reads/writes.
+  "probe_cache",
 ]);
 
 function extractTables(sql) {
