@@ -28,7 +28,7 @@
 import { logProviderError } from "@/lib/observability/log";
 import { getJobContext } from "@/lib/observability/job-context";
 
-export type ExternalApiProvider = "dataforseo" | "firecrawl";
+export type ExternalApiProvider = "dataforseo" | "firecrawl" | "omnidata";
 
 // Conservative flat per-call price estimates (USD). Real DataForSEO pricing
 // varies by endpoint (SERP ~$0.002-0.006/call, Labs ~$0.01-0.05/call,
@@ -36,9 +36,17 @@ export type ExternalApiProvider = "dataforseo" | "firecrawl";
 // depending on plan). These deliberately skew high so the guard errs toward
 // stopping early rather than under-counting spend — they are ESTIMATES for
 // the budget guard only, never billed to anyone.
+//
+// "omnidata" is the SELF-HOSTED engine on the platform's own Railway service:
+// there is no per-call invoice, only flat compute. It must not be metered at
+// DataForSEO prices — doing that once burned the entire $10 daily budget in
+// 509 free calls and blocked webgraph/SERP/keyword intel for the rest of the
+// day. A tiny nominal cost keeps the ledger visible and the runaway-loop rate
+// limiter still applies.
 const CALL_COST_USD: Record<ExternalApiProvider, number> = {
   dataforseo: 0.02,
   firecrawl: 0.01,
+  omnidata: 0.0002,
 };
 
 function num(envKey: string, dflt: number): number {
@@ -63,7 +71,11 @@ export class ExternalApiBudgetExceededError extends Error {
 
 // ---- Layer 1: per-instance sliding-window rate limiter (per provider) ----
 // Pure runaway-loop protection; the USD budget below is the real money cap.
-const callTimes: Record<ExternalApiProvider, number[]> = { dataforseo: [], firecrawl: [] };
+const callTimes: Record<ExternalApiProvider, number[]> = {
+  dataforseo: [],
+  firecrawl: [],
+  omnidata: [],
+};
 function checkRate(provider: ExternalApiProvider): void {
   const limit = Math.floor(num("EXTERNAL_API_MAX_CALLS_PER_MIN", 120));
   if (limit <= 0) return;
@@ -94,8 +106,9 @@ async function serviceClient() {
   return createClient(process.env.NEXT_PUBLIC_SUPABASE_URL, process.env.SUPABASE_SERVICE_ROLE_KEY);
 }
 
-// Combined spend across both external-API providers — a single shared
+// Combined spend across the PAID external-API providers — a single shared
 // budget, since both draw down the same "non-LLM paid API" allowance.
+// Self-hosted omnidata calls are ledgered but do not consume this budget.
 const TRACKED_PROVIDERS: ExternalApiProvider[] = ["dataforseo", "firecrawl"];
 
 async function refreshCache(): Promise<void> {
@@ -134,6 +147,9 @@ async function refreshCache(): Promise<void> {
 export async function assertWithinExternalApiBudget(provider: ExternalApiProvider): Promise<void> {
   if (guardDisabled()) return;
   checkRate(provider);
+  // Self-hosted OmniData has no per-call cost — only the runaway-loop rate
+  // limit applies. Exhausted PAID budget must not disable the free engine.
+  if (provider === "omnidata") return;
   await refreshCache();
   if (cache) {
     const daily = num("EXTERNAL_API_DAILY_BUDGET_USD", 10);

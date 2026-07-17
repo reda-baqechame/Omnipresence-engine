@@ -49,6 +49,14 @@ export function isOmniDataActive(): boolean {
   return USE_OMNIDATA;
 }
 
+// Self-hosted OmniData calls are free compute (flat Railway cost) and must be
+// metered as "omnidata" — metering them at DataForSEO per-call prices once
+// burned the whole daily external budget on free calls and blocked every
+// downstream feature for the day. Paid DataForSEO calls keep full metering.
+function externalProvider(): "omnidata" | "dataforseo" {
+  return USE_OMNIDATA ? "omnidata" : "dataforseo";
+}
+
 async function dataForSEORequest<T>(endpoint: string, body: unknown[]): Promise<T> {
   // P0 fix: this is the single chokepoint nearly every exported function in
   // this file funnels through — it previously had no rate limit and no
@@ -57,7 +65,7 @@ async function dataForSEORequest<T>(endpoint: string, body: unknown[]): Promise<
   // the codebase noticing. Callers already wrap these calls in try/catch and
   // degrade to "unavailable" on any thrown error, so this fails the same
   // honest way a network error would — never a crash, never a silent bypass.
-  await assertWithinExternalApiBudget("dataforseo");
+  await assertWithinExternalApiBudget(externalProvider());
 
   const response = await fetchWithTimeout(`${getBaseUrl()}${endpoint}`, {
     method: "POST",
@@ -70,7 +78,7 @@ async function dataForSEORequest<T>(endpoint: string, body: unknown[]): Promise<
     throw new Error(`${USE_OMNIDATA ? "OmniData" : "DataForSEO"} API error: ${response.status}`);
   }
 
-  void recordExternalApiSpend("dataforseo");
+  void recordExternalApiSpend(externalProvider());
   return response.json() as Promise<T>;
 }
 
@@ -82,14 +90,14 @@ async function dataForSEORequest<T>(endpoint: string, body: unknown[]): Promise<
 export async function omniDataGet<T>(endpoint: string): Promise<T | null> {
   if (!USE_OMNIDATA) return null;
   try {
-    await assertWithinExternalApiBudget("dataforseo");
+    await assertWithinExternalApiBudget("omnidata");
     const response = await fetchWithTimeout(`${getBaseUrl()}${endpoint}`, {
       method: "GET",
       headers: getAuthHeaders({}),
       timeoutMs: 15000,
     });
     if (!response.ok) return null;
-    void recordExternalApiSpend("dataforseo");
+    void recordExternalApiSpend("omnidata");
     return response.json() as Promise<T>;
   } catch {
     return null;
