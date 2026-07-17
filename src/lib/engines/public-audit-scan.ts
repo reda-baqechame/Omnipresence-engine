@@ -28,7 +28,17 @@ export interface PublicAuditIntelligence {
   liveData: boolean;
   dataMode: "measured" | "demo" | "unavailable";
   providers: ReturnType<typeof getCapabilitiesSummary>;
-  visibilityResults: Array<Pick<VisibilityResult, "engine" | "prompt_text" | "brand_mentioned" | "brand_cited" | "source_domains">>;
+  visibilityResults: Array<
+    Pick<VisibilityResult, "engine" | "prompt_text" | "brand_mentioned" | "brand_cited" | "source_domains"> & {
+      /**
+       * Provenance MUST travel with each row: the scorer only counts results
+       * whose data_source is measured/model_knowledge. Dropping this field
+       * made every real probe score as "unavailable" → AI visibility showed
+       * "Not measured" even when the grader measured real answers.
+       */
+      data_source: string;
+    }
+  >;
   visibilityMetrics: ReturnType<typeof calculateVisibilityMetrics>;
   authorityOpportunities: Array<{
     type: string;
@@ -237,6 +247,7 @@ export async function runPublicAuditIntelligence(input: {
       brand_mentioned: r.brand_mentioned,
       brand_cited: r.brand_cited,
       source_domains: r.source_domains,
+      data_source: r.data_source,
     })),
     visibilityMetrics: calculateVisibilityMetrics(visibilityScan),
     authorityOpportunities: authorityOpps.slice(0, 8).map((o) => ({
